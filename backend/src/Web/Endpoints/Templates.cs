@@ -1,0 +1,386 @@
+using System.Security.Claims;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using QorstackReportService.Application.Common.Interfaces;
+using QorstackReportService.Application.Common.Models;
+using QorstackReportService.Application.DTOs;
+using QorstackReportService.Application.Templates.Commands.DeleteTemplate;
+using QorstackReportService.Application.Templates.Commands.SwitchTemplateVersion;
+using QorstackReportService.Application.Templates.Commands.UpdateTemplate;
+using QorstackReportService.Application.Templates.Commands.UploadTemplate;
+using QorstackReportService.Application.Templates.Models;
+using QorstackReportService.Application.Templates.Queries.GetTemplateById;
+using QorstackReportService.Application.Templates.Queries.GetTemplatesWithPagination;
+using QorstackReportService.Application.Templates.Queries.GenerateTemplateKey;
+using QorstackReportService.Web.Infrastructure;
+
+namespace QorstackReportService.Web.Endpoints;
+
+/// <summary>
+/// API endpoints for template management
+/// </summary>
+public class Templates : EndpointGroupBase
+{
+    public override void Map(WebApplication app)
+    {
+        var group = app.MapGroup("/templates")
+            .WithTags("Templates")
+            .RequireAuthorization();
+
+        group.MapPost("/", Upload)
+            .DisableAntiforgery()
+            .Accepts<IFormFile>("multipart/form-data")
+            .WithSummary("Upload a new template")
+            .WithDescription("Upload a template file (DOCX or XLSX). Name is required via query parameter, file is required via multipart form data.")
+            .Produces<TemplateDetailResponse>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/", GetAll)
+            .Produces<PaginatedList<TemplateResponse>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/{templateKey}", GetById)
+            .WithName("GetTemplateById")
+            .Produces<TemplateDetailResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapPut("/{templateKey}", Update)
+            .DisableAntiforgery()
+            .Produces<TemplateDetailResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapPut("/{templateKey}/switch-version", SwitchVersion)
+            .WithSummary("Switch active version of a template")
+            .WithDescription("Switch the active version of a template to a specified version number.")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapDelete("/{templateKey}", Delete)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/{templateKey}/download", Download)
+            .WithName("DownloadTemplate")
+            .Produces<DownloadTemplateResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/template-generate-key", GenerateKey)
+            .WithSummary("Generate a new unique template key")
+            .WithDescription("Generates a unique template key for the current user.")
+            .Produces<string>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+    }
+
+    /// <summary>
+    /// Upload a new template
+    /// </summary>
+    private static async Task<IResult> Upload(
+        ISender sender,
+        HttpContext httpContext,
+        [AsParameters] UploadTemplateRequest request)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return Results.BadRequest("Name is required");
+        }
+
+        if (request.File == null)
+        {
+            return Results.BadRequest("File is required");
+        }
+
+        var command = new UploadTemplateCommand
+        {
+            UserId = userId.Value,
+            Name = request.Name,
+            File = request.File,
+            TemplateKey = request.TemplateKey,
+            ProjectId = request.ProjectId,
+            IsAutoGenerateVariables = request.IsAutoGeneratedVariable
+        };
+
+        var template = await sender.Send(command);
+        return Results.Created($"/templates/{template.Id}", template);
+    }
+
+    /// <summary>
+    /// Get all templates with pagination
+    /// </summary>
+    private static async Task<IResult> GetAll(
+        ISender sender,
+        HttpContext httpContext,
+        [FromQuery] string? status,
+        [FromQuery] string? search,
+        [FromQuery] Guid? projectId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var query = new GetTemplatesWithPaginationQuery
+        {
+            UserId = userId.Value,
+            Status = status,
+            SearchName = search,
+            ProjectId = projectId,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+
+        var result = await sender.Send(query);
+        return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// Get a template by ID
+    /// </summary>
+    private static async Task<IResult> GetById(ISender sender, HttpContext httpContext, string templateKey)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var query = new GetTemplateByIdQuery
+        {
+            TemplateKey = templateKey,
+            UserId = userId.Value
+        };
+
+        var result = await sender.Send(query);
+        return result is not null ? Results.Ok(result) : Results.NotFound();
+    }
+
+    /// <summary>
+    /// Update a template
+    /// </summary>
+    private static async Task<IResult> Update(
+        ISender sender,
+        HttpContext httpContext,
+        string templateKey,
+        [AsParameters] UpdateTemplateRequest request)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var command = new UpdateTemplateCommand
+        {
+            TemplateKey = templateKey,
+            UserId = userId.Value,
+            Name = request.Name,
+            Status = request.Status,
+            SandboxPayload = request.SandboxPayload,
+            File = request.File,
+            ProjectId = request.ProjectId,
+            IsAutoGenerateVariables = request.IsAutoGeneratedVariable
+        };
+
+        var result = await sender.Send(command);
+        return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// Switch active version of a template
+    /// </summary>
+    private static async Task<IResult> SwitchVersion(
+        ISender sender,
+        HttpContext httpContext,
+        string templateKey,
+        [FromBody] SwitchVersionRequest request)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var command = new SwitchTemplateVersionCommand
+        {
+            TemplateKey = templateKey,
+            UserId = userId.Value,
+            Version = request.Version
+        };
+
+        await sender.Send(command);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Delete a template
+    /// </summary>
+    private static async Task<IResult> Delete(ISender sender, HttpContext httpContext, string templateKey)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var command = new DeleteTemplateCommand
+        {
+            TemplateKey = templateKey,
+            UserId = userId.Value
+        };
+
+        await sender.Send(command);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Download a template file (returns presigned URL)
+    /// </summary>
+    private static async Task<IResult> Download(
+        HttpContext httpContext,
+        IMinioStorageService storageService,
+        IApplicationDbContext dbContext,
+        IConfiguration configuration,
+        string templateKey)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var template = await dbContext.Templates
+            .Include(t => t.TemplateVersions.Where(tv => tv.Status == "active"))
+            .FirstOrDefaultAsync(t => t.TemplateKey == templateKey && t.UserId == userId.Value);
+
+        if (template == null)
+        {
+            return Results.NotFound();
+        }
+
+        var activeVersion = template.TemplateVersions.FirstOrDefault();
+        if (activeVersion == null)
+        {
+            return Results.NotFound("No active version found");
+        }
+
+        var templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
+        var url = await storageService.GetPresignedUrlAsync(templateBucket, activeVersion.FilePath, 3600);
+
+        return Results.Ok(new DownloadTemplateResponse { Url = url });
+    }
+
+
+
+    private static async Task<IResult> GenerateKey(ISender sender, HttpContext httpContext)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var query = new GenerateTemplateKeyQuery
+        {
+            UserId = userId.Value
+        };
+
+        var result = await sender.Send(query);
+        return Results.Ok(result);
+    }
+}
+
+/// <summary>
+/// Request for template upload
+/// </summary>
+public class UploadTemplateRequest
+{
+    /// <summary>
+    /// Template name
+    /// </summary>
+    [FromQuery(Name = "name")]
+    public string? Name { get; set; }
+
+    /// <summary>
+    /// Optional custom template key
+    /// </summary>
+    [FromQuery(Name = "templateKey")]
+    public string? TemplateKey { get; set; }
+
+    /// <summary>
+    /// Template file (.docx)
+    /// </summary>
+    [FromForm(Name = "file")]
+    public IFormFile? File { get; set; }
+
+    [FromQuery(Name = "project_id")]
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>
+    /// Whether to automatically generate variables from the document (default: true)
+    /// </summary>
+    [FromQuery(Name = "isAutoGeneratedVariable")]
+    public bool IsAutoGeneratedVariable { get; set; } = true;
+}
+
+/// <summary>
+/// Request for template update
+/// </summary>
+public class UpdateTemplateRequest
+{
+    [FromQuery(Name = "name")]
+    public string? Name { get; set; }
+    [FromQuery(Name = "status")]
+    public string? Status { get; set; }
+    [FromQuery(Name = "sandboxPayload")]
+    public string? SandboxPayload { get; set; }
+    [FromForm(Name = "file")]
+    public IFormFile? File { get; set; }
+
+    [FromQuery(Name = "project_id")]
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>
+    /// Whether to automatically generate variables from the document (default: true)
+    /// </summary>
+    [FromQuery(Name = "isAutoGeneratedVariable")]
+    public bool IsAutoGeneratedVariable { get; set; } = true;
+}
+
+/// <summary>
+/// Request for switching template version
+/// </summary>
+public class SwitchVersionRequest
+{
+    /// <summary>
+    /// Version number to activate
+    /// </summary>
+    public int? Version { get; set; }
+}
+
+/// <summary>
+/// Response for template download
+/// </summary>
+public class DownloadTemplateResponse
+{
+    /// <summary>
+    /// Presigned URL for downloading the template
+    /// </summary>
+    public string Url { get; set; } = string.Empty;
+}

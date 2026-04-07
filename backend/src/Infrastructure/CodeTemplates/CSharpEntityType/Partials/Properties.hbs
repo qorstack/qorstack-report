@@ -1,0 +1,75 @@
+﻿{{!-- Properties.hbs --}}
+{{#each properties}}
+{{!-- Skip audit fields only for NON-Log entities --}}
+{{#unless (starts-with ../class "Log")}}
+{{
+#unless (or
+        (eq property-name "CreatedDatetime")
+        (eq property-name "CreatedBy")
+        (eq property-name "UpdatedDatetime")
+        (eq property-name "UpdatedBy")
+  )
+}}
+{{!-- XML doc comment --}}
+    {{#if property-comment}}
+        /// <summary>
+    {{property-comment}}
+    ///
+    {{/if}}
+    {{!-- Any annotations (e.g. [Key], [Required], etc.) --}}
+    {{#each property-annotations}}
+    {{{this}}}
+    {{/each}}
+    {{!-- Property declaration --}}
+    public {{property-type}} {{property-name}} { get; set; } {{#if nullable-reference-types}}{{#unless property-isnullable}}= null!;{{/unless}}
+    {{else}}
+    {{#if property-default-enum}} = {{property-default-enum}};{{/if}}
+    {{/if}}
+    {{/unless}}
+{{else}}
+{{!-- For Log entities, include ALL properties including audit fields --}}
+{{!-- XML doc comment --}}
+    {{#if property-comment}}
+        /// <summary>
+    {{property-comment}}
+    ///
+    {{/if}}
+    {{!-- Any annotations (e.g. [Key], [Required], etc.) --}}
+    {{#each property-annotations}}
+    {{{this}}}
+    {{/each}}
+    {{!-- Property declaration --}}
+    public {{property-type}} {{property-name}} { get; set; } {{#if nullable-reference-types}}{{#unless property-isnullable}}= null!;{{/unless}}
+    {{else}}
+    {{#if property-default-enum}} = {{property-default-enum}};{{/if}}
+    {{/if}}
+{{/unless}}
+{{/each}}
+{{#if nav-properties}}
+    {{!-- Navigation properties (FKs, collections) --}}
+    {{#each nav-properties}}
+    {{#each nav-property-annotations}}
+    {{{this}}}
+    {{/each}}
+    {{#if nav-property-collection}}
+        public virtual ICollection<{{nav-property-type}}> {{nav-property-name}} { get; set; } {{#unless nav-property-isnullable}}= null!;{{/unless}}
+        {{else}}
+        public virtual {{nav-property-type}} {{nav-property-name}} { get; set; } {{#if nullable-reference-types}}{{#unless nav-property-isnullable}}= null!;{{/unless}}
+        {{/if}}
+        {{/if}}
+        {{/each}}
+        {{/if}}
+    {{#if nav-properties}}
+    {{!-- Navigation properties (FKs, collections) --}}
+    {{#each nav-properties}}
+    {{#each nav-property-annotations}}
+    {{{this}}}
+    {{/each}}
+    {{#if nav-property-collection}}
+        public virtual ICollection<{{nav-property-type}}> {{nav-property-name}} { get; set; } {{#unless nav-property-isnullable}}= null!;{{/unless}}
+        {{else}}
+        public virtual {{nav-property-type}} {{nav-property-name}} { get; set; } {{#if nullable-reference-types}}{{#unless nav-property-isnullable}}= null!;{{/unless}}
+        {{/if}}
+        {{/if}}
+        {{/each}}
+        {{/if}}

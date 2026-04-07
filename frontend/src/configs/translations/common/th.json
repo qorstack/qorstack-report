@@ -1,0 +1,7 @@
+{
+  "common": {
+    "hello": "สวัสดีเเปลภาษา",
+    "hello-user": "สวัสดี {{username}}",
+    "test": "ทดสอบ"
+  }
+}

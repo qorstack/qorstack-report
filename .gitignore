@@ -1,0 +1,59 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.yarn/cache/
+frontend/out/
+frontend/dist/
+
+# Backend build artifacts
+backend/src/*/bin/
+backend/src/*/obj/
+backend/tests/*/bin/
+backend/tests/*/obj/
+backend/HashGenerator/bin/
+backend/HashGenerator/obj/
+backend/*.user
+backend/.vs/
+
+# SDK build artifacts
+sdk/node_modules/
+sdk/dist/
+sdk/src/dotnet/*/bin/
+sdk/src/dotnet/*/obj/
+
+# Database backups
+database/backups/
+
+# Storage data
+storage/data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Secrets
+*.pfx
+*.p12
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
+
+# Pro license keys — NEVER commit
+tools/LicenseGenerator/private-key.pem
+tools/LicenseGenerator/public-key.pem
+tools/LicenseGenerator/license-*.json

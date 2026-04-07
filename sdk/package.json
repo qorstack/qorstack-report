@@ -1,0 +1,38 @@
+{
+  "name": "qorstack-report-sdk",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "sync-config": "node scripts/sync-config.js",
+    "prebuild": "yarn sync-config",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "gen:nodejs": "swagger-typescript-api generate -p ../backend/swagger-sdk.json -o ./src/nodejs --name QorstackApi.ts",
+    "gen:dotnet": "nswag openapi2csclient /input:../backend/swagger-sdk.json /output:src/dotnet/QorstackApi.cs /namespace:Qorstack.Report.Sdk /ClassName:QorstackApi",
+    "gen:all": "yarn gen:nodejs && yarn gen:dotnet"
+  },
+  "keywords": [
+    "qorstack",
+    "report",
+    "sdk",
+    "pdf",
+    "word"
+  ],
+  "author": "Qorstack",
+  "license": "MIT",
+  "description": "Qorstack Report SDK for Node.js and .NET",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qorstack/qorstack-report"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "nswag": "^14.6.3",
+    "swagger-typescript-api": "^13.2.16",
+    "typescript": "^5.9.3"
+  }
+}

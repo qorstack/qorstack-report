@@ -1,0 +1,11 @@
+node_modules
+.next
+dist
+build
+coverage
+public
+yarn.lock
+*.min.js
+*.min.css
+src/api/generated
+.husky

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:news="http://www.google.com/schemas/sitemap-news/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:mobile="http://www.google.com/schemas/sitemap-mobile/1.0" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+<url><loc>https://qorstack.dev</loc><lastmod>2026-02-25T17:53:24.358Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/app/api-keys</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/app/create-project</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/app/pdf/templates/create</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/app/settings</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/auth/github/callback</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/close-server</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/docs</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/pricing</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+<url><loc>https://qorstack.dev/session-expired</loc><lastmod>2026-02-25T17:53:24.359Z</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>
+</urlset>

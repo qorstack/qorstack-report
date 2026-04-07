@@ -1,0 +1,9 @@
+# *
+User-agent: *
+Allow: /
+
+# Host
+Host: https://qorstack.dev
+
+# Sitemaps
+Sitemap: https://qorstack.dev/sitemap.xml

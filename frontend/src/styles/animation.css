@@ -1,0 +1,26 @@
+@keyframes fly {
+  0%,
+  to {
+    transform: translateY(5%);
+  }
+
+  50% {
+    transform: translateY(0);
+  }
+}
+
+.animate-fly {
+  -webkit-animation: fly 6s cubic-bezier(0.75, 0.02, 0.31, 0.87) infinite;
+  animation: fly 6s cubic-bezier(0.75, 0.02, 0.31, 0.87) infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.animate-spin-slow {
+  -webkit-animation: spin 10s linear infinite;
+  animation: spin 10s linear infinite;
+}

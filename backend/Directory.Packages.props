@@ -1,0 +1,95 @@
+<!-- For more info on central package management go to https://devblogs.microsoft.com/nuget/introducing-central-package-management/ -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ── Core & Application ── -->
+    <PackageVersion Include="Ardalis.GuardClauses" Version="4.6.0" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <PackageVersion Include="LinqKit" Version="1.3.8" />
+
+    <!-- MediatR: LOCKED at 12.4.0 (last MIT version before commercial licensing in v13+) -->
+    <PackageVersion Include="MediatR" Version="12.4.0" />
+
+    <!-- Mapster: MIT replacement for AutoMapper -->
+    <PackageVersion Include="Mapster" Version="10.0.6" />
+    <PackageVersion Include="Mapster.EFCore" Version="5.1.1" />
+
+    <!-- ── Entity Framework Core 10 ── -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.5" />
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageVersion Include="EntityFrameworkCore.Scaffolding.Handlebars" Version="9.0.0" />
+    <PackageVersion Include="Npgsql" Version="10.0.2" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
+    <PackageVersion Include="Z.EntityFramework.Plus.EFCore" Version="10.105.2" />
+
+    <!-- ── ASP.NET Core 10 ── -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.UI" Version="10.0.3" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Core" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.4" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
+
+    <!-- ── Microsoft Extensions 10 ── -->
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Identity.Core" Version="10.0.5" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.5" />
+    <PackageVersion Include="System.Drawing.Common" Version="10.0.5" />
+
+    <!-- ── Azure ── -->
+    <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.3.2" />
+    <PackageVersion Include="Azure.Identity" Version="1.14.2" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+
+    <!-- ── Storage & Messaging ── -->
+    <PackageVersion Include="Confluent.Kafka" Version="2.10.0" />
+    <PackageVersion Include="Minio" Version="6.0.4" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.37" />
+
+    <!-- ── Document Processing ── -->
+    <PackageVersion Include="ClosedXML" Version="0.104.2" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.1.1" />
+    <PackageVersion Include="MimeTypesMap" Version="1.0.9" />
+    <PackageVersion Include="PDFsharp" Version="6.2.2" />
+    <PackageVersion Include="PuppeteerSharp" Version="20.2.4" />
+    <PackageVersion Include="QRCoder" Version="1.6.0" />
+    <PackageVersion Include="SkiaSharp" Version="3.119.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.1" />
+    <PackageVersion Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.22" />
+
+    <!-- ── API & Observability ── -->
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.0.0" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.5.0" />
+    <PackageVersion Include="OpenTelemetry" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+
+    <!-- ── Auth ── -->
+    <PackageVersion Include="Zitadel" Version="7.0.34" />
+
+    <!-- ── LINQ Utilities ── -->
+    <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.6.3" />
+
+    <!-- ── Testing ── -->
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+    <PackageVersion Include="FluentAssertions" Version="6.12.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
+    <PackageVersion Include="Moq" Version="4.20.70" />
+    <PackageVersion Include="nunit" Version="3.14.0" />
+    <PackageVersion Include="NUnit.Analyzers" Version="3.9.0" />
+    <PackageVersion Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageVersion Include="Respawn" Version="6.2.1" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="3.9.0" />
+  </ItemGroup>
+</Project>

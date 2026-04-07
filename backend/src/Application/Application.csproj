@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>QorstackReportService.Application</RootNamespace>
+    <AssemblyName>QorstackReportService.Application</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.Kafka" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Ardalis.GuardClauses" />
+    <PackageReference Include="Mapster" />
+    <PackageReference Include="Mapster.EFCore" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="LinqKit" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="QRCoder" />
+    <PackageReference Include="System.Linq.Dynamic.Core" />
+    <PackageReference Include="Z.EntityFramework.Plus.EFCore" />
+    <PackageReference Include="Zitadel" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Common\Configuration\" />
+    <Folder Include="Common\Constants\" />
+    <Folder Include="Common\Converters\" />
+    <Folder Include="Common\ModelBinders\" />
+    <Folder Include="TrnApplicationRevokes\GetRevokeCancelSummaryByOfficer\" />
+    <Folder Include="TrnApplicationRevokes\GetRevokePresignedUploadUrl\" />
+    <Folder Include="TrnNameLists\UpdateTrnNameList\" />
+  </ItemGroup>
+
+</Project>

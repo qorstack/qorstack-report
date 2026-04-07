@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>Qorstack.Report.Sdk</id>
+    <version>0.0.1</version>
+    <authors>Qorstack</authors>
+    <license type="expression">MIT</license>
+    <licenseUrl>https://licenses.nuget.org/MIT</licenseUrl>
+    <description>Qorstack Report SDK for Node.js and .NET</description>
+    <tags>qorstack report sdk pdf word</tags>
+    <repository type="git" url="https://github.com/qorstack/qorstack-report" commit="018310164857f1312d543a9adc65244b78a77053" />
+    <dependencies>
+      <group targetFramework="net8.0">
+        <dependency id="Newtonsoft.Json" version="13.0.3" exclude="Build,Analyzers" />
+        <dependency id="System.ComponentModel.Annotations" version="5.0.0" exclude="Build,Analyzers" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="C:\Me\PersonalCoding\QorstackReport\qorstack-report-private\sdk\src\dotnet\bin\Release\net8.0\Qorstack.Report.Sdk.dll" target="lib\net8.0\Qorstack.Report.Sdk.dll" />
+  </files>
+</package>

@@ -1,0 +1,131 @@
+services:
+  postgres:
+    image: postgres:16-bookworm
+    container_name: qorstack-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-app_db}
+      POSTGRES_USER: ${DB_USER:-app_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/backups:/backups
+    networks:
+      - network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    container_name: qorstack-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  font-syncer:
+    image: minio/mc:RELEASE.2025-02-15T09-49-59Z
+    container_name: qorstack-font-syncer
+    entrypoint: >
+      /bin/sh -c "
+        until mc alias set minio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY 2>/dev/null; do
+          echo 'Waiting for Minio...'; sleep 3;
+        done;
+        mc mb --ignore-existing minio/system-fonts;
+        mc mb --ignore-existing minio/fonts;
+        echo 'Starting font mirror...';
+        mc mirror --watch --overwrite minio/system-fonts /fonts-cache/ &
+        mc mirror --watch --overwrite minio/fonts /fonts-cache/
+      "
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    volumes:
+      - fonts_cache:/fonts-cache
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - network
+    restart: unless-stopped
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: qorstack-gotenberg
+    ports:
+      - "127.0.0.1:${GOTENBERG_PORT:-3000}:3000"
+    volumes:
+      - fonts_cache:/usr/local/share/fonts/custom
+      - ./fonts.conf:/etc/fonts/local.conf:ro
+    command:
+      - "gotenberg"
+      - "--api-port=3000"
+      - "--log-level=warn"
+      - "--libreoffice-auto-start=true"
+      - "--libreoffice-restart-after=100"
+      - "--api-disable-health-check-logging=true"
+    networks:
+      - network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: uozi/nginx-ui:v2.0.0-beta.37
+    container_name: qorstack-nginx
+    environment:
+      - TZ=Asia/Bangkok
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:${NGINX_UI_PORT:-8090}:9000"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+      - nginx_ui_data:/etc/nginx-ui
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  fonts_cache:
+    driver: local
+  nginx_ui_data:
+    driver: local
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  network:
+    driver: bridge
+    name: qorstack-network

@@ -1,0 +1,23 @@
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear {
+  display: none; /* สำหรับ Internet Explorer และ Edge */
+}
+
+input[type='password']::-webkit-clear-button,
+input[type='password']::-webkit-reveal-button {
+  display: none; /* สำหรับ Google Chrome และ Safari */
+}
+
+input[type='password']::-moz-clear {
+  display: none; /* สำหรับ Mozilla Firefox */
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield; /* สำหรับ Firefox */
+}

@@ -1,0 +1,66 @@
+@import url(scrollbar.css);
+@import url(animation.css);
+@import url(input.css);
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .bg-dots {
+    background-image: radial-gradient(#262A33 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  :root .bg-dots {
+    background-image: radial-gradient(#C8D0E2 1px, transparent 1px);
+  }
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+}
+
+@layer base {
+  :root {
+    --radius: 0.25rem;
+
+    /* Light mode — Obsidian Navy Tonal Layering System */
+    --surface-lowest: #F6F8FC;
+    --surface: #EEF1F8;
+    --surface-low: #E4E8F2;
+    --surface-high: #D8DEEB;
+    --surface-highest: #C8D0E2;
+    /* Ghost border: outline-variant at 12% opacity (accessibility fallback only) */
+    --ghost-border: rgba(69, 70, 78, 0.12);
+    --ambient-glow: rgba(10, 25, 66, 0.06);
+    --line-accent: #0A1942;
+  }
+
+  .dark {
+    /* Dark mode — Obsidian Navy Tonal Layering System */
+    --surface-lowest: #090C11;   /* base canvas — deep obsidian, not pure black */
+    --surface: #10131C;           /* surface-container-lowest: first elevation */
+    --surface-low: #181C24;       /* surface-container-low */
+    --surface-high: #1C2028;      /* surface-container: primary sections */
+    --surface-highest: #262A33;   /* surface-container-high: interactive cards */
+    /* Ghost border: outline-variant (#45464E) at 15% opacity */
+    --ghost-border: rgba(69, 70, 78, 0.15);
+    --ambient-glow: rgba(184, 197, 247, 0.04);
+    --line-accent: #B8C5F7;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+  }
+
+  * {
+    @apply min-w-0 border-divider;
+  }
+  .exponent {
+    font-size: 0.9em;
+    vertical-align: sub;
+  }
+}
