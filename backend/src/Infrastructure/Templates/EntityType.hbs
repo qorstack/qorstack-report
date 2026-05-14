@@ -1,0 +1,39 @@
+﻿{{
+!--
+  1) Bring in your base class:
+--
+}}
+using QorstackReportService.Domain.Common;
+using System;
+using System.Collections.Generic;
+
+namespace {{Namespace}}
+{
+    /// <summary>Scaffolded model for table {{Table}}</summary>
+    public partial class {{Class}} : BaseAuditableEntity
+    {
+{{
+!--
+  2) Emit *all* scalar props *except* the audit columns:
+--
+}}
+{{#each Properties}}
+{{#unless (or (eq Name "Created") (eq Name "CreatedBy") (eq Name "LastModified") (eq Name "LastModifiedBy"))}}
+        public {{Type}} {{Name}} { get; set; }
+{{/unless}}
+{{/each}}
+
+{{
+!--
+  3) For every collection navigation, initialize to List<T>:
+--
+}}
+{{#each Navigations}}
+{{#if IsCollection}}
+        public virtual ICollection<{{ElementType}}>
+    {{Name}} { get; set; } = new List<{{ElementType}}>
+        ();
+        {{/if}}
+        {{/each}}
+        }
+        }

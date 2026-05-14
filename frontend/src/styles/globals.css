@@ -1,0 +1,472 @@
+@import url(scrollbar.css);
+@import url(animation.css);
+@import url(input.css);
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .bg-dots {
+    /* Minimal iOS subtle background dots if needed */
+    background-image: radial-gradient(rgba(10, 25, 66, 0.06) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .dark .bg-dots {
+    background-image: radial-gradient(rgba(242, 244, 248, 0.045) 1px, transparent 1px);
+  }
+
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+
+  /* Subtle border ring for list items and inputs */
+  .ring-hairline {
+    @apply shadow-[inset_0_0_0_1px_rgba(var(--color-divider),0.92)];
+  }
+  .dark .ring-hairline {
+    box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12);
+  }
+
+  /* Flat Netbird-style Panel */
+  .glass-panel {
+    @apply border-b border-content3 bg-content1;
+  }
+  .dark .glass-panel {
+    @apply border-b border-content3 bg-content1;
+  }
+
+  /* Dashboard semantic tokens */
+  :root {
+    --ink: #101828;
+    --body-text: #334155;
+    --muted: #64748b;
+    --hairline: #d8e0eb;
+    --hairline-soft: #e6ebf2;
+    --coral: #0a1942;
+    --coral-hover: #07122f;
+    --coral-soft: #e8edf8;
+  }
+  .dark {
+    --ink: #f5f7fb;
+    --body-text: #d9dee8;
+    --muted: #9aa1ad;
+    --hairline: rgba(242, 244, 248, 0.18);
+    --hairline-soft: rgba(242, 244, 248, 0.12);
+    --coral: #f2f4f8;
+    --coral-hover: #ffffff;
+    --coral-soft: rgba(242, 244, 248, 0.11);
+  }
+
+  /* Single Airbnb-style elevation tier */
+  .elev-lift {
+    box-shadow:
+      rgba(15, 23, 42, 0.06) 0 0 0 1px,
+      rgba(15, 23, 42, 0.06) 0 8px 18px 0,
+      rgba(15, 23, 42, 0.08) 0 18px 36px -18px;
+  }
+  .dark .elev-lift {
+    box-shadow:
+      rgba(148, 163, 184, 0.12) 0 0 0 1px,
+      rgba(0, 0, 0, 0.28) 0 10px 22px 0,
+      rgba(0, 0, 0, 0.45) 0 24px 44px -22px;
+  }
+
+  .dashboard-panel {
+    @apply overflow-hidden rounded-2xl bg-content1 shadow-[inset_0_0_0_1px_var(--hairline)] dark:shadow-[inset_0_0_0_1px_var(--hairline-soft)];
+  }
+
+  .dashboard-card {
+    @apply rounded-xl bg-content1 shadow-[inset_0_0_0_1px_var(--hairline)] transition-[box-shadow,transform,background-color] duration-200 dark:shadow-[inset_0_0_0_1px_var(--hairline-soft)];
+  }
+
+  .dashboard-card-hover {
+    @apply hover:-translate-y-0.5 hover:shadow-lift;
+  }
+
+  .dashboard-page {
+    @apply flex flex-col gap-4;
+  }
+
+  .dashboard-header {
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-default-200/70 px-5 py-4 dark:border-white/10;
+  }
+
+  .dashboard-title {
+    @apply font-headline text-[19px] font-bold tracking-tight text-foreground;
+  }
+
+  .dashboard-subtitle {
+    @apply mt-0.5 text-[12px] leading-5 text-default-500;
+  }
+
+  .dashboard-toolbar {
+    @apply flex flex-wrap items-center gap-2 border-b border-default-200/70 px-5 py-3 dark:border-white/10;
+  }
+
+  .dashboard-soft {
+    @apply rounded-xl bg-content2 shadow-[inset_0_0_0_1px_var(--hairline)] dark:shadow-[inset_0_0_0_1px_var(--hairline-soft)];
+  }
+
+  .dashboard-icon-box {
+    @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-content2 text-default-500 shadow-[inset_0_0_0_1px_var(--hairline-soft)];
+  }
+
+  .qs-chip {
+    @apply inline-flex h-5 items-center rounded-md px-2 text-[10px] font-bold leading-none shadow-[inset_0_0_0_1px_var(--chip-border)];
+    --chip-border: rgba(148, 163, 184, 0.24);
+    background: #e6ebf2;
+    color: #475569;
+  }
+
+  .qs-chip-neutral {
+    --chip-border: rgba(148, 163, 184, 0.24);
+    background: #e6ebf2;
+    color: #475569;
+  }
+
+  .qs-chip-pdf {
+    --chip-border: rgba(220, 38, 38, 0.22);
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+
+  .qs-chip-excel,
+  .qs-chip-success {
+    --chip-border: rgba(5, 150, 105, 0.22);
+    background: #d1fae5;
+    color: #047857;
+  }
+
+  .dark .qs-chip {
+    --chip-border: rgba(148, 163, 184, 0.18);
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+  }
+
+  .dark .qs-chip-neutral {
+    --chip-border: rgba(148, 163, 184, 0.18);
+    background: rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+  }
+
+  .dark .qs-chip-pdf {
+    --chip-border: rgba(248, 113, 113, 0.22);
+    background: rgba(220, 38, 38, 0.14);
+    color: #f87171;
+  }
+
+  .dark .qs-chip-excel,
+  .dark .qs-chip-success {
+    --chip-border: rgba(52, 211, 153, 0.22);
+    background: rgba(16, 185, 129, 0.14);
+    color: #34d399;
+  }
+
+  /* Token Colors */
+  :root {
+    --token-filled: #0a1942;
+    --builder-field-bg: #edf2f8;
+    --builder-field-bg-hover: #e3eaf3;
+    --builder-complete-border: #0a1942;
+    --builder-complete-field-bg: #e8edf8;
+    --builder-complete-field-bg-hover: #dde5f2;
+    --builder-complete-bg: #f8fafc;
+    --builder-detail-bg: rgba(255, 255, 255, 0.92);
+    --builder-border: rgba(15, 23, 42, 0.10);
+    --builder-code-bg: #f3f5f9;
+    --builder-code-chrome: #ffffff;
+    --builder-attention-border: #fdba74;
+    --builder-attention-bg: #fff7ed;
+    --builder-attention-bg-hover: #ffedd5;
+    --builder-attention-field-bg: #ffedd5;
+    --builder-attention-field-bg-hover: #fed7aa;
+    --builder-attention-chip-bg: #ffedd5;
+    --builder-attention-text: #ea580c;
+    --builder-attention-dot: #f97316;
+  }
+  .dark {
+    --token-filled: #f2f4f8;
+    --builder-field-bg: rgba(242, 244, 248, 0.070);
+    --builder-field-bg-hover: rgba(242, 244, 248, 0.105);
+    --builder-complete-field-bg: rgba(242, 244, 248, 0.095);
+    --builder-complete-field-bg-hover: rgba(242, 244, 248, 0.13);
+    --builder-complete-border: #f2f4f8;
+    --builder-complete-bg: transparent;
+    --builder-detail-bg: rgba(242, 244, 248, 0.040);
+    --builder-border: rgba(242, 244, 248, 0.12);
+    --builder-code-bg: #0b0d10;
+    --builder-code-chrome: #121417;
+    --builder-attention-border: #f59e0b;
+    --builder-attention-bg: rgba(245, 158, 11, 0.045);
+    --builder-attention-bg-hover: rgba(245, 158, 11, 0.07);
+    --builder-attention-field-bg: rgba(245, 158, 11, 0.065);
+    --builder-attention-field-bg-hover: rgba(245, 158, 11, 0.09);
+    --builder-attention-chip-bg: rgba(245, 158, 11, 0.1);
+    --builder-attention-text: #f3b454;
+    --builder-attention-dot: #f59e0b;
+  }
+
+  /* Variable token text */
+  .var-token-text,
+  input.var-token-text {
+    color: var(--token-filled);
+    font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* Placeholder styled as token */
+  .placeholder-token::placeholder,
+  input.placeholder-token::placeholder {
+    --color-divider: 55 60 69; /* content3 */
+    color: rgba(60, 60, 67, 0.3) !important;
+    font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+    font-size: 12px;
+    font-weight: 500;
+    font-style: italic;
+    opacity: 1;
+  }
+  .dark .placeholder-token::placeholder,
+  .dark input.placeholder-token::placeholder {
+    color: rgba(245, 247, 251, 0.34) !important;
+  }
+
+  /* Flat input wrapper */
+  .input-flat-wrapper {
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+  .input-flat-wrapper:has(input:focus) {
+    box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.5) !important;
+    background-color: rgba(0, 122, 255, 0.04) !important;
+  }
+  .dark .input-flat-wrapper:has(input:focus) {
+    box-shadow: inset 0 0 0 1px rgba(10, 132, 255, 0.5) !important;
+    background-color: rgba(10, 132, 255, 0.08) !important;
+  }
+
+  /* Monospace section label */
+  .label-mono {
+    font-family: var(--font-space-grotesk), 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Variable key accent */
+  .text-var-key {
+    color: #0a1942;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .dark .text-var-key {
+    color: #f2f4f8;
+  }
+
+  /* iOS-style frosted surface */
+  .surface-ios {
+    background-color: var(--surface);
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+  }
+  .dark .surface-ios {
+    box-shadow: inset 0 0 0 0.5px rgba(242, 244, 248, 0.10);
+  }
+
+  .builder-shell {
+    @apply ring-hairline bg-content1 shadow-[0_0_0_1px_var(--ghost-border)];
+  }
+
+  .builder-field {
+    background-color: var(--builder-field-bg) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+  .builder-field:hover,
+  .builder-field[data-hover='true'] {
+    background-color: var(--builder-field-bg-hover) !important;
+  }
+  .builder-field:has(input:focus),
+  .builder-field[data-focus='true'] {
+    background-color: hsl(var(--heroui-content1)) !important;
+    border-color: transparent !important;
+    box-shadow: 0 0 0 2px hsl(var(--heroui-primary) / 0.16) !important;
+  }
+
+  .builder-detail-panel {
+    background-color: var(--builder-detail-bg);
+    border: 1px solid var(--builder-border);
+  }
+
+  .builder-code-shell {
+    background-color: var(--builder-code-bg);
+    border: 1px solid var(--builder-border);
+  }
+
+  .builder-code-chrome {
+    background-color: var(--builder-code-chrome);
+    border-color: var(--builder-border);
+  }
+
+  /* Both empty AND filled rows share the SAME neutral input background.
+     Difference between states is only: left-border accent + token/value text color. */
+  .builder-empty-row .builder-field,
+  .builder-complete-row .builder-field {
+    background-color: #edf2f8 !important;
+  }
+  .builder-empty-row .builder-field:hover,
+  .builder-empty-row .builder-field[data-hover='true'],
+  .builder-complete-row .builder-field:hover,
+  .builder-complete-row .builder-field[data-hover='true'] {
+    background-color: #e3eaf3 !important;
+  }
+  /* Filled-row outer container uses no extra blue tint — keep canvas clean */
+  .builder-complete-row {
+    background-color: transparent !important;
+  }
+  /* Token name (e.g. {{DATE_NOW}}) on an empty row reads dimmer than on a filled row */
+  .builder-empty-row .var-token-text,
+  .builder-empty-row input.var-token-text {
+    color: #64748b !important;
+    font-weight: 500 !important;
+  }
+  .builder-empty-row .placeholder-token::placeholder,
+  .builder-empty-row input.placeholder-token::placeholder {
+    color: rgba(60, 60, 67, 0.45) !important;
+  }
+  .dark .builder-empty-row .builder-field,
+  .dark .builder-complete-row .builder-field {
+    background-color: rgba(242, 244, 248, 0.060) !important;
+  }
+  .dark .builder-empty-row .builder-field:hover,
+  .dark .builder-empty-row .builder-field[data-hover='true'],
+  .dark .builder-complete-row .builder-field:hover,
+  .dark .builder-complete-row .builder-field[data-hover='true'] {
+    background-color: rgba(242, 244, 248, 0.090) !important;
+  }
+  .dark .builder-empty-row .var-token-text,
+  .dark .builder-empty-row input.var-token-text {
+    color: rgba(245, 247, 251, 0.42) !important;
+    font-weight: 500 !important;
+  }
+  .dark .builder-empty-row .placeholder-token::placeholder,
+  .dark .builder-empty-row input.placeholder-token::placeholder {
+    color: rgba(245, 247, 251, 0.28) !important;
+  }
+
+  .builder-complete-row {
+    background-color: var(--builder-complete-bg);
+    border-left-color: var(--builder-complete-border) !important;
+  }
+  /* Filled-row value text matches the highlight accent — strong brand-colored signal of "configured".
+     Scoped to the COLLAPSED header strip only — config inputs inside expanded detail panels keep
+     normal foreground color so number/url/select fields read like normal data, not as a token. */
+  .builder-complete-row .builder-field input,
+  .builder-complete-row .builder-field [data-slot='input'] {
+    color: var(--builder-complete-border) !important;
+    font-weight: 600 !important;
+  }
+  .builder-complete-row .builder-detail-panel .builder-field input,
+  .builder-complete-row .builder-detail-panel .builder-field [data-slot='input'],
+  .builder-complete-row .builder-detail-panel .builder-field textarea {
+    color: hsl(var(--heroui-foreground)) !important;
+    font-weight: 500 !important;
+  }
+  /* Legacy complete-row field bg overrides removed — unified rules earlier handle both states. */
+
+  .builder-attention-row {
+    background-color: var(--builder-attention-bg);
+    border-left-color: var(--builder-attention-border) !important;
+  }
+  .builder-attention-row:hover {
+    background-color: var(--builder-attention-bg-hover);
+  }
+  .builder-attention-row .builder-field {
+    background-color: var(--builder-attention-field-bg) !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+  .builder-attention-row .builder-field:hover,
+  .builder-attention-row .builder-field[data-hover='true'] {
+    background-color: var(--builder-attention-field-bg-hover) !important;
+  }
+  .builder-complete-row .builder-field:has(input:focus),
+  .builder-complete-row .builder-field[data-focus='true'],
+  .builder-attention-row .builder-field:has(input:focus),
+  .builder-attention-row .builder-field[data-focus='true'] {
+    background-color: hsl(var(--heroui-content1)) !important;
+    box-shadow: 0 0 0 2px hsl(var(--heroui-primary) / 0.16) !important;
+  }
+
+  .builder-attention-text {
+    color: var(--builder-attention-text);
+  }
+
+  .builder-attention-row .var-token-text,
+  .builder-attention-row input.var-token-text {
+    color: var(--builder-attention-text) !important;
+  }
+
+  .builder-attention-row .placeholder-token::placeholder,
+  .builder-attention-row input.placeholder-token::placeholder {
+    color: var(--builder-attention-text) !important;
+    opacity: 0.65;
+  }
+
+  .builder-attention-chip {
+    background-color: var(--builder-attention-chip-bg);
+    color: var(--builder-attention-text);
+  }
+
+  .builder-attention-dot {
+    background-color: var(--builder-attention-dot);
+  }
+}
+
+@layer base {
+  :root {
+    --ui-scale: 16px;
+    --color-divider: 216 224 235;
+    --radius: 6px;
+
+    /* Light mode */
+    --surface-lowest: #ffffff;
+    --surface: #f7f8fb;
+    --surface-low: #f3f5f9;
+    --surface-high: #e6ebf2;
+    --surface-highest: #d4dce8;
+    --ghost-border: rgba(15, 23, 42, 0.10);
+    --ambient-glow: rgba(15, 23, 42, 0.035);
+    --line-accent: #0a1942;
+  }
+
+  html {
+    font-size: var(--ui-scale);
+  }
+
+  .dark {
+    --surface-lowest: #050609;
+    --surface: #08090c;
+    --surface-low: #121417;
+    --surface-high: #2a2e35;
+    --surface-highest: #3a4049;
+    --ghost-border: rgba(242, 244, 248, 0.15);
+    --ambient-glow: rgba(242, 244, 248, 0.035);
+    --line-accent: #f2f4f8;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    @apply min-w-0 border-divider;
+  }
+
+  .exponent {
+    font-size: 0.9em;
+    vertical-align: sub;
+  }
+}

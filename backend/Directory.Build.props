@@ -1,0 +1,21 @@
+<!-- See https://aka.ms/dotnet/msbuild/customize for more details on customizing your build -->
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- <ArtifactsPath>$(MSBuildThisFileDirectory)artifacts</ArtifactsPath> -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+    <!-- Code Coverage Settings -->
+    <CollectCoverage Condition="'$(Configuration)' == 'Release'">true</CollectCoverage>
+    <CoverletOutputFormat>opencover,cobertura</CoverletOutputFormat>
+    <Include>[Application]*,[Domain]*,[Infrastructure]*,[Web]*</Include>
+    <Exclude>[*Tests]*,[*Test]*,[*.Tests]*,[*.Test]*</Exclude>
+    <ExcludeByFile>**/Program.cs,**/Startup.cs,**/GlobalUsings.cs</ExcludeByFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.Drawing.EnableUnixSupport" Value="true" />
+  </ItemGroup>
+</Project>
