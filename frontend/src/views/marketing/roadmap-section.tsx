@@ -33,13 +33,13 @@ const roadmapPhases = [
     status: 'next' as const,
     label: 'In Progress',
     title: 'Now',
-    items: ['Lite single-container mode', 'Latency benchmark vs. raw Gotenberg', 'Clearer template-error messages']
+    items: ['Template gallery — import ready-made templates']
   },
   {
     status: 'later' as const,
     label: 'Planned',
     title: 'Next',
-    items: ['MCP package on npm', 'Python & Go SDK', 'Batch generation API']
+    items: ['Create templates with AI', 'MCP package on npm']
   },
   {
     status: 'later' as const,
@@ -58,7 +58,7 @@ const RoadmapSection = () => (
         viewport={{ once: true }}
         transition={{ duration: 0.5 }}
         className='mb-14'>
-        <h2 className='font-headline mb-3 text-2xl font-bold text-foreground md:text-3xl'>Looking forward.</h2>
+        <h2 className='mb-3 font-headline text-2xl font-bold text-foreground md:text-3xl'>Looking forward.</h2>
         <p className='max-w-xl text-sm text-default-600'>
           Qorstack Report is actively developed in the open. Supporters get to vote on what ships first.
         </p>
@@ -107,7 +107,7 @@ const RoadmapSection = () => (
                     {phase.title}
                   </h3>
                   <span
-                    className={`font-label rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    className={`rounded-full px-2 py-0.5 font-label text-[10px] font-bold uppercase tracking-wider ${
                       phase.status === 'live' ? 'bg-primary text-primary-foreground' : 'bg-content3 text-default-500'
                     }`}>
                     {phase.label}

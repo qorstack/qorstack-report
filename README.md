@@ -120,8 +120,8 @@ See the full reference at [report.qorstack.com/docs](https://report.qorstack.com
 ## Roadmap
 
 - **Shipped** — REST API; DOCX/XLSX → PDF/DOCX/XLSX; multi-arch images (incl. Apple Silicon); AGENTS.md + MCP server; runnable examples.
-- **Now** — lite single-container mode; latency benchmark vs. raw Gotenberg; clearer template-error messages.
-- **Next** — MCP package on npm; Python & Go SDKs; batch generation API.
+- **Now** — template gallery (import ready-made templates); lite single-container mode; clearer template-error messages.
+- **Next** — create templates with AI; MCP package on npm; Python & Go SDKs; batch generation API.
 - **Exploring** — template marketplace; webhooks.
 
 Want something prioritized? [Open an issue](https://github.com/qorstack/qorstack-report/issues).
