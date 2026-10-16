@@ -1,114 +1,128 @@
 'use client'
 
-import React from 'react'
+import React, { Suspense, useCallback, useEffect, useState } from 'react'
 import { Button } from '@heroui/react'
-import { useRouter } from 'next/navigation'
-import Image from 'next/image'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Icon from '@/components/icon'
-import SwitchTheme from '@/components/switch-theme'
+import { Logo } from '@/components/brand/Logo'
+import { checkServerHealth } from '@/api/health'
 
-export default function CloseServerPage() {
+type Probe = 'idle' | 'checking' | 'down' | 'up'
+
+const AUTO_RETRY_SECONDS = 15
+
+const ServiceUnavailable = () => {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [probe, setProbe] = useState<Probe>('idle')
+  const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [countdown, setCountdown] = useState(AUTO_RETRY_SECONDS)
+
+  // Only same-site paths are followed back after the API is reachable again.
+  const target = (() => {
+    const raw = searchParams.get('redirectUrl') || '/'
+    try {
+      const decoded = decodeURIComponent(raw)
+      if (decoded.startsWith('/') && !decoded.startsWith('//')) return decoded
+      const url = new URL(decoded)
+      return url.origin === window.location.origin ? `${url.pathname}${url.search}` : '/'
+    } catch {
+      return '/'
+    }
+  })()
+
+  const safeTarget = target.startsWith('/close-server') ? '/' : target
+
+  const tryAgain = useCallback(async () => {
+    setProbe('checking')
+    try {
+      await checkServerHealth()
+      setProbe('up')
+      router.replace(safeTarget)
+    } catch {
+      setProbe('down')
+    } finally {
+      setLastChecked(new Date())
+      setCountdown(AUTO_RETRY_SECONDS)
+    }
+  }, [router, safeTarget])
+
+  // Check once on arrival, then every 15 s while the page is open.
+  useEffect(() => {
+    void tryAgain()
+  }, [tryAgain])
+
+  useEffect(() => {
+    if (probe !== 'down') return
+    const timer = setInterval(() => {
+      setCountdown(c => {
+        if (c <= 1) {
+          void tryAgain()
+          return AUTO_RETRY_SECONDS
+        }
+        return c - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [probe, tryAgain])
+
+  const status =
+    probe === 'checking'
+      ? { icon: 'lucide:loader-circle', text: 'Checking the API…', spin: true, tone: 'text-default-500' }
+      : probe === 'up'
+        ? { icon: 'lucide:check-circle-2', text: 'The API is back. Returning you…', spin: false, tone: 'text-success' }
+        : { icon: 'lucide:circle-alert', text: 'The API is not responding.', spin: false, tone: 'text-danger' }
 
   return (
-    <div className='relative flex min-h-screen flex-col overflow-hidden bg-background text-foreground selection:bg-primary-100 selection:text-primary-900'>
-      {/* Dot grid texture — light mode only */}
-      <div className='pointer-events-none absolute inset-0 bg-dots opacity-20 dark:hidden' />
+    <div className='flex min-h-screen flex-col bg-background text-foreground'>
+      <header className='flex items-center border-b border-divider px-4 py-4 sm:px-6'>
+        <Logo size={26} />
+      </header>
 
-      {/* Soft primary glow — light mode only */}
-      <div className='pointer-events-none absolute -left-48 -top-48 h-[600px] w-[600px] rounded-full bg-primary/5 blur-[120px] dark:hidden' />
-
-      {/* Vertical grid lines */}
-      <div className='pointer-events-none absolute inset-y-0 right-[8%] hidden w-px bg-gradient-to-b from-transparent via-default-300/25 to-transparent dark:via-default-500/10 lg:block' />
-      <div className='pointer-events-none absolute inset-y-0 left-[8%] hidden w-px bg-gradient-to-b from-transparent via-default-300/15 to-transparent dark:via-default-500/6 lg:block' />
-
-      {/* Top bar */}
-      <div className='relative z-10 flex items-center justify-between border-b border-default-200/70 px-6 py-3.5'>
-        <div className='flex items-center gap-2.5'>
-          <Image src='/images/logo/logo.png' alt='Qorstack Report' width={26} height={26} className='rounded-lg' />
-          <span className='font-headline text-sm font-bold tracking-tight text-foreground'>Qorstack Report</span>
-        </div>
-        <div className='flex items-center gap-3'>
-          <span className='flex items-center gap-2 font-label text-[10px] font-bold uppercase tracking-[0.1em] text-danger'>
-            <span className='h-1.5 w-1.5 animate-pulse rounded-full bg-danger' />
-            <span>Service Unavailable</span>
-          </span>
-          <SwitchTheme />
-        </div>
-      </div>
-
-      {/* Main content */}
-      <div className='relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16'>
-        {/* Ghost 503 */}
-        <div
-          aria-hidden
-          className='pointer-events-none absolute select-none font-headline font-black text-content3 dark:opacity-30'
-          style={{ fontSize: 'clamp(8rem, 30vw, 22rem)', lineHeight: 1 }}>
-          503
-        </div>
-
-        <div className='relative z-10 flex max-w-md flex-col items-center gap-8 text-center'>
-          {/* Logo focal point */}
-          <div className='flex flex-col items-center gap-3'>
-            <div className='flex h-16 w-16 items-center justify-center rounded-2xl border border-default-200 bg-content1 shadow-sm'>
-              <Image src='/images/logo/logo.png' alt='Qorstack Report' width={40} height={40} className='rounded-xl' />
-            </div>
-            <span className='font-label text-[10px] font-bold uppercase tracking-[0.1em] text-default-400'>
-              Qorstack Report
-            </span>
-          </div>
-
-          {/* Heading */}
-          <div className='space-y-3'>
-            <h1
-              className='font-headline font-bold leading-[1.02] tracking-[-0.028em] text-foreground'
-              style={{ fontSize: 'clamp(2.25rem, 1.6rem + 3vw, 3.5rem)' }}>
-              System{' '}
-              <span className='italic text-primary'>Maintenance</span>
-            </h1>
-            <p className='font-mono text-sm leading-relaxed text-default-500'>
-              Our servers are currently undergoing scheduled maintenance
-              <br className='hidden sm:block' />
-              or are temporarily unavailable.
+      <main className='flex flex-1 items-center justify-center px-4 py-16 sm:px-6'>
+        <div className='flex w-full max-w-md flex-col gap-6 border border-divider bg-content1 p-8'>
+          <div className='flex flex-col gap-3'>
+            <h1 className='text-[24px] font-semibold text-foreground'>Can’t reach the server</h1>
+            <p className='text-[15px] leading-relaxed text-default-500'>
+              The web app could not connect to the Qorstack API. It may be restarting, under maintenance, or your network
+              may be offline. Nothing you saved is lost.
             </p>
           </div>
 
-          {/* Terminal status */}
-          <div className='w-full overflow-hidden rounded-lg border border-default-200 bg-content2 font-mono text-xs'>
-            <div className='flex items-center gap-1.5 border-b border-default-200 bg-content3 px-4 py-2.5'>
-              <span className='h-2.5 w-2.5 rounded-full bg-[#ff5f57]' />
-              <span className='h-2.5 w-2.5 rounded-full bg-[#febc2e]' />
-              <span className='h-2.5 w-2.5 rounded-full bg-[#28c840]' />
-              <span className='ml-2 text-[10px] tracking-wide text-default-500'>system.log</span>
-            </div>
-            <div className='flex items-center gap-3 px-4 py-3'>
-              <span className='w-28 shrink-0 text-default-500'>STATUS</span>
-              <span className='text-default-400'>→</span>
-              <span className='rounded bg-danger-100 px-2 py-0.5 font-semibold text-danger dark:bg-danger-100/20'>
-                503 SERVICE UNAVAILABLE
+          <div role='status' aria-live='polite' className='flex flex-col gap-1 border border-divider bg-content2 px-4 py-3'>
+            <span className={`flex items-center gap-2 text-[14px] font-medium ${status.tone}`}>
+              <Icon icon={status.icon} className={`h-4 w-4 ${status.spin ? 'animate-spin' : ''}`} aria-hidden />
+              {status.text}
+            </span>
+            {probe === 'down' && (
+              <span className='text-[13px] text-default-500'>
+                {lastChecked ? `Last checked ${lastChecked.toLocaleTimeString()}. ` : ''}Retrying in {countdown} s.
               </span>
-            </div>
+            )}
           </div>
 
-          {/* Action */}
           <Button
-            onPress={() => router.push('/')}
-            className='w-full font-medium'
-            variant='flat'
-            size='lg'
-            radius='md'
-            startContent={<Icon icon='lucide:arrow-left' className='h-4 w-4' />}>
-            Back to Login
+            color='primary'
+            className='h-11 font-semibold'
+            isLoading={probe === 'checking'}
+            onPress={() => void tryAgain()}
+            startContent={probe !== 'checking' && <Icon icon='lucide:refresh-cw' className='h-4 w-4' />}>
+            Try again
           </Button>
-        </div>
-      </div>
 
-      {/* Bottom bar */}
-      <div className='relative z-10 flex items-center justify-center border-t border-default-200/70 px-6 py-3'>
-        <span className='font-label text-[10px] text-default-400'>
-          If this persists, please contact support.
-        </span>
-      </div>
+          <p className='text-[13px] text-default-500'>
+            Running it yourself? Check that the backend container is up: <code className='font-mono'>docker compose ps</code>
+          </p>
+        </div>
+      </main>
     </div>
+  )
+}
+
+export default function CloseServerPage() {
+  return (
+    <Suspense>
+      <ServiceUnavailable />
+    </Suspense>
   )
 }

@@ -2,14 +2,15 @@
 # =============================================================================
 # verify.sh — smoke-test a running Qorstack Report stack
 #
-# Confirms the stack is actually serving: the API health endpoint responds and
-# the web UI is reachable. Compose-agnostic — it only needs the exposed ports,
-# so it works the same whether you started the stack with `docker compose up`
-# or `make up`.
+# Confirms the stack is actually serving: the web UI and the API share one port
+# (web UI at /, API under /api). Compose-agnostic — it only needs that port.
 #
-# Usage:
-#   bash selfhost/verify.sh
-#   API_URL=http://host:8080 WEB_URL=http://host:3000 bash selfhost/verify.sh
+# Usage (in the selfhost/ folder, after `docker compose up -d`):
+#   bash verify.sh
+#   APP_URL=http://host:8081 bash verify.sh     # check another address
+#
+# Default address: http://localhost:$APP_PORT, with APP_PORT read from the .env next to
+# this script (8080 if unset) — so a remapped port is checked without extra flags.
 #
 # Note: this checks that the services are up and serving. It does NOT generate a
 # document — a full generation test additionally needs an API key (X-API-Key)
@@ -17,8 +18,17 @@
 # =============================================================================
 set -euo pipefail
 
-API_URL="${API_URL:-http://localhost:8080}"
-WEB_URL="${WEB_URL:-http://localhost:3000}"
+# Last KEY=value in the .env next to this script (read, not sourced: values may hold shell characters).
+env_value() {
+  local file
+  file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.env"
+  [ -f "$file" ] || return 0
+  { grep -E "^[[:space:]]*$1=" "$file" || true; } | tail -n 1 | cut -d= -f2- | sed -e 's/[[:space:]]#.*//' | tr -d "\r\"' \t"
+}
+
+APP_PORT="${APP_PORT:-$(env_value APP_PORT)}"
+APP_URL="${APP_URL:-${API_URL:-http://localhost:${APP_PORT:-8080}}}"
+APP_URL="${APP_URL%/}"
 
 fail=0
 
@@ -34,8 +44,8 @@ check() {
 }
 
 echo "Verifying Qorstack Report stack..."
-check "API health" "$API_URL/health" "200"
-check "Web UI"      "$WEB_URL"        "200 307 308"
+check "API health" "$APP_URL/api/health" "200"
+check "Web UI"     "$APP_URL/login"      "200 301 302 307 308"
 
 if [ "$fail" -eq 0 ]; then
   echo "All checks passed — the stack is serving."

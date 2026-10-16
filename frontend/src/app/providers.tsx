@@ -10,6 +10,7 @@ import { ProjectProvider } from '@/providers/ProjectContext'
 import AuthModal from '@/components/auth/AuthModal'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { ThemeProvider } from 'next-themes'
+import { useAppConfig } from '@/hooks/use-app-config'
 
 import 'swiper/css'
 import 'swiper/css/pagination'
@@ -19,10 +20,11 @@ import '@/configs/i18n'
 import '@/iconify-bundle/icons-bundle-react'
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  const { googleClientId } = useAppConfig()
   return (
     <ReactQueryProvider>
-      <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID_HERE'}>
-        <ThemeProvider attribute='class' defaultTheme='dark' enableSystem={false}>
+      <GoogleOAuthProvider clientId={googleClientId || 'YOUR_GOOGLE_CLIENT_ID_HERE'}>
+        <ThemeProvider attribute='class' defaultTheme='dark' forcedTheme='dark' enableSystem={false}>
           <ReduxProvider store={store}>
             <NextUIProvider>
               <DayjsProvider>

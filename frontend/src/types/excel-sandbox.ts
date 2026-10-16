@@ -1,4 +1,4 @@
-import type { SortDefinition } from '@/api/generated/main-service/apiGenerated'
+import type { BuilderSortDefinition as SortDefinition } from '@/types/pdf-sandbox'
 import type { ReplaceItem, ImageItem, QrCodeItem, BarcodeItem } from '@/components/pdf/SandboxInputs'
 
 export interface ConditionalFormatRule {

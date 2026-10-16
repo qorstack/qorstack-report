@@ -1,94 +1,49 @@
-'use client'
+import type { JSX } from 'react'
+import { PRO_SUMMARY } from '@/components/docs/plans'
+import { FaqAccordion, type FaqItem } from '@/components/landing/FaqAccordion'
+import { Reveal } from '@/components/landing/Reveal'
+import { SectionHeader, Wrap } from './landing-ui'
 
-import Icon from '@/components/icon'
-import { motion } from 'framer-motion'
-import { useState } from 'react'
-
-const FAQ_ITEMS = [
+const FAQ: FaqItem[] = [
   {
-    q: 'Is Qorstack Report open source?',
-    a: 'Yes. The core engine is MIT licensed — you can self-host, modify, and use it commercially for free. Pro features (versioning, PDF security, team members) require a one-time license.'
+    question: 'What do I need to run it?',
+    answer:
+      'Docker. One compose file starts the app (web UI + API in one container on one port), PostgreSQL, RustFS storage and Gotenberg for PDF conversion.'
   },
   {
-    q: 'How does the Pro license work?',
-    a: 'It\'s a one-time payment with a lifetime license — valid across unlimited instances. No subscriptions. Price increases as early-bird seats fill — your rate is locked in at purchase.'
+    question: 'What template formats does it use?',
+    answer:
+      'Word (.docx) and Excel (.xlsx). Design the layout in the tools your team already uses, add variables, tables, images, QR codes or barcodes, and the API fills them at runtime.'
   },
   {
-    q: 'What template format does it use?',
-    a: 'Word (.docx) and Excel (.xlsx) templates. Design the layout in the tools your team already uses, add variables, tables, images, QR codes, or barcodes, and the API fills them at runtime.'
+    question: 'What can I get back?',
+    answer:
+      'Word templates render to PDF or DOCX; Excel templates render to XLSX with totals, number formats, conditional colours and one sheet per group. ZIP output is available when a workflow needs bundled files.'
   },
   {
-    q: 'What output formats are supported?',
-    a: 'Render Word templates to PDF or DOCX, render Excel templates to XLSX, and enable ZIP output when a workflow needs bundled files. PDF output also supports password protection and watermark settings.'
+    question: 'Will the PDF match my Word file?',
+    answer:
+      "Upload the fonts your template uses and the layout follows Word's spacing and line breaks — Thai text included."
   },
   {
-    q: 'Can I use custom fonts?',
-    a: 'Yes. Google Fonts are built-in and resolve automatically. You can also upload WOFF/WOFF2 files directly to your self-hosted instance.'
+    question: 'Can an AI agent generate documents?',
+    answer: 'Yes. The bundled MCP server lets agents list templates, render documents and spreadsheets, and check job status.'
   },
   {
-    q: 'How do I integrate it into my app?',
-    a: 'Via REST API, Postman, or the typed SDK examples for Node.js and .NET. Send a template key plus a JSON payload, then download the generated document from your self-hosted instance.'
-  },
+    question: 'What does Pro add?',
+    answer: `${PRO_SUMMARY} — as a one-time lifetime licence. Everything else is in the free version.`
+  }
 ]
 
-const FAQItem = ({ q, a, delay }: { q: string; a: string; delay: number }) => {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.4, delay }}
-      className='border-b border-default-200 last:border-b-0'>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className='flex w-full items-start justify-between gap-4 py-5 text-left'>
-        <span className='text-sm font-semibold text-foreground'>{q}</span>
-        <Icon
-          icon='lucide:chevron-down'
-          className={`mt-0.5 h-4 w-4 shrink-0 text-default-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
-      {open && (
-        <p className='pb-5 text-sm leading-relaxed text-default-600'>{a}</p>
-      )}
-    </motion.div>
-  )
-}
-
-const FAQSection = () => (
-  <section className='bg-content1 py-24'>
-    <div className='mx-auto max-w-7xl px-4 sm:px-6 lg:px-8'>
-      <div className='grid gap-16 lg:grid-cols-[280px_1fr]'>
-
-        {/* Left label */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}>
-          <p className='font-label mb-3 text-xs font-bold uppercase tracking-[0.2em] text-primary'>FAQ</p>
-          <h2 className='mb-3 text-2xl font-bold tracking-tight text-foreground md:text-3xl'>
-            Common Questions
-          </h2>
-          <p className='text-sm leading-relaxed text-default-500'>
-            Can&apos;t find an answer?{' '}
-            <a href='mailto:qorstack@gmail.com' className='text-primary underline underline-offset-2'>
-              Email us
-            </a>
-          </p>
-        </motion.div>
-
-        {/* Right accordion */}
-        <div className='divide-y-0'>
-          {FAQ_ITEMS.map((item, i) => (
-            <FAQItem key={i} q={item.q} a={item.a} delay={i * 0.05} />
-          ))}
-        </div>
-      </div>
-    </div>
+const FaqSection = (): JSX.Element => (
+  <section id='faq' className='scroll-mt-[68px] border-b border-divider bg-content1 py-[120px]'>
+    <Wrap>
+      <SectionHeader no='06' label='FAQ' title='Questions.' />
+      <Reveal>
+        <FaqAccordion items={FAQ} />
+      </Reveal>
+    </Wrap>
   </section>
 )
 
-export default FAQSection
+export default FaqSection

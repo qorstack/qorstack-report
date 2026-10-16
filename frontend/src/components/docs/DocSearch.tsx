@@ -12,6 +12,36 @@ export interface SearchItem {
 }
 
 const DEFAULT_SEARCH_ITEMS: SearchItem[] = [
+  // Quick start
+  {
+    id: 'quick-start',
+    title: 'Quick start',
+    section: 'Getting Started',
+    keywords: ['quick start', 'first request', 'curl', 'hello world', 'start', 'example'],
+    type: 'section'
+  },
+  // Fonts & troubleshooting
+  {
+    id: 'fonts',
+    title: 'Fonts & troubleshooting',
+    section: 'Help',
+    keywords: ['font', 'fonts', 'upload font', 'sync', 'ttf', 'otf', 'woff', 'missing font', 'wrong font', 'fallback'],
+    type: 'section'
+  },
+  {
+    id: 'fonts',
+    title: 'Thai fonts',
+    section: 'Fonts & troubleshooting',
+    keywords: ['thai', 'ภาษาไทย', 'sarabun', 'th sarabun', 'angsana', 'vowel', 'tone mark', 'สระลอย'],
+    type: 'subsection'
+  },
+  {
+    id: 'fonts',
+    title: 'Missing or wrong font',
+    section: 'Fonts & troubleshooting',
+    keywords: ['missing font', 'wrong font', 'font not found', 'problem', 'overlap', 'troubleshooting'],
+    type: 'subsection'
+  },
   // Overview
   {
     id: 'overview',
@@ -280,7 +310,7 @@ const DEFAULT_SEARCH_ITEMS: SearchItem[] = [
     keywords: ['code', 'example', 'json', 'pdf', 'api', 'request', 'response', 'snippet'],
     type: 'page',
     path: '/'
-  },
+  }
 
   // Pricing — Hidden during Beta / Early Access phase
   // {
@@ -396,32 +426,37 @@ const DocSearch = ({ items = DEFAULT_SEARCH_ITEMS, onNavigate, onClose }: DocSea
   }
 
   return (
-    <div className='fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]'>
+    <div
+      className='fixed inset-0 z-[100] flex items-start justify-center px-4 pt-[15vh]'
+      role='dialog'
+      aria-modal='true'
+      aria-label='Search documentation'>
       {/* Backdrop */}
-      <div className='absolute inset-0 bg-black/50 backdrop-blur-sm' onClick={onClose} />
+      <div className='absolute inset-0 bg-overlay' onClick={onClose} aria-hidden='true' />
 
       {/* Modal */}
-      <div className='relative w-full max-w-xl rounded-xl border border-default-200 bg-content1 shadow-2xl dark:bg-content2'>
+      <div className='relative w-full max-w-xl border border-default-300 bg-content1 shadow-[0_24px_60px_-24px_rgba(20,20,20,.3)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,.8)]'>
         {/* Search Input */}
-        <div className='flex items-center gap-3 border-b border-default-200 px-4 py-3'>
-          <Icon icon='solar:magnifer-linear' className='shrink-0 text-lg text-default-400' />
+        <div className='flex items-center gap-3 border-b border-divider px-4 py-3'>
+          <Icon icon='solar:magnifer-linear' className='shrink-0 text-lg text-default-500' aria-hidden='true' />
           <input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder='Search documentation...'
-            className='flex-1 bg-transparent text-sm text-foreground placeholder-default-400 outline-none'
+            aria-label='Search documentation'
+            className='flex-1 bg-transparent text-[15px] text-foreground placeholder-default-400 outline-none'
           />
-          <kbd className='hidden rounded border border-default-200 px-1.5 py-0.5 font-mono text-[10px] text-default-500 sm:inline-block'>
+          <kbd className='hidden border border-default-300 px-1.5 py-0.5 font-mono text-[11px] text-default-500 sm:inline-block'>
             ESC
           </kbd>
         </div>
 
         {/* Results */}
-        <div className='max-h-80 overflow-y-auto p-2'>
+        <div className='max-h-80 overflow-y-auto py-1'>
           {results.length === 0 ? (
-            <div className='flex flex-col items-center gap-2 py-8 text-default-400'>
+            <div className='flex flex-col items-center gap-2 py-8 text-default-500'>
               <Icon icon='solar:document-text-linear' className='text-3xl' />
               <p className='text-sm'>No results found for &quot;{query}&quot;</p>
             </div>
@@ -430,12 +465,13 @@ const DocSearch = ({ items = DEFAULT_SEARCH_ITEMS, onNavigate, onClose }: DocSea
               {results.map((item, idx) => (
                 <li key={`${item.id}-${item.title}-${idx}`}>
                   <button
+                    type='button'
                     onClick={() => handleSelect(item)}
                     onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                    className={`relative flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary ${
                       selectedIndex === idx
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-foreground hover:bg-content3 dark:hover:bg-content3'
+                        ? 'bg-content2 text-foreground before:opacity-100'
+                        : 'text-foreground before:opacity-0 hover:bg-content2'
                     }`}>
                     <Icon
                       icon={TYPE_ICONS[item.type] || 'solar:document-text-linear'}
@@ -456,15 +492,15 @@ const DocSearch = ({ items = DEFAULT_SEARCH_ITEMS, onNavigate, onClose }: DocSea
         </div>
 
         {/* Footer */}
-        <div className='flex items-center gap-4 border-t border-default-200 px-4 py-2 text-[11px] text-default-500'>
+        <div className='flex items-center gap-4 border-t border-divider px-4 py-2 font-mono text-[11px] uppercase tracking-[0.1em] text-default-500'>
           <span className='flex items-center gap-1'>
-            <kbd className='rounded border border-default-300 px-1 py-0.5 font-mono'>↑↓</kbd> Navigate
+            <kbd className='border border-default-300 px-1 py-0.5 font-mono'>↑↓</kbd> Navigate
           </span>
           <span className='flex items-center gap-1'>
-            <kbd className='rounded border border-default-300 px-1 py-0.5 font-mono'>↵</kbd> Select
+            <kbd className='border border-default-300 px-1 py-0.5 font-mono'>↵</kbd> Select
           </span>
           <span className='flex items-center gap-1'>
-            <kbd className='rounded border border-default-300 px-1 py-0.5 font-mono'>Esc</kbd> Close
+            <kbd className='border border-default-300 px-1 py-0.5 font-mono'>Esc</kbd> Close
           </span>
         </div>
       </div>

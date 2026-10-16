@@ -13,7 +13,7 @@ namespace QorstackReportService.Web.Endpoints;
 /// </summary>
 public class Features : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         app.MapGroup("/features")
             .WithTags("Features")
@@ -31,7 +31,9 @@ public class Features : EndpointGroupBase
             MaxTemplateVersions: flags.MaxTemplateVersions,
             CustomTemplateKey: flags.CustomTemplateKey,
             DownloadAsZip: flags.DownloadAsZip,
-            AutoDetectVariables: flags.AutoDetectVariables
+            AutoDetectVariables: flags.AutoDetectVariables,
+            AsyncRender: flags.AsyncRender,
+            ProjectTransfer: flags.ProjectTransfer
         ));
 }
 
@@ -43,5 +45,7 @@ public record FeatureFlagsResponse(
     int MaxTemplateVersions,
     bool CustomTemplateKey,
     bool DownloadAsZip,
-    bool AutoDetectVariables
+    bool AutoDetectVariables,
+    bool AsyncRender,
+    bool ProjectTransfer
 );

@@ -13,7 +13,7 @@ namespace QorstackReportService.Web.Endpoints;
 
 public class Settings : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/settings")
             .RequireAuthorization()

@@ -56,10 +56,10 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
 
       if (sorted.length > 0) {
         const isFirstFetch = !hasInitialized.current
-        const current = currentProjectRef.current
-        const nextProject: ProjectDto = isFirstFetch
-          ? sorted[0]
-          : (current ? sorted.find(p => p.id === current.id) : null) ?? sorted[0]
+        // First fetch: resume the last-used project if it still exists. Later fetches keep the current one.
+        // Pages under /project/{id} override this with the id in the URL (see ProjectRouteGate).
+        const preferredId = isFirstFetch ? localStorage.getItem('currentProjectId') : currentProjectRef.current?.id
+        const nextProject: ProjectDto = (preferredId ? sorted.find(p => p.id === preferredId) : null) ?? sorted[0]
         setCurrentProject(nextProject)
         if (nextProject.id) localStorage.setItem('currentProjectId', nextProject.id)
       } else {

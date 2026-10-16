@@ -9,16 +9,20 @@ using QorstackReportService.Application.Projects.Commands.CreateProject;
 using QorstackReportService.Application.Projects.Commands.CreateProjectApiKey;
 using QorstackReportService.Application.Projects.Commands.DeleteProject;
 using QorstackReportService.Application.Projects.Commands.UpdateProject;
+using QorstackReportService.Application.Projects.Commands.UpdateLogSettings;
 using QorstackReportService.Application.Projects.Models;
 using QorstackReportService.Application.Projects.Queries.GetProjectById;
+using QorstackReportService.Application.Projects.Queries.GetLogSettings;
 using QorstackReportService.Application.Projects.Queries.GetProjects;
+using QorstackReportService.Application.Projects.Transfer;
+using Microsoft.Extensions.Configuration;
 using QorstackReportService.Web.Infrastructure;
 
 namespace QorstackReportService.Web.Endpoints;
 
 public class Projects : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/projects")
             .RequireAuthorization()
@@ -42,7 +46,71 @@ public class Projects : EndpointGroupBase
 
         group.MapPost("/{id:guid}/api-keys", CreateApiKey)
             .Produces<ProjectApiKeyDto>(StatusCodes.Status200OK);
+
+        group.MapGet("/{id:guid}/log-settings", GetLogSettings)
+            .Produces<LogSettingsDto>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Get log settings for a project")
+            .WithDescription("Returns whether logging is enabled and the retention period in days.");
+
+        group.MapPut("/{id:guid}/log-settings", UpdateLogSettings)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound)
+            .WithSummary("Update log settings for a project")
+            .WithDescription("Configure whether report job logging is enabled and how many days logs are retained (0 = keep forever).");
+
+        // Pro: move a whole project between deployments as one ZIP.
+        group.MapGet("/{id:guid}/export", ExportProject)
+            .Produces(StatusCodes.Status200OK, contentType: "application/zip")
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .WithSummary("Export the project as a ZIP (Pro)")
+            .WithDescription("Latest active version of every template, its saved test data and builder images, and uploaded fonts. API keys, members and history are not included.");
+
+        var importLimitMb = Math.Max(1, app.ServiceProvider.GetRequiredService<IConfiguration>().GetValue("Transfer:MaxZipMb", 200));
+        group.MapPost("/{id:guid}/import", ImportProject)
+            .DisableAntiforgery()
+            .Accepts<IFormFile>("multipart/form-data")
+            .WithMetadata(new TransferBodySizeLimit(importLimitMb * 1024L * 1024L + 1024 * 1024))
+            .WithFormOptions(multipartBodyLengthLimit: importLimitMb * 1024L * 1024L)
+            .Produces<ProjectImportResult>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .WithSummary("Import a project ZIP (Pro)")
+            .WithDescription("dryRun=true returns the plan without changing anything. New templates are created with the same key, newer versions are added, equal or older versions are skipped.");
     }
+
+    public async Task<IResult> ExportProject(IProjectTransferService transfer, Guid id, CancellationToken ct)
+    {
+        var fileName = await transfer.PrepareExportAsync(id, ct);
+        return Results.Stream(stream => transfer.ExportAsync(id, stream, ct), "application/zip", fileName);
+    }
+
+    public async Task<IResult> ImportProject(
+        IProjectTransferService transfer,
+        IConfiguration configuration,
+        Guid id,
+        [FromForm(Name = "file")] IFormFile? file,
+        [FromQuery] bool dryRun,
+        CancellationToken ct)
+    {
+        if (file == null || file.Length == 0)
+            return Results.BadRequest("Choose a .zip file exported from Qorstack.");
+        var maxMb = Math.Max(1, configuration.GetValue("Transfer:MaxZipMb", 200));
+        if (file.Length > maxMb * 1024L * 1024L)
+            return Results.BadRequest($"The file is larger than {maxMb} MB (PROJECT_IMPORT_MAX_MB).");
+
+        // ZipArchive needs a seekable stream; spool to a temp file that is removed on close.
+        var tempPath = Path.Combine(Path.GetTempPath(), $"qorstack-import-{Guid.NewGuid():N}.zip");
+        await using var temp = new FileStream(tempPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+        await file.CopyToAsync(temp, ct);
+        temp.Position = 0;
+
+        var result = await transfer.ImportAsync(id, temp, dryRun, ct);
+        return Results.Ok(result);
+    }
+
 
     public async Task<IResult> GetProjects(ISender sender)
     {
@@ -79,4 +147,22 @@ public class Projects : EndpointGroupBase
         var apiKey = await sender.Send(new CreateProjectApiKeyCommand(id, request.Name));
         return Results.Ok(new ProjectApiKeyDto(apiKey));
     }
+
+    public async Task<IResult> GetLogSettings(ISender sender, Guid id)
+    {
+        var result = await sender.Send(new GetLogSettingsQuery(id));
+        return result != null ? Results.Ok(result) : Results.NotFound();
+    }
+
+    public async Task<IResult> UpdateLogSettings(ISender sender, Guid id, [FromBody] UpdateLogSettingsRequest request)
+    {
+        var success = await sender.Send(new UpdateLogSettingsCommand(id, request.LogEnabled, request.LogRetentionDays));
+        return success ? Results.NoContent() : Results.NotFound();
+    }
+}
+
+/// <summary>Request body limit for project imports (Transfer:MaxZipMb, env PROJECT_IMPORT_MAX_MB).</summary>
+internal sealed class TransferBodySizeLimit(long bytes) : Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata
+{
+    public long? MaxRequestBodySize { get; } = bytes;
 }

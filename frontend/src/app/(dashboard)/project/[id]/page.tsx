@@ -1,403 +1,279 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
-import { Card, CardBody, Button, Progress, Select, SelectItem, Spinner } from '@heroui/react'
-import { BrandChip } from '@/components/ui/BrandChip'
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
+import { Button, Select, SelectItem } from '@heroui/react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useRouteParams } from '@/hooks/use-route-params'
+import { Area, ComposedChart, Line, ResponsiveContainer } from 'recharts'
+import { eachDayOfInterval, endOfMonth, format, parse, startOfMonth } from 'date-fns'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
 import Icon from '@/components/icon'
-import FileIcon from '@/components/FileIcon'
-import { useRouter, useParams } from 'next/navigation'
-import {
-  Area,
-  ResponsiveContainer,
-  Line,
-  ComposedChart,
-  PieChart,
-  Pie,
-  Cell,
-  Bar,
-  BarChart
-} from 'recharts'
+import { PageHeader, PanelHeader } from '@/components/ui/PageHeader'
 import { useProject } from '@/providers/ProjectContext'
 import { api } from '@/api/generated/main-service'
 import {
   DashboardSummaryDto,
-  UsageDataDto,
-  UsageDataPointDto,
   GenerationDto,
-  TemplateBreakdownDto
+  TemplateBreakdownDto,
+  UsageDataDto,
+  UsageDataPointDto
 } from '@/api/generated/main-service/apiGenerated'
-import clsx from 'clsx'
-import { format, startOfMonth, endOfMonth, parse, eachDayOfInterval } from 'date-fns'
-import dayjs from 'dayjs'
-import relativeTime from 'dayjs/plugin/relativeTime'
+import { formatDuration } from '@/utils/formatters'
+import { cn } from '@/utils/cn'
 
 dayjs.extend(relativeTime)
 
-import { formatDuration, formatFileSize } from '@/utils/formatters'
+// App mode is calm: charts stay neutral; colour only appears as small type dots.
+// currentColor + a text token keeps the trend line readable in both themes.
+const CHART_NEUTRAL = 'currentColor'
+// The API reports template types as PDF/Excel; the app calls them Word/Excel (the source file type).
+const typeLabel = (type?: string | null) => ((type || '').toLowerCase().includes('excel') ? 'Excel' : 'Word')
 
-// --- Types ---
-interface MetricDataPoint {
-  name: string
-  value: number
-  color?: string
+/** 0 · half · max with a "nice" max (1, 2, 5 × 10ⁿ) so the axis reads naturally. */
+const niceMax = (value: number) => {
+  if (value <= 4) return 4
+  const pow = 10 ** Math.floor(Math.log10(value))
+  const n = value / pow
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow
 }
-type MetricData = number[] | MetricDataPoint[]
 
-// --- Toolbar ---
-const ProjectToolbar = ({
-  projectName,
-  onSettingsClick,
-  selectedMonth,
-  onMonthChange
-}: {
-  projectName: string
-  onSettingsClick: () => void
-  selectedMonth: string
-  onMonthChange: (month: string) => void
-}) => {
-  const months = useMemo(() => {
+const LABEL = 'text-[14px] font-medium text-default-500'
+
+const formatBytes = (bytes: number | null | undefined): string => {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const isSuccessStatus = (status?: string | null): boolean => {
+  const s = status?.toLowerCase()
+  return s === 'success' || s === 'completed'
+}
+
+const useMonthOptions = () =>
+  useMemo(() => {
     const today = new Date()
-    const result = []
-    for (let i = 0; i < 12; i++) {
+    return Array.from({ length: 12 }, (_, i) => {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      result.push({
-        value: format(d, 'yyyy-MM'),
-        label: format(d, 'MMMM yyyy'),
-        month: format(d, 'MMMM'),
-        year: format(d, 'yyyy')
-      })
-    }
-    return result
+      return { value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy') }
+    })
   }, [])
 
+// --- Status chip ---
+const StatusChip = ({ status }: { status?: string | null }) => {
+  const ok = isSuccessStatus(status)
   return (
-    <div className='flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between'>
-      {/* Project name */}
-      <div className='flex items-center gap-2.5'>
-        <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10'>
-          <Icon icon='lucide:box' className='h-4 w-4 text-primary' />
-        </div>
-        <h1 className='truncate text-base font-bold text-foreground'>{projectName}</h1>
-      </div>
-
-      {/* Controls */}
-      <div className='flex items-center gap-2'>
-        <Select
-          aria-label='Select Month'
-          placeholder='Select Month'
-          selectedKeys={[selectedMonth]}
-          className='flex-1 sm:w-48 sm:flex-none'
-          size='sm'
-          onChange={e => onMonthChange(e.target.value)}
-          startContent={<Icon icon='lucide:calendar' className='h-4 w-4 text-default-400' />}
-          classNames={{
-            value: 'text-sm font-medium',
-            trigger: 'bg-content2 hover:bg-content3 data-[hover=true]:bg-content3'
-          }}
-          renderValue={items =>
-            items.map(item => {
-              const m = months.find(m => m.value === item.key)
-              return (
-                <div key={item.key} className='flex items-center gap-1.5'>
-                  <span className='font-semibold text-foreground'>{m?.month}</span>
-                  <span className='text-default-500'>{m?.year}</span>
-                </div>
-              )
-            })
-          }>
-          {months.map(month => (
-            <SelectItem key={month.value} textValue={month.label}>
-              <div className='flex w-full items-center justify-between gap-8'>
-                <span className='font-medium text-default-700'>{month.month}</span>
-                <span className='rounded-full bg-content3 px-2 py-0.5 text-xs font-bold text-default-400'>
-                  {month.year}
-                </span>
-              </div>
-            </SelectItem>
-          ))}
-        </Select>
-
-        <Button
-          startContent={<Icon icon='lucide:settings' className='h-3.5 w-3.5' />}
-          size='sm'
-          variant='flat'
-          className='shrink-0 bg-content2 text-xs font-bold text-default-600 hover:bg-content3'
-          onPress={onSettingsClick}>
-          Settings
-        </Button>
-      </div>
-    </div>
+    <span className='inline-flex items-center gap-2 text-[13px] capitalize text-default-500'>
+      <Icon
+        icon={ok ? 'lucide:check-circle-2' : 'lucide:alert-circle'}
+        className={cn('h-3.5 w-3.5', ok ? 'text-success' : 'text-danger')}
+      />
+      {status?.toLowerCase() || 'unknown'}
+    </span>
   )
 }
 
-// --- Metric Card ---
-const ICON_MAP: Record<string, string> = {
-  'Total Requests': 'lucide:activity',
-  'Success Rate': 'lucide:check-circle-2',
-  'Total Templates': 'lucide:layout-template',
-  'Avg Latency': 'lucide:timer'
-}
-
-const MetricCard = ({
-  title,
+// --- Stat cell ---
+const StatCell = ({
+  label,
   value,
-  type,
-  data,
-  chartColor = '#dc2626',
-  badgeValue,
-  badgeColor = 'text-success-500',
-  limit
+  hint,
+  trend,
+  trendColor = CHART_NEUTRAL,
+  children
 }: {
-  title: string
+  label: string
   value: string | number
-  type: 'sparkline' | 'donut' | 'pie' | 'bar' | 'breakdown'
-  data: MetricData
-  chartColor?: string
-  badgeValue?: string
-  badgeColor?: string
-  limit?: string
-}) => {
-  const icon = ICON_MAP[title] || 'lucide:bar-chart-2'
-
-  return (
-    <Card className='dashboard-card shadow-none'>
-      <CardBody className='p-5'>
-        <div className='flex items-start justify-between gap-3'>
-          {/* Left: icon + value + title */}
-          <div className='flex min-w-0 flex-1 flex-col gap-3'>
-            <div className='flex items-center gap-2'>
-              <div className='flex h-8 w-8 items-center justify-center rounded-lg bg-default-100 text-default-500'>
-                <Icon icon={icon} className='h-4 w-4' />
-              </div>
-              {badgeValue && (
-                <span className={clsx('text-[10px] font-bold', badgeColor)}>
-                  {badgeValue}
-                  <Icon icon='lucide:arrow-up-right' className='ml-0.5 inline h-3 w-3' />
-                </span>
-              )}
-            </div>
-
-            <div>
-              <div className='flex items-baseline gap-1.5'>
-                <span className='text-2xl font-extrabold tracking-tight text-foreground'>{value}</span>
-                {limit && <span className='text-xs font-medium text-default-400'>{limit}</span>}
-              </div>
-              <span className='mt-1 block text-[10px] font-bold uppercase tracking-wider text-default-400'>{title}</span>
-            </div>
-          </div>
-
-          {/* Right: chart (only non-breakdown types) */}
-          {type !== 'breakdown' && (
-            <div className='h-14 w-24 shrink-0'>
-              <ResponsiveContainer width='100%' height='100%'>
-                {type === 'sparkline' ? (
-                  <ComposedChart data={(data as number[]).map(v => ({ v }))}>
-                    <defs>
-                      <linearGradient id={`grad-${title.replace(/\W/g, '')}`} x1='0' y1='0' x2='0' y2='1'>
-                        <stop offset='0%' stopColor={chartColor} stopOpacity={0.18} />
-                        <stop offset='100%' stopColor={chartColor} stopOpacity={0.01} />
-                      </linearGradient>
-                    </defs>
-                    <Area
-                      type='basis'
-                      dataKey='v'
-                      stroke='none'
-                      fill={`url(#grad-${title.replace(/\W/g, '')})`}
-                      isAnimationActive={false}
-                    />
-                    <Line
-                      type='basis'
-                      dataKey='v'
-                      stroke={chartColor}
-                      strokeWidth={2}
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  </ComposedChart>
-                ) : type === 'bar' ? (
-                  <BarChart data={(data as number[]).map(v => ({ v }))}>
-                    <Bar dataKey='v' fill={chartColor} radius={[2, 2, 0, 0]} />
-                  </BarChart>
-                ) : (
-                  <PieChart>
-                    <Pie
-                      data={data as MetricDataPoint[]}
-                      cx='50%'
-                      cy='50%'
-                      innerRadius={type === 'donut' ? 20 : 0}
-                      outerRadius={28}
-                      paddingAngle={0}
-                      dataKey='value'
-                      stroke='none'>
-                      {(data as MetricDataPoint[]).map(entry => (
-                        <Cell key={`cell-${entry.name}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                )}
-              </ResponsiveContainer>
-            </div>
-          )}
+  hint?: string
+  trend?: number[]
+  trendColor?: string
+  children?: React.ReactNode
+}) => (
+  <div className='flex min-h-[96px] flex-col justify-between gap-3 bg-content1 px-5 py-4'>
+    <div className='flex items-start justify-between gap-3'>
+      <div className='min-w-0'>
+        <p className={LABEL}>{label}</p>
+        <p className='mt-1 text-[24px] font-semibold leading-tight tabular-nums text-foreground'>{value}</p>
+        {hint && <p className='mt-0.5 text-[13px] text-default-500'>{hint}</p>}
+      </div>
+      {trend && trend.length > 1 && (
+        <div className='h-10 w-24 shrink-0 text-default-500' aria-hidden>
+          <ResponsiveContainer width='100%' height='100%'>
+            <ComposedChart data={trend.map(v => ({ v }))}>
+              <defs>
+                <linearGradient id={`grad-${label.replace(/\W/g, '')}`} x1='0' y1='0' x2='0' y2='1'>
+                  <stop offset='0%' stopColor={trendColor} stopOpacity={0.2} />
+                  <stop offset='100%' stopColor={trendColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type='linear'
+                dataKey='v'
+                stroke='none'
+                fill={`url(#grad-${label.replace(/\W/g, '')})`}
+                isAnimationActive={false}
+              />
+              <Line type='linear' dataKey='v' stroke={trendColor} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
+      )}
+    </div>
+    {children}
+  </div>
+)
 
-        {/* Breakdown rows (below, full width) */}
-        {type === 'breakdown' && (data as MetricDataPoint[]).length > 0 && (
-          <div className='mt-4 space-y-2.5'>
-            {(data as MetricDataPoint[]).slice(0, 3).map(item => {
-              const total = (data as MetricDataPoint[]).reduce((acc, curr) => acc + curr.value, 0) || 1
-              const percent = (item.value / total) * 100
-              return (
-                <div key={item.name} className='space-y-1'>
-                  <div className='flex items-center justify-between text-[11px] font-bold'>
-                    <div className='flex items-center gap-1.5'>
-                      <Icon icon='solar:file-text-bold-duotone' className='h-3.5 w-3.5' style={{ color: item.color }} />
-                      <span className='text-default-600'>{item.name}</span>
-                    </div>
-                    <span className='text-foreground'>{item.value}</span>
-                  </div>
-                  <div className='h-1.5 w-full overflow-hidden rounded-full bg-content3'>
-                    <div className='h-full rounded-full' style={{ width: `${percent}%`, backgroundColor: item.color }} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  )
-}
-
-// --- Analytics Section ---
-const ProjectAnalyticsSection = ({
-  volumeData,
-  recentActivity,
-  onViewAllHistory
-}: {
-  volumeData: { date: string; requests: number }[]
-  recentActivity: GenerationDto[]
-  onViewAllHistory: () => void
-}) => {
-  const maxRequests = Math.max(...volumeData.map(d => d.requests), 1)
+// --- Volume chart ---
+const VolumeChart = ({ data }: { data: { date: string; requests: number }[] }) => {
+  const maxRequests = niceMax(Math.max(...data.map(d => d.requests), 1))
+  const total = data.reduce((acc, d) => acc + d.requests, 0)
+  const ticks = [maxRequests, maxRequests / 2, 0]
 
   return (
-    <div className='grid w-full grid-cols-1 gap-4 lg:grid-cols-10'>
-      {/* Volume Chart */}
-      <div className='lg:col-span-7'>
-        <Card className='dashboard-card h-full min-h-[420px] overflow-hidden shadow-none'>
-          <CardBody className='flex h-full flex-col p-0'>
-            <div className='flex flex-col items-start justify-between gap-3 border-b border-default-200/50 px-6 py-5 sm:flex-row sm:items-center'>
-              <div>
-                <h3 className='text-sm font-bold text-foreground'>Project Volume</h3>
-                <p className='mt-0.5 text-xs text-default-400'>Request traffic over time</p>
-              </div>
-              <BrandChip tone='primary' size='sm' uppercase>
-                Requests
-              </BrandChip>
-            </div>
-            <div className='h-[320px] px-5 pb-5 pt-4'>
-              <div className='flex h-full items-end gap-1.5 border-b border-l border-default-200/50 px-2 pt-3'>
-                {volumeData.map((item, index) => {
-                  const height = Math.max((item.requests / maxRequests) * 100, item.requests > 0 ? 8 : 2)
-                  const showLabel = index % 5 === 0 || index === volumeData.length - 1
-
-                  return (
-                    <div key={item.date} className='group relative flex h-full min-w-0 flex-1 items-end justify-center'>
-                      <div
-                        className='w-full max-w-[18px] rounded-t-[3px] bg-danger-600/85 transition-colors group-hover:bg-danger-500'
-                        style={{ height: `${height}%` }}
-                      />
-                      {showLabel && (
-                        <span className='absolute top-full mt-2 text-[9px] font-bold text-default-400'>
-                          {format(new Date(item.date), 'dd')}
-                        </span>
-                      )}
-                      <div className='pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 rounded-md border border-default-200 bg-content1 px-2 py-1 text-[10px] font-bold text-foreground shadow-lg group-hover:block'>
-                        {item.requests} requests
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* Recent Activity */}
-      <div className='lg:col-span-3'>
-        <Card className='dashboard-card h-full overflow-hidden shadow-none'>
-          <CardBody className='flex h-full flex-col p-0'>
-            <div className='flex items-center justify-between border-b border-default-200/50 px-5 py-4'>
-              <h3 className='flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-default-400'>
-                <Icon icon='lucide:activity' className='h-3 w-3' />
-                Recent Activity
-              </h3>
-            </div>
-            <div className='flex flex-1 flex-col'>
-              {recentActivity.length > 0 ? (
-                recentActivity.slice(0, 5).map((item, index) => (
-                  <div
-                    key={item.id || index}
-                    className='flex items-start gap-3 border-b border-default-200/50 px-5 py-3 transition-colors last:border-0 hover:bg-content2/50'>
-                    <div className='shrink-0 pt-0.5'>
-                      {item.type === 'Excel' ? <FileIcon type='excel' size='sm' /> : <FileIcon type='pdf' size='sm' />}
-                    </div>
-                    <div className='flex min-w-0 flex-1 flex-col gap-1'>
-                      <div className='flex items-center justify-between gap-2'>
-                        <span className='truncate text-sm font-semibold text-foreground' title={item.templateName || ''}>
-                          {item.templateName || 'Direct Upload'}
-                        </span>
-                        <span
-                          className={clsx(
-                            'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase',
-                            item.status?.toLowerCase() === 'success' || item.status?.toLowerCase() === 'completed'
-                              ? 'bg-success-50 text-success-600'
-                              : 'bg-danger-50 text-danger-600'
-                          )}>
-                          {item.status}
-                        </span>
-                      </div>
-                      <div className='flex items-center gap-1.5 text-[10px] text-default-400'>
-                        <span>{item.createdDatetime ? dayjs(item.createdDatetime).fromNow() : 'Just now'}</span>
-                        <span>·</span>
-                        <span>{formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}</span>
-                        <span>·</span>
-                        <span>{formatFileSize(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className='flex flex-1 flex-col items-center justify-center gap-2 p-8 text-default-400'>
-                  <Icon icon='lucide:inbox' className='h-8 w-8 opacity-40' />
-                  <span className='text-xs'>No recent activity</span>
+    <section className='border border-divider bg-content1'>
+      <PanelHeader
+        title='Requests per day'
+        description='Every document generated through the API in the selected month.'
+        actions={
+          <span className='text-[14px] text-default-500'>
+            Total <span className='font-mono tabular-nums text-foreground'>{total.toLocaleString()}</span>
+          </span>
+        }
+      />
+      <div className='flex h-[180px] gap-3 px-5 pb-8 pt-5' role='img' aria-label={`Bar chart: ${total} requests this month`}>
+        <div className='flex h-full w-8 shrink-0 flex-col justify-between text-right font-mono text-[11px] tabular-nums text-default-500' aria-hidden>
+          {ticks.map(t => (
+            <span key={t} className='-translate-y-1/2 first:translate-y-0 last:translate-y-0'>
+              {t.toLocaleString()}
+            </span>
+          ))}
+        </div>
+        <div className='relative flex h-full flex-1 items-end gap-[3px] border-b border-l border-default-300'>
+          <div className='pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-divider' aria-hidden />
+          {data.map((item, index) => {
+            const height = Math.max((item.requests / maxRequests) * 100, item.requests > 0 ? 4 : 0)
+            const showLabel = index % 5 === 0 || index === data.length - 1
+            return (
+              <div key={item.date} className='group relative flex h-full min-w-0 flex-1 items-end justify-center'>
+                <div
+                  className='w-full max-w-[20px] bg-default-400 transition-colors group-hover:bg-foreground'
+                  style={{ height: `${height}%` }}
+                />
+                {item.requests === 0 && <div className='absolute bottom-0 h-px w-full max-w-[20px] bg-default-300' />}
+                {showLabel && (
+                  <span className='absolute top-full mt-2 font-mono text-[11px] text-default-500'>
+                    {format(new Date(item.date), 'dd')}
+                  </span>
+                )}
+                <div className='pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden -translate-x-1/2 whitespace-nowrap border border-default-300 bg-content3 px-2 py-1 font-mono text-[12px] text-foreground group-hover:block'>
+                  {format(new Date(item.date), 'dd MMM')} · {item.requests}
                 </div>
-              )}
-            </div>
-            <div className='border-t border-default-200/50 p-4'>
-              <Button
-                fullWidth
-                variant='flat'
-                size='sm'
-                className='bg-content2 font-semibold text-default-600 hover:bg-content3'
-                onPress={onViewAllHistory}>
-                View All History
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
+              </div>
+            )
+          })}
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
+
+// --- Recent activity ---
+const RecentActivity = ({
+  items,
+  historyHref,
+  projectId
+}: {
+  items: GenerationDto[]
+  historyHref: string
+  projectId: string
+}) => (
+  <section className='border border-divider bg-content1'>
+    <PanelHeader
+      title='Recent activity'
+      description='The last five documents generated.'
+      actions={
+        <Link
+          href={historyHref}
+          className='inline-flex min-h-10 items-center gap-2 text-[14px] font-medium text-default-500 underline-offset-4 transition-colors hover:text-foreground hover:underline'>
+          View all history
+          <Icon icon='lucide:arrow-right' className='h-4 w-4' />
+        </Link>
+      }
+    />
+
+    {items.length === 0 ? (
+      <div className='flex flex-col items-center justify-center gap-2 px-6 py-14 text-center'>
+        <Icon icon='lucide:inbox' className='h-8 w-8 text-default-400' />
+        <p className='text-[14px] text-default-500'>No documents generated this month yet.</p>
+      </div>
+    ) : (
+      <div className='overflow-x-auto'>
+        <table className='w-full min-w-[640px] text-left'>
+          <thead>
+            <tr className='border-b border-divider'>
+              {['Template', 'Status', 'When', 'Duration', 'Size', ''].map(h => (
+                <th key={h || 'actions'} scope='col' className='px-5 py-3 text-[13px] font-medium text-default-500'>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.slice(0, 5).map((item, index) => (
+              <tr key={item.id || index} className='border-b border-divider last:border-0 hover:bg-content2'>
+                <td className='max-w-[280px] px-5 py-3'>
+                  <span className='block truncate text-[14px] font-medium text-foreground' title={item.templateName || ''}>
+                    {item.templateName || 'Direct upload'}
+                  </span>
+                  <span className='block text-[12px] text-default-500'>{typeLabel(item.type)}</span>
+                </td>
+                <td className='px-5 py-3'>
+                  <StatusChip status={item.status} />
+                </td>
+                <td className='whitespace-nowrap px-5 py-3 text-[13px] text-default-500'>
+                  {item.createdDatetime ? dayjs(item.createdDatetime).fromNow() : 'Just now'}
+                </td>
+                <td className='whitespace-nowrap px-5 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                  {formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}
+                </td>
+                <td className='whitespace-nowrap px-5 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                  {formatBytes(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}
+                </td>
+                <td className='whitespace-nowrap px-5 py-3 text-right'>
+                  <div className='flex items-center justify-end gap-3 text-[13px] font-medium'>
+                    {item.downloadUrl && isSuccessStatus(item.status) && (
+                      <a href={item.downloadUrl} className='text-default-500 underline-offset-4 hover:text-foreground hover:underline'>
+                        Download
+                      </a>
+                    )}
+                    {item.templateKey && (
+                      <Link
+                        href={`/${typeLabel(item.type) === 'Excel' ? 'excel' : 'pdf'}/templates/${item.templateKey}?projectId=${projectId}`}
+                        className='text-default-500 underline-offset-4 hover:text-foreground hover:underline'>
+                        Open template
+                      </Link>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+)
 
 // --- Main Page ---
 const ProjectDashboard = () => {
   const router = useRouter()
-  const params = useParams()
+  const params = useRouteParams()
   const id = params.id as string
   const { currentProject } = useProject()
+  const months = useMonthOptions()
 
   const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'))
   const [loading, setLoading] = useState(true)
@@ -405,6 +281,32 @@ const ProjectDashboard = () => {
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummaryDto | null>(null)
   const [usageData, setUsageData] = useState<UsageDataDto | null>(null)
   const [recentGenerations, setRecentGenerations] = useState<GenerationDto[]>([])
+  const [lastTemplate, setLastTemplate] = useState<{ name: string; href: string } | null>(null)
+
+  // "Open last template": the most recently generated template, else the newest template.
+  useEffect(() => {
+    if (!id) return
+    api.templates
+      .templatesList({ projectId: id, pageNumber: 1, pageSize: 1 })
+      .then(res => {
+        const tpl = res?.items?.[0]
+        if (!tpl) return
+        const base = (tpl.activeVersion?.filePath || '').toLowerCase().endsWith('.xlsx') ? 'excel' : 'pdf'
+        setLastTemplate(prev => prev ?? { name: tpl.name, href: `/${base}/templates/${tpl.templateKey}?projectId=${id}` })
+      })
+      .catch(() => {
+        // optional shortcut
+      })
+  }, [id])
+
+  useEffect(() => {
+    const recent = recentGenerations.find(g => g.templateKey)
+    if (recent?.templateKey)
+      setLastTemplate({
+        name: recent.templateName || recent.templateKey,
+        href: `/${typeLabel(recent.type) === 'Excel' ? 'excel' : 'pdf'}/templates/${recent.templateKey}?projectId=${id}`
+      })
+  }, [recentGenerations, id])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -443,9 +345,7 @@ const ProjectDashboard = () => {
 
   const volumeChartData = useMemo(() => {
     const selectedDate = parse(selectedMonth, 'yyyy-MM', new Date())
-    const start = startOfMonth(selectedDate)
-    const end = endOfMonth(selectedDate)
-    const allDays = eachDayOfInterval({ start, end })
+    const allDays = eachDayOfInterval({ start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) })
     const dataMap = new Map<string, number>()
     usageData?.data?.forEach((d: UsageDataPointDto) => {
       if (d.date) dataMap.set(format(new Date(d.date), 'yyyy-MM-dd'), Number(d.count) || 0)
@@ -459,67 +359,121 @@ const ProjectDashboard = () => {
   const trendData = useMemo(() => (dashboardSummary?.totalGeneratedTrend || []).map(Number), [dashboardSummary])
   const successRateTrendData = useMemo(() => (dashboardSummary?.successRateTrend || []).map(Number), [dashboardSummary])
 
-  const templateBreakdown = useMemo(() => {
-    const colors: Record<string, string> = { PDF: '#dc2626', Excel: '#10B981', Word: '#F59E0B', HTML: '#EC4899' }
-    return (dashboardSummary?.templateBreakdown || []).map((b: TemplateBreakdownDto) => ({
-      name: b.type || 'Unknown',
-      value: Number(b.count) || 0,
-      color: colors[b.type || ''] || '#6B7280'
-    }))
-  }, [dashboardSummary])
+  const templateBreakdown = useMemo(
+    () =>
+      (dashboardSummary?.templateBreakdown || []).map((b: TemplateBreakdownDto) => ({
+        name: typeLabel(b.type),
+        value: Number(b.count) || 0
+      })),
+    [dashboardSummary]
+  )
+  const breakdownTotal = templateBreakdown.reduce((acc, b) => acc + b.value, 0) || 1
+  const monthLabel = months.find(m => m.value === selectedMonth)?.label || selectedMonth
 
   return (
-    <div className='dashboard-panel flex flex-col'>
-      {/* Toolbar */}
-      <div className='border-b border-default-200/50'>
-        <ProjectToolbar
-          projectName={currentProject?.name || 'Loading...'}
-          selectedMonth={selectedMonth}
-          onMonthChange={setSelectedMonth}
-          onSettingsClick={() => router.push(`/project/${id}/settings`)}
+    <div className='flex flex-col gap-6'>
+      <PageHeader
+        breadcrumb={[{ label: 'Project' }, { label: currentProject?.name || '…' }]}
+        title='Project overview'
+        description={`How this project is doing in ${monthLabel}.`}
+        actions={
+          <>
+            <Select
+              aria-label='Month'
+              selectedKeys={[selectedMonth]}
+              disallowEmptySelection
+              variant='bordered'
+              className='w-full sm:w-52'
+              onChange={e => e.target.value && setSelectedMonth(e.target.value)}
+              startContent={<Icon icon='lucide:calendar' className='h-4 w-4 text-default-500' />}
+              classNames={{ trigger: 'h-10 min-h-10 border-default-300 bg-content2', value: 'text-[14px]' }}>
+              {months.map(month => (
+                <SelectItem key={month.value} textValue={month.label}>
+                  {month.label}
+                </SelectItem>
+              ))}
+            </Select>
+            {lastTemplate ? (
+              <>
+                <Button
+                  variant='bordered'
+                  className='h-10 border-default-300 font-medium'
+                  startContent={<Icon icon='lucide:plus' className='h-4 w-4' />}
+                  onPress={() => router.push(`/pdf/templates/create?projectId=${id}`)}>
+                  New template
+                </Button>
+                <Button
+                  color='primary'
+                  className='h-10 max-w-[280px] font-medium'
+                  title={lastTemplate.name}
+                  endContent={<Icon icon='lucide:arrow-right' className='h-4 w-4 shrink-0' />}
+                  onPress={() => router.push(lastTemplate.href)}>
+                  <span className='truncate'>Open {lastTemplate.name}</span>
+                </Button>
+              </>
+            ) : (
+              <Button
+                color='primary'
+                className='h-10 font-medium'
+                startContent={<Icon icon='lucide:plus' className='h-4 w-4' />}
+                onPress={() => router.push(`/pdf/templates/create?projectId=${id}`)}>
+                New template
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      {/* Stats — shared-border grid */}
+      <div
+        className={cn(
+          'grid grid-cols-1 gap-px border border-divider bg-divider sm:grid-cols-3',
+          loading && 'opacity-60 transition-opacity'
+        )}
+        aria-busy={loading}>
+        <StatCell
+          label='Requests'
+          value={Number(dashboardSummary?.totalGenerated ?? 0).toLocaleString()}
+          hint='Documents generated'
+          trend={trendData}
         />
+        <StatCell
+          label='Success rate'
+          value={
+            Number(dashboardSummary?.totalGenerated ?? 0) > 0 && dashboardSummary?.successRate != null
+              ? `${Number(dashboardSummary.successRate).toFixed(1)}%`
+              : '—'
+          }
+          hint='Requests that completed'
+          trend={successRateTrendData}
+        />
+        <StatCell label='Templates' value={Number(dashboardSummary?.totalTemplates ?? 0).toLocaleString()}>
+          {templateBreakdown.length > 0 ? (
+            <ul className='space-y-2'>
+              {templateBreakdown.slice(0, 3).map(item => (
+                <li key={item.name}>
+                  <div className='flex items-center justify-between text-[14px]'>
+                    <span className='text-default-500'>{item.name}</span>
+                    <span className='font-mono tabular-nums text-foreground'>{item.value}</span>
+                  </div>
+                  <div className='mt-1 h-1 w-full bg-content3'>
+                    <div className='h-full bg-default-400' style={{ width: `${(item.value / breakdownTotal) * 100}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className='text-[14px] text-default-500'>No templates yet</p>
+          )}
+        </StatCell>
       </div>
 
-      {/* Content */}
-      <div className='space-y-4 p-4 md:p-6'>
-        {/* Metric Cards */}
-        <div className='grid grid-cols-1 gap-4 sm:grid-cols-3'>
-          <MetricCard
-            title='Total Requests'
-            value={(dashboardSummary?.totalGenerated ?? 0).toLocaleString()}
-            type='sparkline'
-            data={trendData}
-            chartColor='#dc2626'
-          />
-          <MetricCard
-            title='Success Rate'
-            value={`${Number(dashboardSummary?.successRate ?? 100).toFixed(1)}%`}
-            type='sparkline'
-            data={successRateTrendData}
-            chartColor='#10B981'
-          />
-          <MetricCard
-            title='Total Templates'
-            value={dashboardSummary?.totalTemplates ?? 0}
-            limit=''
-            type='breakdown'
-            data={templateBreakdown}
-          />
-        </div>
+      <RecentActivity items={recentGenerations} historyHref={`/project/${id}/history`} projectId={id} />
 
-        {/* Analytics */}
-        <ProjectAnalyticsSection
-          volumeData={volumeChartData}
-          recentActivity={recentGenerations}
-          onViewAllHistory={() => router.push(`/project/${id}/history`)}
-        />
-
-      </div>
+      <VolumeChart data={volumeChartData} />
     </div>
   )
 }
-
-import { Suspense } from 'react'
 
 export default function ProjectDashboardPage() {
   return (

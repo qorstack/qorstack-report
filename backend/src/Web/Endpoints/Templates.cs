@@ -10,9 +10,11 @@ using QorstackReportService.Application.Templates.Commands.DeleteTemplate;
 using QorstackReportService.Application.Templates.Commands.SwitchTemplateVersion;
 using QorstackReportService.Application.Templates.Commands.UpdateTemplate;
 using QorstackReportService.Application.Templates.Commands.UploadTemplate;
+using QorstackReportService.Application.Templates.Commands.ImportGalleryTemplate;
 using QorstackReportService.Application.Templates.Models;
 using QorstackReportService.Application.Templates.Queries.GetTemplateById;
 using QorstackReportService.Application.Templates.Queries.GetTemplatesWithPagination;
+using QorstackReportService.Application.Templates.Queries.GetGalleryTemplates;
 using QorstackReportService.Application.Templates.Queries.GenerateTemplateKey;
 using QorstackReportService.Web.Infrastructure;
 
@@ -23,7 +25,7 @@ namespace QorstackReportService.Web.Endpoints;
 /// </summary>
 public class Templates : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/templates")
             .WithTags("Templates")
@@ -85,6 +87,74 @@ public class Templates : EndpointGroupBase
             .Produces<Dictionary<string, int>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        // Template gallery — curated ready-made templates a user can import
+        group.MapGet("/gallery", GetGallery)
+            .WithSummary("List curated gallery templates available to import")
+            .Produces<IReadOnlyList<GalleryTemplateInfo>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        // Public: sample images only, and <img> tags don't send the API's auth header.
+        group.MapGet("/gallery/{galleryId}/thumbnail", GetGalleryThumbnail)
+            .AllowAnonymous()
+            .WithSummary("Preview image of a gallery template (page 1 rendered with its sample data)")
+            .Produces(StatusCodes.Status200OK, contentType: "image/png")
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPost("/gallery/{galleryId}/import", ImportGallery)
+            .WithSummary("Import a gallery template into a project")
+            .WithDescription("Creates a new template in the user's project from a curated gallery template (reuses the upload pipeline).")
+            .Produces<TemplateDetailResponse>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+    }
+
+    /// <summary>
+    /// List curated gallery templates
+    /// </summary>
+    private static async Task<IResult> GetGallery(ISender sender)
+    {
+        var result = await sender.Send(new GetGalleryTemplatesQuery());
+        return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// Preview image of a gallery template
+    /// </summary>
+    private static IResult GetGalleryThumbnail(IGalleryService gallery, HttpContext httpContext, string galleryId)
+    {
+        var path = gallery.GetThumbnailPath(galleryId);
+        if (path is null) return Results.NotFound();
+
+        httpContext.Response.Headers.CacheControl = "public, max-age=86400";
+        return Results.File(path, "image/png", lastModified: File.GetLastWriteTimeUtc(path), enableRangeProcessing: false);
+    }
+
+    /// <summary>
+    /// Import a gallery template into the user's project
+    /// </summary>
+    private static async Task<IResult> ImportGallery(
+        ISender sender,
+        HttpContext httpContext,
+        string galleryId,
+        [FromBody] ImportGalleryRequest? request)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var command = new ImportGalleryTemplateCommand
+        {
+            UserId = userId.Value,
+            GalleryId = galleryId,
+            ProjectId = request?.ProjectId,
+            Name = request?.Name
+        };
+
+        var template = await sender.Send(command);
+        return Results.Created($"/templates/{template.Id}", template);
     }
 
     /// <summary>
@@ -288,7 +358,7 @@ public class Templates : EndpointGroupBase
             return Results.NotFound("No active version found");
         }
 
-        var templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
+        var templateBucket = StorageAreas.Templates;
         var url = await storageService.GetPresignedUrlAsync(templateBucket, activeVersion.FilePath, 3600);
 
         return Results.Ok(new DownloadTemplateResponse { Url = url });
@@ -341,7 +411,7 @@ public class Templates : EndpointGroupBase
 
         try
         {
-            var bucket = configuration["Minio:TemplateBucket"] ?? "templates";
+            var bucket = StorageAreas.Templates;
             using var xlsxStream = await storageService.DownloadFileAsync(bucket, activeVersion.FilePath);
             var sheetPageMap = ExcelGridlineHelper.GetSheetPageMap(xlsxStream);
             return Results.Ok(sheetPageMap);
@@ -384,6 +454,18 @@ public class UploadTemplateRequest
     /// </summary>
     [FromQuery(Name = "isAutoGeneratedVariable")]
     public bool IsAutoGeneratedVariable { get; set; } = true;
+}
+
+/// <summary>
+/// Request body for importing a gallery template (JSON).
+/// </summary>
+public class ImportGalleryRequest
+{
+    /// <summary>Target project to import into (optional).</summary>
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>Optional name override; defaults to the gallery template's name.</summary>
+    public string? Name { get; set; }
 }
 
 /// <summary>

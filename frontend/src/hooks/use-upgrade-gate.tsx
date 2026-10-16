@@ -5,7 +5,7 @@ import { useFeatures } from '@/hooks/use-features'
 import { UpgradeToProModal } from '@/components/pro'
 import type { FeatureFlags } from '@/api/features'
 
-type GateableFeature = 'livePreview' | 'pdfPasswordProtection' | 'pdfWatermark' | 'downloadAsZip'
+type GateableFeature = 'pdfPasswordProtection' | 'pdfWatermark' | 'downloadAsZip' | 'projectTransfer'
 
 type ModalCopy = {
   eyebrow: string
@@ -15,13 +15,6 @@ type ModalCopy = {
 }
 
 const FEATURE_COPY: Record<GateableFeature, ModalCopy> = {
-  livePreview: {
-    eyebrow: 'Real-time rendering',
-    title: 'Upgrade to Pro',
-    description:
-      "Live Preview renders your document in real time as you edit — every keystroke, every variable change. It's a Pro feature because it runs a full cloud render on every change.",
-    features: ['Instant preview with every edit', 'Unlimited cloud renders', 'Priority rendering queue']
-  },
   pdfPasswordProtection: {
     eyebrow: 'Document security',
     title: 'Upgrade to Pro',
@@ -42,6 +35,13 @@ const FEATURE_COPY: Record<GateableFeature, ModalCopy> = {
     description:
       'Wrap rendered outputs in a .zip archive automatically — ideal for batch deliveries and protected file transfers. Available on Pro plans.',
     features: ['Auto-zip every render', 'Smaller transfer sizes', 'Bundle multi-file outputs']
+  },
+  projectTransfer: {
+    eyebrow: 'Deployments',
+    title: 'Upgrade to Pro',
+    description:
+      'Export a whole project as one .zip and import it into another Qorstack deployment — e.g. promote templates from staging to production. Available on Pro plans.',
+    features: ['Templates, test data, images and fonts in one file', 'Preview every change before importing', 'Keeps template keys, so API callers need no change']
   }
 }
 

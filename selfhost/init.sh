@@ -33,19 +33,21 @@ fi
 # hex avoids characters that need escaping in .env / connection strings.
 # ENCRYPTION_KEY must be exactly 32 chars (16 bytes hex); ENCRYPTION_IV exactly 16 (8 bytes hex).
 DB_PASS=$(openssl rand -hex 16)
-MINIO_SECRET=$(openssl rand -hex 16)
+STORAGE_SECRET=$(openssl rand -hex 16)
 JWT=$(openssl rand -hex 24)        # 48 chars (>= 32 required)
 ENC_KEY=$(openssl rand -hex 16)    # 32 chars
 ENC_IV=$(openssl rand -hex 8)      # 16 chars
 ADMIN_PASS=$(openssl rand -hex 12)
+WEBHOOK_SECRET=$(openssl rand -hex 32)
 
 sed \
   -e "s|^DB_PASSWORD=.*|DB_PASSWORD=${DB_PASS}|" \
-  -e "s|^MINIO_SECRET_KEY=.*|MINIO_SECRET_KEY=${MINIO_SECRET}|" \
+  -e "s|^STORAGE_SECRET_KEY=.*|STORAGE_SECRET_KEY=${STORAGE_SECRET}|" \
   -e "s|^JWT_KEY=.*|JWT_KEY=${JWT}|" \
   -e "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${ENC_KEY}|" \
   -e "s|^ENCRYPTION_IV=.*|ENCRYPTION_IV=${ENC_IV}|" \
   -e "s|^ADMIN_PASSWORD=.*|ADMIN_PASSWORD=${ADMIN_PASS}|" \
+  -e "s|^WEBHOOK_SIGNING_SECRET=.*|WEBHOOK_SIGNING_SECRET=${WEBHOOK_SECRET}|" \
   "$EXAMPLE" > "$ENV"
 
 echo "Generated $ENV with random secrets."
@@ -53,3 +55,4 @@ echo ""
 echo "  Admin login : admin / ${ADMIN_PASS}"
 echo ""
 echo "Save the admin password now — then start the stack: docker compose up -d"
+echo "Then open http://localhost:8080 (web UI; the API is http://localhost:8080/api)."

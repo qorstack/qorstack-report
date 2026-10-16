@@ -8,6 +8,7 @@ public static class PayloadHelper
 {
     public static string SyncPayloadWithMarkers(string? currentPayloadJson, List<TemplateMarker> markers, bool deleteUnused = false, bool preserveOrder = false)
     {
+        currentPayloadJson = KeyedPayloadNormalizer.Normalize(currentPayloadJson);
         JsonNode? rootNode = null;
 
         if (!string.IsNullOrEmpty(currentPayloadJson))

@@ -10,7 +10,7 @@ namespace QorstackReportService.Web.Endpoints;
 
 public class Categories : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/example-categories")
             .WithTags("Example Categories");

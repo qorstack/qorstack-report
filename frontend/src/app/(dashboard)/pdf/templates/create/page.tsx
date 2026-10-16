@@ -1,11 +1,14 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { Button, Input, addToast, cn } from '@heroui/react'
-import Icon from '@/components/icon'
+import React, { Suspense, useRef, useState } from 'react'
+import { Button, Input, addToast } from '@heroui/react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Icon from '@/components/icon'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { api } from '@/api/generated/main-service'
 import { handleApiError } from '@/hooks/useApiError'
+import { useProject } from '@/providers/ProjectContext'
+import { cn } from '@/utils/cn'
 
 const ACCEPTED = '.docx,.xlsx'
 const VALID_EXTS = ['.docx', '.xlsx']
@@ -15,12 +18,20 @@ const getFileType = (name: string) => {
   return ext === '.xlsx' ? 'excel' : 'pdf'
 }
 
-import { Suspense } from 'react'
+const FIELD_CLASS_NAMES = {
+  label: 'text-[13px] font-medium !text-default-500',
+  inputWrapper: 'h-10 border-default-300 bg-content2',
+  input: 'text-[14px]',
+  description: 'text-[12px] text-default-500',
+  errorMessage: 'text-[12px]'
+}
 
 function CreateTemplatePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const projectId = searchParams.get('projectId')
+  const { projects } = useProject()
+  const projectName = projects.find(p => p.id === projectId)?.name
 
   const [templateName, setTemplateName] = useState('')
   const [templateKey, setTemplateKey] = useState('')
@@ -31,8 +42,11 @@ function CreateTemplatePage() {
   const [showErrors, setShowErrors] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // No /templates route exists — without a project, go back to the project list (same as the editors).
+  const templatesHref = projectId ? `/project/${projectId}/templates` : '/project'
+
   const goBack = () => {
-    router.push(projectId ? `/project/${projectId}/templates` : '/templates')
+    router.push(templatesHref)
   }
 
   const generateKey = async () => {
@@ -114,74 +128,54 @@ function CreateTemplatePage() {
   }
 
   const fileType = uploadedFile ? getFileType(uploadedFile.name) : null
+  const canPick = !isLoading && !uploadedFile
+  const fileError = showErrors && !uploadedFile
 
   return (
-    <div className='dashboard-page mx-auto w-full max-w-2xl pb-20 pt-4'>
-      {/* ── Toolbar ── */}
-      <div className='dashboard-panel'>
-        <div className='dashboard-header'>
-        <button
-          onClick={goBack}
-          className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-default-500 transition-colors hover:bg-content2 hover:text-foreground'
-          aria-label='Back to templates'>
-          <Icon icon='lucide:arrow-left' className='h-4 w-4' />
-        </button>
-        <div className='dashboard-icon-box'>
-          <Icon icon='lucide:file-plus' className='h-4 w-4 text-primary' />
-        </div>
-        <div className='min-w-0 flex-1'>
-          <h1 className='dashboard-title'>New Template</h1>
-          <p className='dashboard-subtitle'>Upload a DOCX or XLSX file and prepare it for generation.</p>
-        </div>
-        </div>
-      </div>
+    <div className='mx-auto flex w-full max-w-3xl flex-col gap-8'>
+      <PageHeader
+        breadcrumb={[
+          { label: projectName || 'Project', href: projectId ? `/project/${projectId}` : undefined },
+          { label: 'Templates', href: templatesHref },
+          { label: 'New' }
+        ]}
+        title='New template'
+        description='Upload a Word or Excel file that contains {{placeholders}}. You will fill test values for them in the next step.'
+      />
 
-      {/* ── Body ── */}
-      <div className='dashboard-panel p-5 md:p-6'>
-        <div className='space-y-5'>
-          {/* Name */}
-          <div>
-            <label className='mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-default-500'>
-              Template Name <span className='text-danger'>*</span>
-            </label>
-            <Input
-              size='md'
-              variant='flat'
-              radius='sm'
-              placeholder='e.g. Monthly Invoice'
-              value={templateName}
-              onValueChange={setTemplateName}
-              isInvalid={showErrors && !templateName.trim()}
-              errorMessage={showErrors && !templateName.trim() ? 'Required' : ''}
-              isDisabled={isLoading}
-              autoFocus
-              classNames={{
-                input: 'font-medium',
-                inputWrapper: 'bg-content2 data-[hover=true]:bg-content3 group-data-[focus=true]:bg-content2'
-              }}
-            />
-          </div>
-
-          {/* Upload zone */}
-          <div>
-            <label className='mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-default-500'>
-              File <span className='text-danger'>*</span>
-            </label>
+      <section className='border border-divider bg-content1'>
+        <div className='flex flex-col gap-6 p-5 sm:p-6'>
+          {/* 1 · File */}
+          <div className='flex flex-col gap-2'>
+            <span className='text-[13px] font-medium text-default-500'>1. Template file</span>
             <div
+              role={canPick ? 'button' : undefined}
+              tabIndex={canPick ? 0 : undefined}
+              aria-label={canPick ? 'Choose a .docx or .xlsx file' : undefined}
+              aria-invalid={fileError || undefined}
+              onKeyDown={
+                canPick
+                  ? e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        fileInputRef.current?.click()
+                      }
+                    }
+                  : undefined
+              }
               className={cn(
-                'relative flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed p-6 transition-all duration-200',
+                'flex min-h-[96px] items-center gap-4 border border-dashed px-5 py-4 transition-colors',
+                canPick && 'cursor-pointer hover:border-foreground',
                 isDragOver
-                  ? 'border-primary bg-primary/10'
-                  : showErrors && !uploadedFile
+                  ? 'border-foreground bg-content3'
+                  : fileError
                     ? 'border-danger bg-danger/5'
-                    : uploadedFile
-                      ? 'cursor-default border-primary/40 bg-content2'
-                      : 'border-default-300 bg-content2 hover:border-primary/70 hover:bg-content3',
-                isLoading && 'pointer-events-none opacity-50'
+                    : 'border-default-300 bg-content2',
+                isLoading && 'pointer-events-none opacity-60'
               )}
-              onDrop={!isLoading && !uploadedFile ? handleDrop : undefined}
+              onDrop={canPick ? handleDrop : undefined}
               onDragOver={
-                !isLoading && !uploadedFile
+                canPick
                   ? e => {
                       e.preventDefault()
                       setIsDragOver(true)
@@ -189,141 +183,125 @@ function CreateTemplatePage() {
                   : undefined
               }
               onDragLeave={
-                !isLoading && !uploadedFile
+                canPick
                   ? e => {
                       e.preventDefault()
                       setIsDragOver(false)
                     }
                   : undefined
               }
-              onClick={() => !isLoading && !uploadedFile && fileInputRef.current?.click()}>
+              onClick={() => canPick && fileInputRef.current?.click()}>
               <input ref={fileInputRef} type='file' className='hidden' accept={ACCEPTED} onChange={handleFileChange} />
-
+              <span className='flex h-11 w-11 shrink-0 items-center justify-center border border-default-300 text-default-500'>
+                <Icon
+                  icon={uploadedFile ? (fileType === 'excel' ? 'lucide:sheet' : 'lucide:file-text') : 'lucide:upload'}
+                  className='h-5 w-5'
+                />
+              </span>
               {uploadedFile ? (
-                <div className='flex flex-col items-center text-center'>
-                  <div
-                    className={cn(
-                      'mb-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border shadow-sm',
-                      fileType === 'excel'
-                        ? 'border-success bg-success text-white'
-                        : 'border-primary bg-primary text-primary-foreground'
-                    )}>
-                    <Icon
-                      icon={fileType === 'excel' ? 'lucide:file-spreadsheet' : 'lucide:file-check'}
-                      className='h-6 w-6'
-                    />
-                  </div>
-                  <p className='text-base font-bold text-foreground'>{uploadedFile.name}</p>
-                  <p className='text-xs font-medium text-default-500'>
-                    {fileType === 'excel' ? 'Excel Template' : 'Word Template'} /{' '}
-                    {(uploadedFile.size / 1024).toFixed(1)} KB
-                  </p>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation()
-                      clearFile()
-                    }}
-                    disabled={isLoading}
-                    className='mt-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-default-400 hover:text-danger disabled:pointer-events-none disabled:opacity-50'>
-                    <Icon icon='lucide:x' className='h-3.5 w-3.5' />
-                    Remove File
-                  </button>
-                </div>
-              ) : (
                 <>
-                  <div className='mb-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-content3'>
-                    <Icon icon='lucide:upload-cloud' className='h-8 w-8 text-default-400' />
-                  </div>
-                  <div className='text-center'>
-                    <p className='text-lg font-bold text-foreground'>Click to upload or drag and drop</p>
-                    <p className='mt-1 text-xs font-medium text-default-500'>
-                      DOCX - Word template / XLSX - Excel template
+                  <div className='min-w-0 flex-1'>
+                    <p className='truncate text-[15px] font-semibold text-foreground'>{uploadedFile.name}</p>
+                    <p className='text-[13px] text-default-500'>
+                      {fileType === 'excel' ? 'Excel → generates XLSX' : 'Word → generates PDF or DOCX'} ·{' '}
+                      {(uploadedFile.size / 1024).toFixed(1)} KB
                     </p>
                   </div>
+                  <Button
+                    variant='bordered'
+                    size='sm'
+                    className='h-9 shrink-0 border-default-300 font-medium'
+                    isDisabled={isLoading}
+                    onPress={clearFile}>
+                    Change
+                  </Button>
                 </>
+              ) : (
+                <div className='min-w-0 flex-1'>
+                  <p className='text-[15px] font-semibold text-foreground'>Drop a .docx or .xlsx file, or click to browse</p>
+                  <p className='text-[13px] text-default-500'>Word generates PDF or DOCX · Excel generates XLSX</p>
+                </div>
               )}
             </div>
-            {showErrors && !uploadedFile && <p className='mt-1 text-xs text-danger'>Please upload a file</p>}
+            {fileError && (
+              <p className='flex items-center gap-2 text-[13px] text-danger'>
+                <Icon icon='lucide:alert-circle' className='h-4 w-4' />
+                Choose a .docx or .xlsx file to continue.
+              </p>
+            )}
           </div>
 
-          {/* Auto-detect info (always on) */}
-          <div className='dashboard-soft px-3 py-2.5'>
-            <div className='flex items-center gap-2'>
-              <Icon icon='lucide:scan-search' className='h-6 w-6 shrink-0 text-primary' />
-              <div>
-                <p className='text-sm font-medium text-foreground'>Auto-detect variables</p>
-                <p className='text-xs text-default-500'>
-                  Variables like <code className='font-mono'>{`{{name}}`}</code> will be detected from the file and
-                  added to the builder automatically.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Custom key (always available) */}
-          <div className='dashboard-soft p-4'>
-            <p className='mb-2.5 text-xs font-semibold'>
-              Custom template key <span className='font-normal text-default-400'>(optional)</span>
+          {/* 2 · Name */}
+          <div className='flex flex-col gap-2'>
+            <Input
+              label='2. Template name'
+              labelPlacement='outside'
+              placeholder='e.g. Monthly invoice'
+              variant='bordered'
+              isRequired
+              value={templateName}
+              onValueChange={setTemplateName}
+              isInvalid={showErrors && !templateName.trim()}
+              errorMessage={showErrors && !templateName.trim() ? 'Enter a name for this template' : ''}
+              isDisabled={isLoading}
+              classNames={FIELD_CLASS_NAMES}
+            />
+            <p className='text-[13px] text-default-500'>
+              Placeholders like <code className='bg-content2 px-1 font-mono text-foreground'>{`{{customer_name}}`}</code> are
+              found in the file and listed for you in the next step.
             </p>
-            <div className='space-y-1.5'>
-              <div className='flex gap-2'>
+          </div>
+
+          {/* More options */}
+          <details className='group border-t border-divider pt-4'>
+            <summary className='flex cursor-pointer list-none items-center gap-2 text-[14px] font-medium text-default-500 hover:text-foreground'>
+              <Icon icon='lucide:chevron-right' className='h-4 w-4 transition-transform group-open:rotate-90' />
+              More options
+            </summary>
+            <div className='mt-4 flex flex-col gap-2'>
+              <div className='flex items-end gap-2'>
                 <Input
-                  size='sm'
-                  variant='flat'
-                  radius='sm'
+                  label='Template key'
+                  labelPlacement='outside'
                   placeholder='e.g. invoice-monthly'
+                  variant='bordered'
                   value={templateKey}
                   onValueChange={setTemplateKey}
                   isDisabled={isLoading}
-                  classNames={{
-                    input: 'font-mono text-xs',
-                    inputWrapper:
-                      'bg-content2 data-[hover=true]:bg-content3 group-data-[focus=true]:bg-content2'
-                  }}
+                  classNames={{ ...FIELD_CLASS_NAMES, input: 'font-mono text-[14px]' }}
                 />
                 <Button
-                  size='sm'
-                  variant='flat'
-                  radius='sm'
+                  variant='bordered'
+                  aria-label='Generate a random template key'
                   onPress={generateKey}
-                  isIconOnly
                   isLoading={isGeneratingKey}
                   isDisabled={isLoading}
-                  className='shrink-0 bg-content2 text-default-600 hover:bg-content3'>
-                  {!isGeneratingKey && <Icon icon='lucide:sparkles' className='h-4 w-4' />}
+                  className='h-10 shrink-0 border-default-300 font-medium'>
+                  Generate
                 </Button>
               </div>
-              <p className='text-[11px] text-default-400'>
-                Used in API calls as <code className='font-mono text-default-500'>templateKey</code>. Auto-generated if
-                left blank.
+              <p className='text-[13px] text-default-500'>
+                The key developers send as <code className='font-mono'>templateKey</code>. Leave it blank and one is created for
+                you; you can copy it from the template later.
               </p>
             </div>
-          </div>
-
-          {/* ── Actions ── */}
-          <div className='flex items-center justify-end gap-2 border-t border-default-100 pt-4'>
-            <Button
-              size='md'
-              variant='flat'
-              radius='sm'
-              onPress={goBack}
-              isDisabled={isLoading}
-              className='bg-content2 font-semibold text-default-600 hover:bg-content3'>
-              Cancel
-            </Button>
-            <Button
-              color='primary'
-              size='md'
-              radius='sm'
-              onPress={handleCreate}
-              isLoading={isLoading}
-              startContent={!isLoading && <Icon icon='lucide:plus' className='h-4 w-4' />}
-              className='px-6 font-semibold shadow-none'>
-              Create Template
-            </Button>
-          </div>
+          </details>
         </div>
-      </div>
+
+        <div className='flex flex-col-reverse gap-2 border-t border-divider px-5 py-4 sm:flex-row sm:justify-end'>
+          <Button variant='light' onPress={goBack} isDisabled={isLoading} className='h-10 font-medium'>
+            Cancel
+          </Button>
+          <Button
+            color='primary'
+            onPress={handleCreate}
+            isLoading={isLoading}
+            startContent={!isLoading && <Icon icon='lucide:arrow-right' className='h-4 w-4' />}
+            className='h-10 font-medium'>
+            Create template
+          </Button>
+        </div>
+      </section>
     </div>
   )
 }

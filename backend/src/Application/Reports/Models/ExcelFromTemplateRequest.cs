@@ -15,6 +15,13 @@ public class ExcelFromTemplateRequest : DocumentProcessingRequestBase
     public string TemplateKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Render a specific stored version of the template (see the template's version history).
+    /// Omit to render the current version.
+    /// </summary>
+    [JsonPropertyName("templateVersion")]
+    public int? TemplateVersion { get; set; }
+
+    /// <summary>
     /// Optional file name for the generated file (without extension)
     /// </summary>
     [JsonPropertyName("fileName")]

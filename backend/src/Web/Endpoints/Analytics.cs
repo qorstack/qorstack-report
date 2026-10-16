@@ -21,7 +21,7 @@ namespace QorstackReportService.Web.Endpoints;
 
 public class Analytics : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/analytics")
             .RequireAuthorization()

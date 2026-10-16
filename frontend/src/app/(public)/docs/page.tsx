@@ -17,9 +17,11 @@ import {
   FileSettingsContent
 } from '@/components/docs/DocContents'
 import DocLayout, { SidebarGroup, TocItem } from '@/components/docs/DocLayout'
+import { PRICING_HREF } from '@/components/landing/constants'
 
 // --- Constants ---
-const API_BASE_URL = process.env.NEXT_PUBLIC_SERVICE || 'http://localhost:8080'
+// Docs show the self-host default; the API lives under /api on the same port as the web UI.
+const API_BASE_URL = 'http://localhost:8080/api'
 
 // --- Types ---
 type Endpoint = 'template'
@@ -30,6 +32,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     title: 'Getting Started',
     icon: 'solar:rocket-linear',
     items: [
+      { id: 'quick-start', label: 'Quick start', icon: 'solar:play-linear' },
       { id: 'overview', label: 'Overview', icon: 'solar:home-2-linear' },
       { id: 'integration', label: 'Integration & SDKs', icon: 'solar:plug-circle-linear' }
     ]
@@ -40,12 +43,17 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { id: 'variables', label: 'Variables', icon: 'solar:text-field-linear' },
       { id: 'tables', label: 'Tables', icon: 'solar:widget-linear' },
-      { id: 'tables-advanced', label: 'Tables (Advanced)', icon: 'solar:widget-5-linear', badge: 'PRO' },
+      { id: 'tables-advanced', label: 'Tables (Advanced)', icon: 'solar:widget-5-linear' },
       { id: 'images', label: 'Images', icon: 'solar:gallery-linear' },
       { id: 'qrcodes', label: 'QR Codes', icon: 'solar:qr-code-linear' },
       { id: 'barcodes', label: 'Barcodes', icon: 'solar:scanner-linear' },
       { id: 'file-settings', label: 'File Settings', icon: 'solar:settings-linear' }
     ]
+  },
+  {
+    title: 'Help',
+    icon: 'solar:question-circle-linear',
+    items: [{ id: 'fonts', label: 'Fonts & troubleshooting', icon: 'solar:text-linear' }]
   }
 ]
 
@@ -53,22 +61,49 @@ const ALL_SECTION_IDS = SIDEBAR_GROUPS.flatMap(g => g.items.map(i => i.id))
 
 // --- TOC Config (right sidebar) ---
 const TOC_ITEMS: TocItem[] = [
+  { id: 'quick-start', label: 'Quick start' },
   { id: 'overview', label: 'Overview' },
   { id: 'integration', label: 'Integration & SDKs' },
-  { id: 'integration', label: 'REST API', indent: true },
-  { id: 'integration', label: 'Node.js SDK', indent: true },
-  { id: 'integration', label: '.NET SDK', indent: true },
-  { id: 'integration', label: 'Request Example', indent: true },
+  { id: 'integration-setup', section: 'integration', label: 'REST API & SDKs', indent: true },
+  { id: 'integration-request', section: 'integration', label: 'Request Example', indent: true },
+  { id: 'integration-async', section: 'integration', label: 'Async & webhooks', indent: true },
+  { id: 'integration-transfer', section: 'integration', label: 'Project export & import', indent: true },
   { id: 'variables', label: 'Variables' },
   { id: 'tables', label: 'Tables' },
   { id: 'tables-advanced', label: 'Tables (Advanced)' },
-  { id: 'tables-advanced', label: 'Grouping', indent: true },
-  { id: 'tables-advanced', label: 'Aggregates', indent: true },
+  { id: 'tables-grouping', section: 'tables-advanced', label: 'Grouping', indent: true },
+  { id: 'tables-aggregates', section: 'tables-advanced', label: 'Aggregates', indent: true },
   { id: 'images', label: 'Images' },
   { id: 'qrcodes', label: 'QR Codes' },
   { id: 'barcodes', label: 'Barcodes' },
-  { id: 'file-settings', label: 'File Settings' }
+  { id: 'file-settings', label: 'File Settings' },
+  { id: 'fonts', label: 'Fonts & troubleshooting' },
+  { id: 'fonts-thai', section: 'fonts', label: 'Thai fonts', indent: true },
+  { id: 'fonts-missing', section: 'fonts', label: 'Missing or wrong font', indent: true }
 ]
+
+// Smallest request that works: one template key + one text field.
+const QUICK_START_CURL = `curl -X POST ${API_BASE_URL}/render/word/template \\
+  -H "X-API-Key: YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "templateKey": "YOUR_TEMPLATE_KEY",
+    "replace": [{ "key": "customer", "value": "Siam Tech Co., Ltd." }]
+  }'`
+
+const QUICK_START_RESPONSE = `{
+  "jobId": "6f1c2a8e-…",
+  "downloadUrl": "${API_BASE_URL}/files/eyJ…",
+  "expiresIn": 3600,
+  "status": "success",
+  "fileType": "pdf"
+}`
+
+const ASYNC_RESPONSE_EXAMPLE = `{
+  "jobId": "6f1c2a8e-…",
+  "status": "pending",
+  "statusUrl": "/render/jobs/6f1c2a8e-…"
+}`
 
 // --- Section animation variants ---
 const sectionVariants = {
@@ -76,35 +111,51 @@ const sectionVariants = {
   visible: { opacity: 1, y: 0 }
 }
 
+const sectionNumber = (id: string): string => {
+  const index = ALL_SECTION_IDS.indexOf(id)
+  return `${String(index + 1).padStart(2, '0')}`
+}
+
+/** Display title with the last word in brand red. */
+const AccentTitle = ({ text }: { text: string }) => {
+  const words = text.split(' ')
+  const last = words.pop()
+  return (
+    <>
+      {words.length > 0 && `${words.join(' ')} `}
+      <span className='text-primary'>{last}</span>
+    </>
+  )
+}
+
 // --- Section Wrapper ---
 const Section = ({
   title,
   id,
-  icon,
   children,
   delay = 0
 }: {
   title: string
   id: string
+  /** Kept for call-site compatibility; the  number replaces the icon tile. */
   icon?: string
   children: React.ReactNode
   delay?: number
 }) => (
   <motion.section
     id={id}
+    aria-labelledby={`${id}-title`}
     variants={sectionVariants}
     initial='hidden'
     whileInView='visible'
     viewport={{ once: true, margin: '-60px' }}
     transition={{ duration: 0.5, delay, ease: [0.25, 1, 0.5, 1] }}
-    className='scroll-mt-20 border-b border-default-200 pb-16 last:border-0 dark:border-white/5'>
-    <h2 className='mb-6 flex items-center gap-3 text-[1.5rem] font-bold tracking-tight text-foreground'>
-      {icon && (
-        <span className='flex h-9 w-9 items-center justify-center rounded-md bg-primary/10'>
-          <Icon icon={icon} className='text-xl text-primary' />
-        </span>
-      )}
-      {title}
+    className='scroll-mt-24 border-b border-divider pb-16 last:border-0'>
+    <div className='mb-4 inline-block border-t-2 border-primary pr-6 pt-2 font-mono text-[12px] uppercase tracking-[0.16em] text-default-500'>
+      <b className='font-bold text-primary'>{sectionNumber(id)}</b> — {title}
+    </div>
+    <h2 id={`${id}-title`} className='press-display mb-6 text-[clamp(2rem,1.5rem+1.8vw,3rem)] text-foreground'>
+      <AccentTitle text={title} />
     </h2>
     {children}
   </motion.section>
@@ -112,13 +163,25 @@ const Section = ({
 
 // --- Info Callout ---
 const InfoCallout = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <div className='my-6 rounded-md bg-primary/[0.04] p-4 ring-1 ring-primary/15'>
+  <div className='my-6 border border-l-[3px] border-divider border-l-primary bg-content1 p-4'>
     <div className='flex items-start gap-3'>
-      <Icon icon='solar:info-circle-bold' className='mt-0.5 shrink-0 text-lg text-primary/70' />
+      <Icon icon='lucide:info' aria-hidden='true' className='mt-0.5 h-4 w-4 shrink-0 text-primary' />
       <div>
-        <h4 className='text-[13px] font-bold tracking-tight text-foreground'>{title}</h4>
-        <div className='mt-1 text-[12.5px] leading-relaxed text-default-600'>{children}</div>
+        <h4 className='font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-foreground'>{title}</h4>
+        <div className='mt-1.5 text-[14px] leading-relaxed text-default-600'>{children}</div>
       </div>
+    </div>
+  </div>
+)
+
+const PackageCard = ({ name, note }: { name: string; note: string }) => (
+  <div className='mb-4 flex items-center gap-3 border border-divider bg-content1 p-4'>
+    <Icon icon='lucide:package' aria-hidden='true' className='h-5 w-5 shrink-0 text-default-500' />
+    <div>
+      <p className='text-[14px] font-medium text-foreground'>
+        Package: <code className='font-mono text-[13px] text-primary-600 dark:text-[#FFB4AC]'>{name}</code>
+      </p>
+      <p className='text-[13px] text-default-500'>{note}</p>
     </div>
   </div>
 )
@@ -154,7 +217,8 @@ const DocumentationPage = () => {
     if (element) {
       const y = element.getBoundingClientRect().top + window.pageYOffset - 80
       window.scrollTo({ top: y, behavior: 'smooth' })
-      setActiveSection(id)
+      // A TOC sub-item keeps its parent section active, so the right-hand TOC stays visible.
+      setActiveSection(TOC_ITEMS.find(item => item.id === id)?.section ?? id)
     }
   }, [])
 
@@ -175,12 +239,11 @@ const DocumentationPage = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.25, 1, 0.5, 1] }}
           className='mb-12'>
-          <h1
-            className='mb-4 font-extrabold tracking-tight text-foreground'
-            style={{ fontSize: 'clamp(1.75rem, 1.25rem + 1.5vw, 2.5rem)' }}>
-            Qorstack Report Documentation
+          <p className='press-label mb-4'>Documentation</p>
+          <h1 className='press-display mb-5 text-[clamp(2.25rem,1.6rem+2.4vw,3.5rem)] text-foreground'>
+            Qorstack Report <span className='text-primary'>docs</span>
           </h1>
-          <p className='max-w-[65ch] text-[13px] font-normal leading-relaxed text-default-500 sm:text-[15px]'>
+          <p className='max-w-[65ch] text-[15px] leading-relaxed text-default-500 sm:text-[16px]'>
             Design DOCX or XLSX templates, send JSON, get your document. This guide covers every template feature from
             simple variable replacement to tables, images, QR codes, barcodes, PDF security, and ZIP output.
           </p>
@@ -188,90 +251,83 @@ const DocumentationPage = () => {
 
         {/* Content Sections */}
         <div className='flex flex-col gap-16'>
+          {/* ===== QUICK START ===== */}
+          <Section id='quick-start' title='Quick start' icon='solar:play-bold'>
+            <ol className='mb-6 flex max-w-[65ch] list-decimal flex-col gap-2 pl-5 text-[15px] leading-relaxed text-default-500'>
+              <li>
+                In a Word file, type placeholders such as <code className='font-mono text-foreground'>{'{{customer}}'}</code>
+                , then upload it on <b className='font-semibold text-foreground'>Templates → New template</b>.
+              </li>
+              <li>
+                Copy the template key (template header) and the project API key (<b className='font-semibold text-foreground'>API key</b> page).
+              </li>
+              <li>Send the request below. The response contains a download link to the generated PDF.</li>
+            </ol>
+            <CodeBlock language='bash' code={QUICK_START_CURL} title='Request' />
+            <CodeBlock language='json' code={QUICK_START_RESPONSE} title='Response' />
+            <p className='max-w-[65ch] text-[14px] leading-relaxed text-default-500'>
+              Everything else — tables, images, QR codes, Excel output, async jobs — is optional and described below.
+            </p>
+          </Section>
+
           {/* ===== OVERVIEW ===== */}
           <Section id='overview' title='Overview' icon='solar:document-text-bold'>
-            <p className='mb-6 max-w-[65ch] text-[13px] leading-relaxed text-default-500'>
+            <p className='mb-6 max-w-[65ch] text-[15px] leading-relaxed text-default-500'>
               Qorstack Report Service generates PDF, DOCX, and Excel documents from Word (.docx) and Excel (.xlsx)
-              templates. Instead of maintaining complex layout code, you design templates visually, upload them, and send
-              a simple JSON payload to generate the final file.
+              templates. Instead of maintaining complex layout code, you design templates visually, upload them, and
+              send a simple JSON payload to generate the final file.
             </p>
 
-            <InfoCallout title='Zero Data Retention'>
-              In production, Qorstack Report operates with a strict <strong>Zero Data Retention</strong> policy. Your
-              JSON payload is processed in volatile memory and destroyed the moment the PDF is rendered.
+            <InfoCallout title='Self-hosted'>
+              Qorstack Report runs on your own servers: templates, JSON payloads and generated files stay in your
+              PostgreSQL and S3 storage and are never sent to Qorstack. Temporary downloads are deleted after one day.
             </InfoCallout>
 
-            {/* Generation Method Selector */}
-            <div className='mb-8'>
-              <div className='overflow-hidden rounded-md bg-content2 ring-1 ring-default-200 dark:ring-white/5'>
-                {/* Header with endpoint badge */}
-                <div className='flex items-center justify-between border-b border-default-200 px-5 py-4 dark:border-white/5'>
-                  <div className='flex items-center gap-3'>
-                    <div className='flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary'>
-                      <Icon icon='solar:file-text-bold' className='text-lg' />
-                    </div>
-                    <div>
-                      <h4 className='text-[14px] font-bold tracking-tight text-foreground'>
-                        Template-based Generation
-                      </h4>
-                      <p className='mt-0.5 text-[11.5px] font-normal text-default-500'>
-                        Recurring reports, batch generation, and self-host integrations
-                      </p>
-                    </div>
-                  </div>
-                  <span className='rounded bg-success/10 px-2 py-0.5 font-mono text-[11px] font-bold text-success ring-1 ring-success/20'>
-                    POST
-                  </span>
+            {/* Generation Method */}
+            <div className='crop mb-10 border border-default-300 bg-content1'>
+              <span className='crop-cm' />
+              <div className='flex items-center justify-between gap-4 border-b border-divider px-5 py-4'>
+                <div>
+                  <h3 className='text-[16px] font-bold uppercase tracking-[0.01em] text-foreground'>
+                    Template-based generation
+                  </h3>
+                  <p className='mt-0.5 text-[13px] text-default-500'>
+                    Recurring reports, batch generation, and self-host integrations
+                  </p>
+                </div>
+                <span className='border border-primary px-2 py-0.5 font-mono text-[12px] font-bold tracking-[0.1em] text-primary'>
+                  POST
+                </span>
+              </div>
+
+              <div className='p-5'>
+                <p className='mb-5 max-w-[60ch] text-[14px] leading-relaxed text-default-500'>
+                  Use a pre-uploaded DOCX or XLSX template stored in your project. Reference the template by key and
+                  send JSON data to render the final document.
+                </p>
+
+                <div className='dark mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 border border-divider bg-[#050505] px-3 py-2.5 font-mono text-[13px]'>
+                  <span className='text-primary'>POST</span>
+                  <code className='text-foreground'>/render/word/template</code>
+                  <span className='text-default-500'>or</span>
+                  <code className='text-foreground'>/render/excel/template</code>
                 </div>
 
-                {/* Body */}
-                <div className='p-5'>
-                  <p className='mb-5 max-w-[55ch] text-[12.5px] leading-relaxed text-default-500'>
-                    Use a pre-uploaded DOCX or XLSX template stored in your project. Reference the template by key and
-                    send JSON data to render the final document.
-                  </p>
-
-                  {/* Endpoint URL */}
-                  <div className='mb-4 flex flex-wrap items-center gap-2 rounded-md bg-content1 px-3 py-2.5 ring-1 ring-default-200 dark:ring-white/5'>
-                    <Icon icon='solar:link-round-bold' className='shrink-0 text-base text-default-400' />
-                    <code className='font-mono text-[12.5px] text-primary'>
-                      /render/word/template
-                    </code>
-                    <span className='text-default-300'>or</span>
-                    <code className='font-mono text-[12.5px] text-primary'>
-                      /render/excel/template
-                    </code>
+                <div className='grid border-l border-t border-divider sm:grid-cols-2'>
+                  <div className='border-b border-r border-divider p-3'>
+                    <p className='font-mono text-[11px] uppercase tracking-[0.14em] text-default-500'>Auth header</p>
+                    <code className='mt-1 block font-mono text-[13px] font-semibold text-primary-600 dark:text-[#FFB4AC]'>X-API-Key</code>
                   </div>
-
-                  {/* Info Grid */}
-                  <div className='grid gap-3 sm:grid-cols-2'>
-                    <div className='flex items-start gap-3 rounded-md bg-content1 p-3 ring-1 ring-default-200 dark:ring-white/5'>
-                      <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-warning/10'>
-                        <Icon icon='solar:key-bold' className='text-sm text-warning' />
-                      </div>
-                      <div>
-                        <p className='text-[11.5px] font-normal text-default-500'>Auth header</p>
-                        <code className='mt-0.5 block font-mono text-[12.5px] font-semibold text-primary'>x-api-key</code>
-                      </div>
-                    </div>
-                    <div className='flex items-start gap-3 rounded-md bg-content1 p-3 ring-1 ring-default-200 dark:ring-white/5'>
-                      <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10'>
-                        <Icon icon='solar:shield-check-bold' className='text-sm text-primary' />
-                      </div>
-                      <div>
-                        <p className='text-[11.5px] font-normal text-default-500'>Key field</p>
-                        <code className='mt-0.5 block font-mono text-[12.5px] font-semibold text-primary'>
-                          templateKey
-                        </code>
-                      </div>
-                    </div>
+                  <div className='border-b border-r border-divider p-3'>
+                    <p className='font-mono text-[11px] uppercase tracking-[0.14em] text-default-500'>Key field</p>
+                    <code className='mt-1 block font-mono text-[13px] font-semibold text-primary-600 dark:text-[#FFB4AC]'>templateKey</code>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Feature Cards */}
-            <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
+            <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
               <FeatureCard
                 icon='solar:text-field-outline'
                 title='Variables'
@@ -313,13 +369,13 @@ const DocumentationPage = () => {
 
           {/* ===== INTEGRATION & SDKs ===== */}
           <Section id='integration' title='Integration & SDKs' icon='solar:plug-circle-bold' delay={0.05}>
-            <p className='mb-6 max-w-[65ch] text-[13px] leading-relaxed text-default-500'>
+            <p className='mb-6 max-w-[65ch] text-[15px] leading-relaxed text-default-500'>
               Choose your preferred integration method. We provide official SDKs for Node.js and .NET, or you can use
               the REST API directly with any HTTP client.
             </p>
 
             {/* Language Selector */}
-            <div className='mb-6'>
+            <div id='integration-setup' className='mb-6 scroll-mt-24'>
               <LanguageSelector activeLang={activeLang} onLangChange={setActiveLang} />
             </div>
 
@@ -332,25 +388,18 @@ const DocumentationPage = () => {
                     <span>Node.js / TypeScript SDK</span>
                   </div>
                 }>
-                <div className='mb-4 rounded-md bg-content2 p-4 ring-1 ring-default-200 dark:ring-white/5'>
-                  <div className='flex items-center gap-3'>
-                    <Icon icon='solar:box-linear' className='text-lg text-default-400' />
-                    <div>
-                      <p className='text-[12.5px] font-medium text-foreground'>
-                        Package: <code className='font-mono text-[12px] text-primary'>qorstack-report-sdk</code>
-                      </p>
-                      <p className='text-[11.5px] font-normal text-default-500'>
-                        Works with React, Next.js, Express, and any Node.js project
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                <PackageCard
+                  name='qorstack-report-sdk'
+                  note='Works with React, Next.js, Express, and any Node.js project'
+                />
                 <CodeBlock language='bash' code={getInstallCommand('ts')} title='Install' />
-                <p className='mt-4 text-[12.5px] text-default-500'>Initialize the client:</p>
+                <p className='mt-4 text-[14px] text-default-500'>Initialize the client:</p>
                 <CodeBlock language='typescript' code={getInitClient('ts')} title='Setup' />
                 <InfoCallout title='TypeScript Support'>
                   The SDK includes full TypeScript type definitions out of the box. No additional{' '}
-                  <code className='rounded bg-content2 px-1.5 py-0.5 font-mono text-[12px] text-foreground'>@types</code>{' '}
+                  <code className='border border-divider bg-content2 px-1.5 py-0.5 font-mono text-[12px] text-primary-600 dark:text-[#FFB4AC]'>
+                    @types
+                  </code>{' '}
                   packages needed.
                 </InfoCallout>
               </SubSection>
@@ -365,21 +414,12 @@ const DocumentationPage = () => {
                     <span>.NET / C# SDK</span>
                   </div>
                 }>
-                <div className='mb-4 rounded-md bg-content2 p-4 ring-1 ring-default-200 dark:ring-white/5'>
-                  <div className='flex items-center gap-3'>
-                    <Icon icon='solar:box-linear' className='text-lg text-default-400' />
-                    <div>
-                      <p className='text-[12.5px] font-medium text-foreground'>
-                        Package: <code className='font-mono text-[12px] text-primary'>Qorstack.Report.Sdk</code>
-                      </p>
-                      <p className='text-[11.5px] font-normal text-default-500'>
-                        Works with ASP.NET Core, Blazor, WPF, and any .NET project
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                <PackageCard
+                  name='Qorstack.Report.Sdk'
+                  note='Works with ASP.NET Core, Blazor, WPF, and any .NET project'
+                />
                 <CodeBlock language='bash' code={getInstallCommand('csharp')} title='Install' />
-                <p className='mt-4 text-[12.5px] text-default-500'>Initialize the client:</p>
+                <p className='mt-4 text-[14px] text-default-500'>Initialize the client:</p>
                 <CodeBlock language='csharp' code={getInitClient('csharp')} title='Setup' />
               </SubSection>
             )}
@@ -393,31 +433,30 @@ const DocumentationPage = () => {
                     <span>REST API / Raw HTTP</span>
                   </div>
                 }>
-                <p className='mb-4 text-[12.5px] text-default-500'>No installation required. Use any HTTP client.</p>
-                <div className='mb-6 rounded-md bg-content2 p-4 ring-1 ring-default-200 dark:ring-white/5'>
-                  <ul className='space-y-2.5 text-[12.5px] text-default-600'>
-                    <li className='flex items-start gap-2.5'>
-                      <Icon icon='solar:link-bold' className='mt-0.5 shrink-0 text-primary/60' />
-                      <span>
-                        <strong className='font-semibold text-foreground'>API URL:</strong>{' '}
-                        <code className='font-mono text-[12px] text-primary'>
-                          {API_BASE_URL}/render/word/template
-                        </code>
-                      </span>
-                    </li>
-                    <li className='flex items-start gap-2.5'>
-                      <Icon icon='solar:key-bold' className='mt-0.5 shrink-0 text-primary/60' />
-                      <span>
-                        <strong className='font-semibold text-foreground'>Headers:</strong> Include{' '}
-                        <code className='font-mono text-[12px] text-primary'>x-api-key</code> in your request headers.
-                      </span>
-                    </li>
-                  </ul>
-                </div>
+                <p className='mb-4 text-[14px] text-default-500'>No installation required. Use any HTTP client.</p>
+                <dl className='mb-6 grid border-l border-t border-divider text-[14px]'>
+                  <div className='flex flex-col gap-1 border-b border-r border-divider p-4 sm:flex-row sm:items-center sm:gap-4'>
+                    <dt className='w-28 shrink-0 font-mono text-[11px] uppercase tracking-[0.14em] text-default-500'>
+                      API URL
+                    </dt>
+                    <dd className='break-all font-mono text-[13px] text-foreground'>
+                      {API_BASE_URL}/render/word/template
+                    </dd>
+                  </div>
+                  <div className='flex flex-col gap-1 border-b border-r border-divider p-4 sm:flex-row sm:items-center sm:gap-4'>
+                    <dt className='w-28 shrink-0 font-mono text-[11px] uppercase tracking-[0.14em] text-default-500'>
+                      Header
+                    </dt>
+                    <dd className='text-default-600'>
+                      Include <code className='font-mono text-[13px] text-primary-600 dark:text-[#FFB4AC]'>X-API-Key</code> in your request
+                      headers.
+                    </dd>
+                  </div>
+                </dl>
               </SubSection>
             )}
 
-            <SubSection title='Request Example'>
+            <SubSection id='integration-request' title='Request Example'>
               <PropertyTable
                 data={[
                   {
@@ -427,19 +466,72 @@ const DocumentationPage = () => {
                     desc: 'Template identifier for the uploaded DOCX/XLSX template.'
                   },
                   {
+                    name: 'templateVersion',
+                    type: 'integer',
+                    required: false,
+                    desc: 'Render an older stored version of the template (see its version history). Omit for the current version; an unknown version returns 404.'
+                  },
+                  {
                     name: 'fileName',
                     type: 'string',
                     required: false,
                     desc: 'Output PDF filename (default: "output").'
                   },
-                  { name: 'replace', type: 'object', required: false, desc: 'Text variable replacements.' },
-                  { name: 'table', type: 'array', required: false, desc: 'Dynamic table data (TableDataRequest[]).' },
-                  { name: 'image', type: 'object', required: false, desc: 'Image insertion data.' },
-                  { name: 'qrcode', type: 'object', required: false, desc: 'QR code generation data.' },
-                  { name: 'barcode', type: 'object', required: false, desc: 'Barcode generation data.' },
-                  { name: 'pdfPassword', type: 'object', required: false, desc: 'PDF password and permission options.' },
+                  {
+                    name: 'replace',
+                    type: 'KeyValueRequest[]',
+                    required: false,
+                    desc: 'Text variable replacements: [{ "key": "customer_name", "value": "ACME" }]. The v1 object-map form was removed in v2.0 (returns 400).'
+                  },
+                  {
+                    name: 'table',
+                    type: 'array',
+                    required: false,
+                    desc: 'Dynamic table data (TableDataRequest[]): list the column names once in columns, then each row as an array of values in that order, e.g. { "columns": ["item", "qty"], "rows": [["A", 2]] }.'
+                  },
+                  {
+                    name: 'image',
+                    type: 'ImageDataRequest[]',
+                    required: false,
+                    desc: 'Image insertion data, one item per {{image:key}}.'
+                  },
+                  {
+                    name: 'qrcode',
+                    type: 'QrCodeDataRequest[]',
+                    required: false,
+                    desc: 'QR code generation data, one item per key.'
+                  },
+                  {
+                    name: 'barcode',
+                    type: 'BarcodeDataRequest[]',
+                    required: false,
+                    desc: 'Barcode generation data, one item per key.'
+                  },
+                  {
+                    name: 'pdfPassword',
+                    type: 'object',
+                    required: false,
+                    desc: 'PDF password and permission options.'
+                  },
                   { name: 'watermark', type: 'object', required: false, desc: 'PDF text watermark options.' },
-                  { name: 'zipOutput', type: 'boolean', required: false, desc: 'Return the generated output as a ZIP file.' }
+                  {
+                    name: 'zipOutput',
+                    type: 'boolean',
+                    required: false,
+                    desc: 'Return the generated output as a ZIP file.'
+                  },
+                  {
+                    name: 'async',
+                    type: 'boolean',
+                    required: false,
+                    desc: 'Pro. Queue the render and get 202 + jobId instead of the file. Poll GET /render/jobs/{jobId}.'
+                  },
+                  {
+                    name: 'webhookUrl',
+                    type: 'string',
+                    required: false,
+                    desc: 'With async: true. Receives a POST { jobId, status, downloadUrl?, error? } when the job finishes.'
+                  }
                 ]}
               />
               <CodeSwitcher
@@ -449,6 +541,34 @@ const DocumentationPage = () => {
                 examples={getRequestExamples(activeEndpoint)}
                 isDisableMarginY={true}
               />
+            </SubSection>
+
+            <SubSection id='integration-async' title='Async jobs & webhooks'>
+              <p className='mb-4 text-[15px] leading-relaxed text-default-500'>
+                <b className='font-semibold text-foreground'>Async (Pro).</b> Add <code>&quot;async&quot;: true</code> to
+                get <code>202</code> with a <code>jobId</code> right away. Poll <code>GET /render/jobs/{'{jobId}'}</code> until
+                the status is <code>success</code> (it then includes a fresh <code>downloadUrl</code>) or pass a{' '}
+                <code>webhookUrl</code>. Jobs are stored in PostgreSQL, so they survive restarts and several backend
+                instances can share the queue; temporary errors (database, network, Gotenberg) are retried up to 3 times.
+              </p>
+              <CodeBlock language='json' title='202 Accepted' code={ASYNC_RESPONSE_EXAMPLE} />
+              <p className='my-4 text-[15px] leading-relaxed text-default-500'>
+                <b className='font-semibold text-foreground'>Webhooks</b> are signed with{' '}
+                <code>X-Qorstack-Signature: sha256=&lt;HMAC of the body&gt;</code> when the server sets{' '}
+                <code>WEBHOOK_SIGNING_SECRET</code>, retried 3 times, and never sent to private or internal addresses.
+              </p>
+            </SubSection>
+
+            <SubSection id='integration-transfer' title='Project export & import'>
+              <p className='mb-4 text-[15px] leading-relaxed text-default-500'>
+                <b className='font-semibold text-foreground'>Pro.</b> Move a whole project to another deployment, e.g.
+                staging → production: <b className='font-semibold text-foreground'>Project settings → Export &amp; import</b>.
+                Export gives one .zip with the current version of every template, its test data and images, and your
+                uploaded fonts (no API keys, members or history). Import shows a preview first, then creates new templates
+                with the same key and adds newer versions; anything already up to date is skipped. API:{' '}
+                <code>GET /projects/{'{id}'}/export</code> and <code>POST /projects/{'{id}'}/import?dryRun=true</code>{' '}
+                (multipart <code>file</code>).
+              </p>
             </SubSection>
           </Section>
 
@@ -486,23 +606,68 @@ const DocumentationPage = () => {
           <Section id='file-settings' title='File Settings' icon='solar:settings-bold' delay={0.05}>
             <FileSettingsContent />
           </Section>
+
+          {/* ===== FONTS & TROUBLESHOOTING ===== */}
+          <Section id='fonts' title='Fonts & troubleshooting' icon='solar:text-bold' delay={0.05}>
+            <p className='mb-4 max-w-[65ch] text-[15px] leading-relaxed text-default-500'>
+              PDFs are rendered on the server, so the server needs every font your template uses. Fonts that come with
+              the server are listed as <b className='font-semibold text-foreground'>System</b>; add others on the{' '}
+              <b className='font-semibold text-foreground'>Fonts</b> page (.ttf, .otf, .woff, .woff2). Uploaded fonts are
+              copied to the renderer within about 30 seconds — the Status column shows <i>Syncing</i> until they are{' '}
+              <i>Ready</i>.
+            </p>
+            <SubSection id='fonts-thai' title='Thai fonts'>
+              <p className='mb-4 max-w-[65ch] text-[15px] leading-relaxed text-default-500'>
+                Use the exact font your Word file uses — for example TH Sarabun New, Sarabun, or Angsana New. Upload every
+                weight you use (Regular, Bold, Italic, Bold Italic); Word fakes bold when a weight is missing, but the PDF
+                renderer picks the closest real file, so text can look lighter or wider than in Word.
+              </p>
+            </SubSection>
+            <SubSection id='fonts-missing' title='Missing or wrong font'>
+              <ul className='mb-4 flex max-w-[65ch] list-disc flex-col gap-2 pl-5 text-[15px] leading-relaxed text-default-500'>
+                <li>
+                  <b className='font-semibold text-foreground'>Text appears in a different font</b> — the font is not on the
+                  server. Check the font name in Word (Home → Font), upload that family on the Fonts page, wait for
+                  <i> Ready</i>, then generate again.
+                </li>
+                <li>
+                  <b className='font-semibold text-foreground'>Thai vowels or tone marks overlap</b> — the fallback font has
+                  no Thai shaping. Upload the Thai font the template uses.
+                </li>
+                <li>
+                  <b className='font-semibold text-foreground'>Status shows Problem</b> — the file could not be read or
+                  copied. Delete it and upload the original .ttf/.otf again.
+                </li>
+                <li>
+                  <b className='font-semibold text-foreground'>The preview on the Fonts page looks different</b> — that
+                  preview uses fonts installed on your own device. Only the generated PDF shows what the server has.
+                </li>
+              </ul>
+            </SubSection>
+          </Section>
         </div>
 
         {/* Page Pagination */}
-        <div className='mt-16 flex items-center justify-between border-t border-default-200 pb-12 pt-8 dark:border-white/5'>
+        <div className='mt-16 flex items-center justify-between border-t border-divider pb-12 pt-8'>
           <button
+            type='button'
             onClick={scrollToTop}
-            className='group flex items-center gap-1.5 text-[12.5px] font-medium text-default-400 transition-colors hover:text-default-700'>
-            <Icon icon='solar:arrow-up-linear' className='text-sm transition-transform group-hover:-translate-y-0.5' />
+            className='group flex items-center gap-1.5 font-mono text-[12px] uppercase tracking-[0.12em] text-default-500 transition-colors hover:text-foreground'>
+            <Icon
+              icon='lucide:arrow-up'
+              aria-hidden='true'
+              className='h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5'
+            />
             Back to top
           </button>
-          <a href='/pricing' className='group flex flex-col items-end text-right'>
-            <span className='mb-1 text-[11.5px] font-normal text-default-500'>Next</span>
-            <span className='flex items-center gap-1.5 text-[15px] font-bold tracking-tight text-primary transition-colors group-hover:text-primary/80'>
-              Pricing
+          <a href={PRICING_HREF} className='group flex flex-col items-end text-right'>
+            <span className='mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-default-500'>Next</span>
+            <span className='flex items-center gap-1.5 text-[16px] font-bold uppercase tracking-[0.02em] text-foreground transition-colors group-hover:text-primary'>
+              Free vs Pro
               <Icon
-                icon='solar:arrow-right-linear'
-                className='text-sm transition-transform group-hover:translate-x-0.5'
+                icon='lucide:arrow-right'
+                aria-hidden='true'
+                className='h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5'
               />
             </span>
           </a>

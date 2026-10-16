@@ -17,6 +17,8 @@ namespace QorstackReportService.Infrastructure.Data.Configurations
             builder.HasOne(d => d.TemplateVersion).WithMany(p => p.ReportJobs) .HasForeignKey(d => d.TemplateVersionId) .OnDelete(DeleteBehavior.SetNull) .HasConstraintName("report_jobs_version_fkey");
             builder.HasOne(d => d.User).WithMany(p => p.ReportJobs) .HasForeignKey(d => d.UserId) .HasConstraintName("report_jobs_user_fkey");
             builder.Property(e => e.RequestData) .HasColumnType("jsonb") .HasColumnName("request_data");
+            builder.Property(e => e.Payload) .HasColumnType("jsonb") .HasColumnName("payload");
+            builder.Property(e => e.LockedBy) .HasMaxLength(200);
         }
     }
 }

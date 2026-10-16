@@ -1,8 +1,9 @@
 import { Api } from './apiGenerated'
+import { API_BASE_URL } from '@/api/base-url'
 import { AxiosError, AxiosRequestConfig } from 'axios'
 
 const api = new Api({
-  baseURL: process.env.NEXT_PUBLIC_SERVICE,
+  baseURL: API_BASE_URL,
   withCredentials: true
 })
 
@@ -28,7 +29,7 @@ api.instance.interceptors.response.use(
       !originalRequest.url?.includes('/auth/login') &&
       !originalRequest.url?.includes('/auth/register') &&
       !originalRequest.url?.includes('/auth/google-login') &&
-      !originalRequest.url?.includes('/auth/github-login') &&
+      !originalRequest.url?.includes('/auth/github/exchange') &&
       !originalRequest.url?.includes('/auth/gitlab-login')
     ) {
       originalRequest._retry = true

@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { useRouteParams } from '@/hooks/use-route-params'
 
 import { Suspense } from 'react'
 
 function ExcelTemplatesRedirect() {
   const router = useRouter()
-  const params = useParams()
+  const params = useRouteParams()
   useEffect(() => {
     router.replace(`/project/${params.id}/templates`)
   }, [params.id, router])

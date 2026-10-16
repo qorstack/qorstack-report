@@ -67,7 +67,7 @@
     <PackageVersion Include="ZXing.Net.Bindings.SkiaSharp" Version="0.16.22" />
 
     <!-- ── API & Observability ── -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.0.0" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.7.6" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.5.0" />
     <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
@@ -80,6 +80,12 @@
 
     <!-- ── LINQ Utilities ── -->
     <PackageVersion Include="System.Linq.Dynamic.Core" Version="1.6.3" />
+
+    <!-- Patched transitive crypto used by Microsoft.Data.SqlClient (CVE-2026-84008, CVE-2026-70162). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+
+    <!-- Patched transitive SSH transport used by Testcontainers. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
 
     <!-- ── Testing ── -->
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />

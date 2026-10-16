@@ -15,33 +15,42 @@ interface SegmentedTabsProps<T extends string = string> {
   onChange: (id: T) => void
   className?: string
   size?: 'sm' | 'md'
+  /** Accessible name for the tab list. */
+  ariaLabel?: string
 }
 
+/** Square segmented control (calm app mode): 1px borders, sentence case, selected = raised neutral surface. */
 export const SegmentedTabs = <T extends string>({
   items,
   active,
   onChange,
   className,
-  size = 'md'
+  size = 'md',
+  ariaLabel
 }: SegmentedTabsProps<T>) => {
-  const padClass = size === 'sm' ? 'px-3 py-1.5 text-[11px]' : 'px-3.5 py-1.5 text-[12px]'
+  const padClass = size === 'sm' ? 'h-8 px-3' : 'h-9 px-4'
   return (
-    <div className={cn('flex items-center gap-1 py-2', className)}>
-      {items.map(item => (
-        <button
-          key={item.id}
-          onClick={() => onChange(item.id)}
-          className={cn(
-            'flex items-center gap-1.5 rounded-md transition-colors duration-200',
-            padClass,
-            active === item.id
-              ? 'bg-content3 font-semibold text-foreground ring-1 ring-default-200/70 dark:ring-white/10'
-              : 'font-medium text-default-500 hover:bg-content2/70 hover:text-foreground'
-          )}>
-          {item.icon && <Icon icon={item.icon} className='h-3.5 w-3.5' />}
-          {item.label}
-        </button>
-      ))}
+    <div role='tablist' aria-label={ariaLabel} className={cn('inline-flex border border-default-300', className)}>
+      {items.map((item, i) => {
+        const isActive = active === item.id
+        return (
+          <button
+            key={item.id}
+            type='button'
+            role='tab'
+            aria-selected={isActive}
+            onClick={() => onChange(item.id)}
+            className={cn(
+              'flex items-center gap-1.5 text-[13px] font-medium transition-colors duration-150',
+              padClass,
+              i > 0 && 'border-l border-default-300',
+              isActive ? 'bg-content3 text-foreground' : 'text-default-500 hover:text-foreground'
+            )}>
+            {item.icon && <Icon icon={item.icon} className='h-3.5 w-3.5' />}
+            {item.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

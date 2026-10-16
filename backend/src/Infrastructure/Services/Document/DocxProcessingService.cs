@@ -63,7 +63,11 @@ public class DocxProcessingService : IDocxProcessingService
     }
 
     /// <inheritdoc />
-    public async Task<Stream> ProcessTemplateAsync(Stream templateStream, DocumentProcessingData data, CancellationToken cancellationToken = default)
+    public Task<Stream> ProcessTemplateAsync(Stream templateStream, DocumentProcessingData data, CancellationToken cancellationToken = default)
+        => ProcessTemplateAsync(templateStream, data, optimizeForPdf: true, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<Stream> ProcessTemplateAsync(Stream templateStream, DocumentProcessingData data, bool optimizeForPdf, CancellationToken cancellationToken = default)
     {
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
@@ -97,6 +101,17 @@ public class DocxProcessingService : IDocxProcessingService
             phaseSw.Restart();
             FlattenStructuredDocumentTags(mainPart);
             _logger.LogInformation("[ProcessTemplate] Flatten SDTs: {Elapsed}ms", phaseSw.ElapsedMilliseconds);
+
+            // LibreOffice-only layout fixes (skipped when the DOCX itself is returned)
+            LineBreakParity? lineBreakParity = null;
+            if (optimizeForPdf)
+            {
+                // Must run before style/font-size syncing so the original (inherited) sizes are measured
+                NormalizeEmptyHeaderFooterParagraphs(mainPart);
+
+                // Capture thaiDistribute styles before ProcessStyles rewrites them to "both"
+                lineBreakParity = new LineBreakParity(GetThaiDistributedStyleIds(mainPart), UsesSmartJustify(mainPart));
+            }
 
             // 0.5. Extract theme font map (resolve theme font references for all subsequent processing)
             var themeFontMap = ExtractThemeFontMap(mainPart);
@@ -132,9 +147,12 @@ public class DocxProcessingService : IDocxProcessingService
             ProcessNumbering(mainPart, themeFontMap);
             _logger.LogInformation("[ProcessTemplate] Process numbering: {Elapsed}ms", phaseSw.ElapsedMilliseconds);
 
+            // 5.5. Clamp text-box indents LibreOffice would otherwise hide
+            if (optimizeForPdf) NormalizeTextBoxIndentation(mainPart);
+
             // 6. Process Document Parts (Body, Headers, Footers)
             phaseSw.Restart();
-            ProcessDocumentParts(mainPart, data, resourceCache, themeFontMap);
+            ProcessDocumentParts(mainPart, data, resourceCache, themeFontMap, lineBreakParity);
             _logger.LogInformation("[ProcessTemplate] Process document parts: {Elapsed}ms", phaseSw.ElapsedMilliseconds);
 
             // Save changes
@@ -215,10 +233,29 @@ public class DocxProcessingService : IDocxProcessingService
             FlattenStructuredDocumentTags(mainPart);
             _logger.LogInformation("[PreviewPreprocess] Flatten SDTs: {Elapsed}ms", phaseSw.ElapsedMilliseconds);
 
+            // Must run before SinglePassPreprocess syncs sz/szCs in styles
+            NormalizeEmptyHeaderFooterParagraphs(mainPart);
+
+            // Capture thaiDistribute paragraphs before SinglePassPreprocess rewrites them to "both"
+            var styles = mainPart.StyleDefinitionsPart?.Styles;
+            var thaiStyleIds = GetThaiDistributedStyleIds(mainPart);
+            var shrinkTargets = UsesSmartJustify(mainPart)
+                ? GetLayoutRoots(mainPart).SelectMany(r => r.Descendants<Paragraph>()).Where(p => IsThaiDistributed(p, thaiStyleIds, styles)).ToList()
+                : new List<Paragraph>();
+
             // 2. Single-pass: scale + font sync + alignment fix
             phaseSw.Restart();
             SinglePassPreprocess(mainPart);
             _logger.LogInformation("[PreviewPreprocess] SinglePassPreprocess: {Elapsed}ms", phaseSw.ElapsedMilliseconds);
+
+            NormalizeTextBoxIndentation(mainPart);
+
+            // Word line-breaking parity
+            var previewThemeFontMap = ExtractThemeFontMap(mainPart);
+            foreach (var paragraph in GetLayoutRoots(mainPart).SelectMany(r => r.Descendants<Paragraph>()).ToList())
+                InsertThaiLatinBreakOpportunities(paragraph);
+            foreach (var paragraph in shrinkTargets.Where(p => MayWrap(p, mainPart, styles, previewThemeFontMap)))
+                CompensateSmartJustifyShrink(paragraph, styles, previewThemeFontMap);
 
             // 3. Save
             phaseSw.Restart();
@@ -270,7 +307,11 @@ public class DocxProcessingService : IDocxProcessingService
 
                 // Sync style run properties (font slots, bold/italic)
                 var rPr = style.StyleRunProperties;
-                if (rPr != null) SyncRunProperties(rPr, themeFontMap);
+                if (rPr != null)
+                {
+                    MaterializeInheritedFontSizes(style, stylesPart.Styles);
+                    SyncRunProperties(rPr, themeFontMap);
+                }
 
                 // Table conditional styles
                 foreach (var tblStylePr in style.Elements<TableStyleProperties>())
@@ -438,8 +479,9 @@ public class DocxProcessingService : IDocxProcessingService
     private void ProcessDocumentParts(MainDocumentPart mainPart, DocumentProcessingData data, ResourceCache resources)
         => ProcessDocumentParts(mainPart, data, resources, null);
 
-    private void ProcessDocumentParts(MainDocumentPart mainPart, DocumentProcessingData data, ResourceCache resources, Dictionary<string, string>? themeFontMap)
+    private void ProcessDocumentParts(MainDocumentPart mainPart, DocumentProcessingData data, ResourceCache resources, Dictionary<string, string>? themeFontMap, LineBreakParity? lineBreakParity = null)
     {
+        var styles = mainPart.StyleDefinitionsPart?.Styles;
         var targets = new List<(OpenXmlPart Part, OpenXmlElement Root)>();
         if (mainPart.Document.Body != null)
             targets.Add((mainPart, mainPart.Document.Body));
@@ -457,7 +499,9 @@ public class DocxProcessingService : IDocxProcessingService
             {
                 // 1. Condition removed
 
-                // 2. Convert Thai Distributed Alignment (if present)
+                // 2. Convert Thai Distributed Alignment (if present) — remember it for shrink compensation
+                var compensateShrink = lineBreakParity is { SmartJustify: true } &&
+                    IsThaiDistributed(paragraph, lineBreakParity.ThaiStyleIds, styles);
                 ConvertParagraphAlignment(paragraph);
 
                 // 3. Normalize Placeholders (Merge runs for {{...}})
@@ -470,6 +514,14 @@ public class DocxProcessingService : IDocxProcessingService
                 foreach (var run in runs)
                 {
                     ProcessRun(run, part, data, resources, themeFontMap);
+                }
+
+                // 5. Word line-breaking parity (after replacement, so inserted values are covered too)
+                if (lineBreakParity != null)
+                {
+                    InsertThaiLatinBreakOpportunities(paragraph);
+                    if (compensateShrink && MayWrap(paragraph, mainPart, styles, themeFontMap))
+                        CompensateSmartJustifyShrink(paragraph, styles, themeFontMap);
                 }
             }
         }
@@ -1149,7 +1201,8 @@ public class DocxProcessingService : IDocxProcessingService
                  // if (dominantFont != null)
                  //     ApplyFontToElement(rPr, dominantFont);
 
-                 // 4. Sync
+                 // 4. Sync (after pinning inherited sizes so sz↔szCs sync can't override them)
+                 MaterializeInheritedFontSizes(style, stylesPart.Styles);
                  SyncRunProperties(rPr, themeFontMap);
              }
 
@@ -2391,24 +2444,19 @@ public class DocxProcessingService : IDocxProcessingService
         var src = imageData.Src?.Trim();
         if (string.IsNullOrWhiteSpace(src)) return Array.Empty<byte>();
 
-        // Handle minio: paths — resolve to presigned URL then download
+        // minio:{area}/{key} — read straight from storage (ownership is checked before processing).
         if (src.StartsWith("minio:", StringComparison.OrdinalIgnoreCase))
         {
-            var presignedUrl = await _storageService.ResolveMinioPathAsync(src);
-            var httpClient = _httpClientFactory.CreateClient();
-            return await httpClient.GetByteArrayAsync(presignedUrl, cancellationToken);
+            var parts = src[6..].Split('/', 2);
+            if (parts.Length != 2) throw new ArgumentException("Invalid storage path for image");
+            await using var stream = await _storageService.DownloadFileAsync(parts[0], parts[1]);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms, cancellationToken);
+            return ms.ToArray();
         }
 
         if (src.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-        {
-            var httpClient = _httpClientFactory.CreateClient();
-            // Add User-Agent to avoid being blocked by some servers
-            if (!httpClient.DefaultRequestHeaders.Contains("User-Agent"))
-            {
-                httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            }
-            return await httpClient.GetByteArrayAsync(src, cancellationToken);
-        }
+            return await RemoteImageFetcher.DownloadAsync(_httpClientFactory, src, cancellationToken);
         else
         {
             if (src.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
@@ -2946,6 +2994,543 @@ public class DocxProcessingService : IDocxProcessingService
         }
 
         return (0, 0);
+    }
+
+    /// <summary>
+    /// Clamps text-box paragraph indents that exceed the text box's inner width.
+    /// Word places the first line at (left - hanging) and ignores the impossible left indent,
+    /// but LibreOffice hides the whole paragraph — e.g. left=6480/hanging=6480 in a 190pt box.
+    /// Rewrites such indents so the first line keeps its exact position.
+    /// </summary>
+    private void NormalizeTextBoxIndentation(MainDocumentPart mainPart)
+    {
+        var roots = new List<OpenXmlElement>();
+        if (mainPart.Document?.Body != null) roots.Add(mainPart.Document.Body);
+        roots.AddRange(mainPart.HeaderParts.Where(p => p.Header != null).Select(p => (OpenXmlElement)p.Header!));
+        roots.AddRange(mainPart.FooterParts.Where(p => p.Footer != null).Select(p => (OpenXmlElement)p.Footer!));
+
+        var fixedCount = 0;
+        foreach (var root in roots)
+        {
+            foreach (var txbx in root.Descendants<TextBoxContent>())
+            {
+                var innerWidthTwips = GetTextBoxInnerWidthTwips(txbx);
+                if (innerWidthTwips <= 0) continue;
+
+                foreach (var paragraph in txbx.Descendants<Paragraph>())
+                {
+                    var ind = paragraph.ParagraphProperties?.Indentation;
+                    if (ind == null) continue;
+
+                    var left = ParseTwips(ind.Left?.Value ?? ind.Start?.Value);
+                    if (left <= innerWidthTwips) continue;
+
+                    var firstLineStart = left - ParseTwips(ind.Hanging?.Value) + ParseTwips(ind.FirstLine?.Value);
+                    var newLeft = Math.Clamp(firstLineStart, 0, innerWidthTwips);
+
+                    ind.Left = newLeft.ToString();
+                    ind.Start = null;
+                    ind.Hanging = null;
+                    ind.FirstLine = null;
+                    fixedCount++;
+                }
+            }
+        }
+
+        if (fixedCount > 0)
+            _logger.LogInformation("[TextBox] Clamped {Count} paragraph indent(s) wider than their text box", fixedCount);
+    }
+
+    /// <summary>
+    /// Gives header/footer paragraphs with no visible content the line height Word computes
+    /// from the template's own font. Such a paragraph only reserves one line of its mark font;
+    /// when that font is missing, LibreOffice measures the fallback (Kinnari ≈ 1.78em) instead,
+    /// the header outgrows the top margin and pushes the whole body down — Word does not.
+    /// Height = Word line height of the mark font (see <see cref="WordFontMetrics"/>) × size ×
+    /// line multiple. Paragraphs whose font metrics are unknown are left untouched.
+    /// </summary>
+    private void NormalizeEmptyHeaderFooterParagraphs(MainDocumentPart mainPart)
+    {
+        var styles = mainPart.StyleDefinitionsPart?.Styles;
+        var themeFontMap = ExtractThemeFontMap(mainPart);
+        var roots = new List<OpenXmlElement>();
+        roots.AddRange(mainPart.HeaderParts.Where(p => p.Header != null).Select(p => (OpenXmlElement)p.Header!));
+        roots.AddRange(mainPart.FooterParts.Where(p => p.Footer != null).Select(p => (OpenXmlElement)p.Footer!));
+
+        var pinnedCount = 0;
+        foreach (var root in roots)
+        {
+            foreach (var paragraph in root.Descendants<Paragraph>().ToList())
+            {
+                if (paragraph.Ancestors<TextBoxContent>().Any() || HasVisibleContent(paragraph)) continue;
+
+                var (line, rule) = ResolveLineSpacing(paragraph, styles);
+                if (rule == LineSpacingRuleValues.Exact || rule == LineSpacingRuleValues.AtLeast) continue;
+
+                var fontFamily = ResolveMarkFontFamily(paragraph, styles, themeFontMap);
+                var lineHeightEm = WordFontMetrics.GetLineHeightEm(fontFamily);
+                if (lineHeightEm == null)
+                {
+                    _logger.LogDebug("[HeaderFooter] No Word metrics for font {Font}; empty paragraph left as-is", fontFamily);
+                    continue;
+                }
+
+                var halfPoints = ResolveMarkFontSize(paragraph, styles);
+                var lineTwips = (int)Math.Round(halfPoints * 10 * lineHeightEm.Value * (line / 240.0)); // 1 half-point = 10 twips
+
+                var pPr = paragraph.ParagraphProperties ?? paragraph.PrependChild(new ParagraphProperties());
+                pPr.SpacingBetweenLines ??= new SpacingBetweenLines();
+                pPr.SpacingBetweenLines.Line = lineTwips.ToString();
+                pPr.SpacingBetweenLines.LineRule = LineSpacingRuleValues.Exact;
+                pinnedCount++;
+            }
+        }
+
+        if (pinnedCount > 0)
+            _logger.LogInformation("[HeaderFooter] Pinned line height of {Count} empty paragraph(s)", pinnedCount);
+    }
+
+    // --- Word line-breaking parity (thaiDistribute, Thai↔Latin breaks) ---
+
+    private sealed record LineBreakParity(HashSet<string> ThaiStyleIds, bool SmartJustify);
+
+    /// <summary>Body, header and footer roots — the parts that are laid out.</summary>
+    private static IEnumerable<OpenXmlElement> GetLayoutRoots(MainDocumentPart mainPart)
+    {
+        if (mainPart.Document?.Body != null) yield return mainPart.Document.Body;
+        foreach (var hp in mainPart.HeaderParts) if (hp.Header != null) yield return hp.Header;
+        foreach (var fp in mainPart.FooterParts) if (fp.Footer != null) yield return fp.Footer;
+    }
+
+    private const char ZeroWidthSpace = '\u200B';
+    private static readonly Regex ThaiLatinBoundary = new(@"(?<=[\u0E00-\u0E7F])(?=[A-Za-z0-9])|(?<=[A-Za-z0-9])(?=[\u0E00-\u0E7F])", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Style IDs whose effective justification (own or inherited via basedOn) is thaiDistribute.
+    /// Must be captured before styles are rewritten (thaiDistribute → both).
+    /// </summary>
+    private static HashSet<string> GetThaiDistributedStyleIds(MainDocumentPart mainPart)
+    {
+        var styles = mainPart.StyleDefinitionsPart?.Styles;
+        var ids = new HashSet<string>();
+        if (styles == null) return ids;
+
+        foreach (var style in styles.Elements<Style>().Where(s => s.Type?.Value == StyleValues.Paragraph && s.StyleId?.Value != null))
+        {
+            var visited = new HashSet<string>();
+            var current = style;
+            while (current != null && visited.Add(current.StyleId?.Value ?? ""))
+            {
+                var jc = current.StyleParagraphProperties?.Justification?.Val?.Value;
+                if (jc != null)
+                {
+                    if (jc == JustificationValues.ThaiDistribute) ids.Add(style.StyleId!.Value!);
+                    break;
+                }
+                var basedOn = current.BasedOn?.Val?.Value;
+                current = basedOn == null ? null : styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == basedOn);
+            }
+        }
+        return ids;
+    }
+
+    /// <summary>Effective thaiDistribute check: direct jc wins, else the paragraph (or default) style.</summary>
+    private static bool IsThaiDistributed(Paragraph paragraph, HashSet<string> thaiStyleIds, Styles? styles)
+    {
+        var direct = paragraph.ParagraphProperties?.Justification?.Val?.Value;
+        if (direct != null) return direct == JustificationValues.ThaiDistribute;
+        if (thaiStyleIds.Count == 0) return false;
+
+        var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value
+            ?? styles?.Elements<Style>().FirstOrDefault(s => s.Type?.Value == StyleValues.Paragraph && s.Default?.Value == true)?.StyleId?.Value;
+        return styleId != null && thaiStyleIds.Contains(styleId);
+    }
+
+    /// <summary>LibreOffice enables "smart justify" (spaces may shrink up to 20%) for DOCX with compatibilityMode ≥ 15.</summary>
+    private static bool UsesSmartJustify(MainDocumentPart mainPart)
+    {
+        var mode = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<Compatibility>()?
+            .Elements<CompatibilitySetting>()
+            .FirstOrDefault(c => c.Name?.Value == CompatSettingNameValues.CompatibilityMode)?.Val?.Value;
+        return int.TryParse(mode, out var m) && m >= 15;
+    }
+
+    /// <summary>
+    /// thaiDistribute is rendered as "both" for LibreOffice, but Word's thaiDistribute never shrinks
+    /// spaces while LibreOffice's smart justify shrinks them by up to 20% — so LibreOffice fits more
+    /// text per line and breaks lines differently. Widening every space by 25% (1.25 × 0.8 = 1)
+    /// makes LibreOffice's fit test equal Word's; justified lines still stretch to the full width.
+    /// The space width comes from the run's own font (the script LibreOffice assigns to a space is
+    /// that of the preceding character). Runs whose font metrics are unknown are left untouched.
+    /// </summary>
+    private void CompensateSmartJustifyShrink(Paragraph paragraph, Styles? styles, Dictionary<string, string>? themeFontMap)
+    {
+        bool? prevIsThai = null;
+        foreach (var run in paragraph.Descendants<Run>().Where(r => r.Ancestors<Paragraph>().First() == paragraph).ToList())
+        {
+            var texts = run.Elements<Text>().ToList();
+            var fullText = string.Concat(texts.Select(t => t.Text));
+            var simpleRun = texts.Count > 0 && run.ChildElements.All(c => c is RunProperties || c is Text);
+            if (!simpleRun || !fullText.Contains(' '))
+            {
+                UpdatePrevScript(fullText, ref prevIsThai);
+                continue;
+            }
+
+            // Plan the split first: (segment, extra twips) — only split when something is compensated
+            var segments = Regex.Matches(fullText, @" +|[^ ]+").Select(m => m.Value).ToList();
+            var plan = new List<(string Text, int ExtraTwips)>();
+            for (var k = 0; k < segments.Count; k++)
+            {
+                var seg = segments[k];
+                if (seg[0] != ' ')
+                {
+                    UpdatePrevScript(seg, ref prevIsThai);
+                    plan.Add((seg, 0));
+                    continue;
+                }
+
+                var useCs = prevIsThai ?? (k + 1 < segments.Count && IsThaiChar(segments[k + 1][0]));
+                var (font, halfPoints) = ResolveRunFont(run, paragraph, styles, themeFontMap, useCs);
+                var spaceEm = WordFontMetrics.GetSpaceWidthEm(font);
+                // w:spacing is in twentieths of a point; half-points × 10 = twips
+                var extra = spaceEm == null ? 0 : (int)Math.Round(spaceEm.Value * halfPoints * 10 * 0.25); // per space
+                plan.Add((seg, extra));
+            }
+            if (plan.All(p => p.ExtraTwips == 0)) continue;
+
+            OpenXmlElement insertAfter = run;
+            foreach (var (text, extra) in plan)
+            {
+                var newRun = (Run)run.CloneNode(true);
+                newRun.RemoveAllChildren<Text>();
+                newRun.AppendChild(new Text(text) { Space = SpaceProcessingModeValues.Preserve });
+                if (extra > 0)
+                {
+                    var rPr = newRun.RunProperties ?? newRun.PrependChild(new RunProperties());
+                    rPr.Spacing = new Spacing { Val = (rPr.Spacing?.Val?.Value ?? 0) + extra }; // w:spacing applies to each space
+                }
+                run.Parent!.InsertAfter(newRun, insertAfter);
+                insertAfter = newRun;
+            }
+            run.Remove();
+        }
+    }
+
+    /// <summary>
+    /// Conservative check whether a body paragraph could wrap onto a second line. Shrink
+    /// compensation only matters for lines that break; on a paragraph's only line the widened
+    /// spaces would just show (≈0.8pt each). Uses upper-bound glyph widths, so "false" means the
+    /// paragraph certainly fits on one line. Table cells, text boxes and headers/footers return true.
+    /// </summary>
+    private static bool MayWrap(Paragraph paragraph, MainDocumentPart mainPart, Styles? styles, Dictionary<string, string>? themeFontMap)
+    {
+        if (paragraph.Ancestors<TableCell>().Any() || paragraph.Ancestors<TextBoxContent>().Any() || paragraph.Ancestors<Body>().FirstOrDefault() == null)
+            return true;
+
+        // Section of this paragraph: the next sectPr at or after it, else the body's final one
+        var sectPr = paragraph.ParagraphProperties?.SectionProperties
+            ?? paragraph.ElementsAfter().OfType<Paragraph>().Select(p => p.ParagraphProperties?.SectionProperties).FirstOrDefault(s => s != null)
+            ?? mainPart.Document.Body!.GetFirstChild<SectionProperties>();
+        var pgSz = sectPr?.GetFirstChild<PageSize>();
+        var pgMar = sectPr?.GetFirstChild<PageMargin>();
+        if (pgSz?.Width?.Value == null || pgMar == null) return true;
+
+        var ind = paragraph.ParagraphProperties?.Indentation;
+        double availTwips = pgSz.Width.Value - (pgMar.Left?.Value ?? 0) - (pgMar.Right?.Value ?? 0)
+            - ParseTwips(ind?.Left?.Value ?? ind?.Start?.Value) - ParseTwips(ind?.Right?.Value ?? ind?.End?.Value)
+            - Math.Max(0, ParseTwips(ind?.FirstLine?.Value));
+
+        var defaultTab = ParseTwips(mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<DefaultTabStop>()?.Val?.Value.ToString());
+        if (defaultTab <= 0) defaultTab = 720;
+        var customStops = paragraph.ParagraphProperties?.Tabs?.Elements<TabStop>()
+            .Select(t => (double)(t.Position?.Value ?? 0)).Where(p => p > 0).OrderBy(p => p).ToList() ?? new List<double>();
+
+        double x = 0;
+        foreach (var run in paragraph.Descendants<Run>().Where(r => r.Ancestors<Paragraph>().First() == paragraph))
+        {
+            var (fontAscii, szAscii) = ResolveRunFont(run, paragraph, styles, themeFontMap, complexScript: false);
+            var (fontCs, szCs) = ResolveRunFont(run, paragraph, styles, themeFontMap, complexScript: true);
+            var emTwips = Math.Max(szAscii, szCs) * 10.0; // half-points × 10 = twips per em
+
+            foreach (var child in run.ChildElements)
+            {
+                switch (child)
+                {
+                    case Text t:
+                        foreach (var c in t.Text) x += UpperBoundAdvanceEm(c, fontAscii, fontCs) * emTwips;
+                        break;
+                    case TabChar:
+                        var next = customStops.FirstOrDefault(p => p > x);
+                        x = next > 0 ? next : (Math.Floor(x / defaultTab) + 1) * defaultTab;
+                        break;
+                    case Break:
+                    case CarriageReturn:
+                        if (x > availTwips) return true;
+                        x = 0;
+                        break;
+                    case Drawing or Picture or EmbeddedObject or FieldChar or SimpleField:
+                        return true; // can't bound these cheaply
+                }
+            }
+            if (x > availTwips) return true;
+        }
+        return x > availTwips;
+    }
+
+    /// <summary>
+    /// Per-character advance (em) for the wrap estimate: the real advance from the run's fonts when
+    /// known (the wider of the two slots, +5% margin), otherwise a generous generic bound.
+    /// </summary>
+    private static double UpperBoundAdvanceEm(char c, string? fontAscii, string? fontCs)
+    {
+        if (c == ZeroWidthSpace || c == '\u2060') return 0;
+        var known = new[] { WordFontMetrics.GetAdvanceEm(fontAscii, c), WordFontMetrics.GetAdvanceEm(fontCs, c) }
+            .Where(v => v != null).Select(v => v!.Value).DefaultIfEmpty(-1).Max();
+        if (known >= 0) return known * 1.05;
+
+        if (c == '\u0E31' || (c >= '\u0E34' && c <= '\u0E3A') || (c >= '\u0E47' && c <= '\u0E4E')) return 0; // Thai combining marks
+        if (IsThaiChar(c)) return 0.7;
+        if (c == ' ') return 0.35;
+        if (char.IsAsciiLetterUpper(c) || c is 'm' or 'w' or '@' or '%' or '&') return 1.0;
+        return c < 0x80 ? 0.65 : 1.0;
+    }
+
+    private static bool IsThaiChar(char c) => c >= '\u0E00' && c <= '\u0E7F';
+
+    private static void UpdatePrevScript(string text, ref bool? prevIsThai)
+    {
+        for (var i = text.Length - 1; i >= 0; i--)
+        {
+            if (char.IsWhiteSpace(text[i]) || text[i] == ZeroWidthSpace) continue;
+            prevIsThai = IsThaiChar(text[i]);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Inserts U+200B at Thai↔Latin/digit boundaries with no whitespace. Word may break a line there
+    /// ("วันที่บน|Invoice"); LibreOffice (ICU) treats the pair as one unbreakable word.
+    /// Works across run boundaries; runs inside text boxes are handled with their own paragraph.
+    /// </summary>
+    private static void InsertThaiLatinBreakOpportunities(Paragraph paragraph)
+    {
+        Text? previous = null;
+        foreach (var node in paragraph.Descendants().Where(e => e is Text or TabChar or Break or PositionalTab).ToList())
+        {
+            if (node.Ancestors<Paragraph>().First() != paragraph) continue;
+            if (node is not Text text)
+            {
+                previous = null; // a tab/break already separates the two sides
+                continue;
+            }
+
+            var value = text.Text;
+            if (string.IsNullOrEmpty(value)) continue;
+
+            if (ThaiLatinBoundary.IsMatch(value))
+            {
+                value = ThaiLatinBoundary.Replace(value, ZeroWidthSpace.ToString());
+                text.Text = value;
+                text.Space = SpaceProcessingModeValues.Preserve;
+            }
+
+            if (previous != null)
+            {
+                var last = previous.Text[^1];
+                var first = value[0];
+                if ((IsThaiChar(last) && char.IsAsciiLetterOrDigit(first)) || (char.IsAsciiLetterOrDigit(last) && IsThaiChar(first)))
+                {
+                    previous.Text += ZeroWidthSpace;
+                    previous.Space = SpaceProcessingModeValues.Preserve;
+                }
+            }
+            previous = text;
+        }
+    }
+
+    /// <summary>
+    /// Font family and size (half-points) of a run for the given script slot, resolved through
+    /// run properties → character style → paragraph style chain → doc defaults.
+    /// </summary>
+    private static (string? Font, int HalfPoints) ResolveRunFont(Run run, Paragraph paragraph, Styles? styles, Dictionary<string, string>? themeFontMap, bool complexScript)
+    {
+        var sources = new List<OpenXmlElement?> { run.RunProperties };
+        var rStyleId = run.RunProperties?.RunStyle?.Val?.Value;
+        var visited = new HashSet<string>();
+        while (rStyleId != null && styles != null && visited.Add(rStyleId))
+        {
+            var rs = styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == rStyleId);
+            sources.Add(rs?.StyleRunProperties);
+            rStyleId = rs?.BasedOn?.Val?.Value;
+        }
+        sources.AddRange(GetParagraphStyleChain(paragraph, styles).Select(s => (OpenXmlElement?)s.StyleRunProperties));
+        sources.Add(styles?.DocDefaults?.RunPropertiesDefault?.RunPropertiesBaseStyle);
+
+        string? font = null;
+        string? size = null;
+        foreach (var src in sources)
+        {
+            if (src == null) continue;
+            if (font == null)
+            {
+                var rf = src.GetFirstChild<RunFonts>();
+                if (rf != null)
+                {
+                    var name = complexScript ? rf.ComplexScript?.Value : rf.Ascii?.Value;
+                    var theme = complexScript ? rf.ComplexScriptTheme?.InnerText : rf.AsciiTheme?.InnerText;
+                    if (string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(theme) && themeFontMap != null)
+                        themeFontMap.TryGetValue(theme.Replace("Ascii", "HAnsi"), out name);
+                    if (!string.IsNullOrEmpty(name)) font = name;
+                }
+            }
+            size ??= complexScript ? src.GetFirstChild<FontSizeComplexScript>()?.Val?.Value : src.GetFirstChild<FontSize>()?.Val?.Value;
+            if (font != null && size != null) break;
+        }
+
+        return (font, int.TryParse(size, out var hp) && hp > 0 ? hp : 20);
+    }
+
+    /// <summary>True when the paragraph itself renders text, fields or inline images (floating text boxes/anchors excluded).</summary>
+    private static bool HasVisibleContent(Paragraph paragraph)
+    {
+        static bool Own(OpenXmlElement e) => !e.Ancestors<TextBoxContent>().Any();
+
+        return paragraph.Descendants<Text>().Any(t => Own(t) && !string.IsNullOrWhiteSpace(t.Text))
+            || paragraph.Descendants<FieldCode>().Any(Own)
+            || paragraph.Descendants<SimpleField>().Any(Own)
+            || paragraph.Descendants<SymbolChar>().Any(Own)
+            || paragraph.Descendants<Break>().Any(Own)
+            || paragraph.Descendants<DocumentFormat.OpenXml.Drawing.Wordprocessing.Inline>().Any(Own)
+            || paragraph.Descendants<EmbeddedObject>().Any(Own)
+            || paragraph.Descendants<Picture>().Any(p => Own(p) && !p.OuterXml.Contains("position:absolute"));
+    }
+
+    /// <summary>Paragraph style chain: explicit pStyle (or the default paragraph style) then its basedOn ancestors.</summary>
+    private static IEnumerable<Style> GetParagraphStyleChain(Paragraph paragraph, Styles? styles)
+    {
+        if (styles == null) yield break;
+        var styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value;
+        var style = styleId != null
+            ? styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == styleId)
+            : styles.Elements<Style>().FirstOrDefault(s => s.Type?.Value == StyleValues.Paragraph && s.Default?.Value == true);
+
+        var visited = new HashSet<string>();
+        while (style != null && visited.Add(style.StyleId?.Value ?? ""))
+        {
+            yield return style;
+            var basedOn = style.BasedOn?.Val?.Value;
+            style = basedOn == null ? null : styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == basedOn);
+        }
+    }
+
+    private static (double Line, LineSpacingRuleValues Rule) ResolveLineSpacing(Paragraph paragraph, Styles? styles)
+    {
+        var candidates = new List<SpacingBetweenLines?> { paragraph.ParagraphProperties?.SpacingBetweenLines };
+        candidates.AddRange(GetParagraphStyleChain(paragraph, styles).Select(s => s.StyleParagraphProperties?.SpacingBetweenLines));
+        candidates.Add(styles?.DocDefaults?.ParagraphPropertiesDefault?.ParagraphPropertiesBaseStyle?.SpacingBetweenLines);
+
+        var lineValue = candidates.Select(c => c?.Line?.Value).FirstOrDefault(v => v != null);
+        var rule = candidates.Select(c => c?.LineRule?.Value).FirstOrDefault(v => v != null) ?? LineSpacingRuleValues.Auto;
+        var line = double.TryParse(lineValue, out var parsed) && parsed > 0 ? parsed : 240;
+        return (line, rule);
+    }
+
+    /// <summary>
+    /// Western (ascii) font of the paragraph mark, resolved through styles and doc defaults —
+    /// the slot Word measures for an empty paragraph. Theme references are resolved via the theme.
+    /// </summary>
+    private static string? ResolveMarkFontFamily(Paragraph paragraph, Styles? styles, Dictionary<string, string> themeFontMap)
+    {
+        var candidates = new List<RunFonts?> { paragraph.ParagraphProperties?.ParagraphMarkRunProperties?.GetFirstChild<RunFonts>() };
+        candidates.AddRange(GetParagraphStyleChain(paragraph, styles).Select(s => s.StyleRunProperties?.RunFonts));
+        candidates.Add(styles?.DocDefaults?.RunPropertiesDefault?.RunPropertiesBaseStyle?.RunFonts);
+
+        foreach (var rFonts in candidates)
+        {
+            if (rFonts == null) continue;
+            if (rFonts.AsciiTheme?.HasValue == true)
+            {
+                // Theme map keys use HAnsi naming (minorHAnsi/majorHAnsi) for the Latin slot
+                var key = (rFonts.AsciiTheme.InnerText ?? "").Replace("Ascii", "HAnsi");
+                return themeFontMap.TryGetValue(key, out var themed) ? themed : null;
+            }
+            if (!string.IsNullOrEmpty(rFonts.Ascii?.Value)) return rFonts.Ascii.Value;
+        }
+        return null;
+    }
+
+    /// <summary>Western font size (half-points) of the paragraph mark, resolved through styles and doc defaults.</summary>
+    private static int ResolveMarkFontSize(Paragraph paragraph, Styles? styles)
+    {
+        var candidates = new List<string?> { paragraph.ParagraphProperties?.ParagraphMarkRunProperties?.GetFirstChild<FontSize>()?.Val?.Value };
+        candidates.AddRange(GetParagraphStyleChain(paragraph, styles).Select(s => s.StyleRunProperties?.FontSize?.Val?.Value));
+        candidates.Add(styles?.DocDefaults?.RunPropertiesDefault?.RunPropertiesBaseStyle?.FontSize?.Val?.Value);
+
+        var size = candidates.FirstOrDefault(v => v != null);
+        return int.TryParse(size, out var halfPoints) && halfPoints > 0 ? halfPoints : 20; // Word default 10pt
+    }
+
+    /// <summary>
+    /// A style that sets only szCs (or only sz) inherits the other size from its basedOn chain or
+    /// doc defaults. SyncRunProperties would copy szCs into sz (e.g. Header: szCs=20pt over an
+    /// inherited sz=16pt), so make the inherited value explicit first — Word's meaning is unchanged.
+    /// </summary>
+    private static void MaterializeInheritedFontSizes(Style style, Styles styles)
+    {
+        var rPr = style.StyleRunProperties;
+        if (rPr == null || (rPr.FontSize == null) == (rPr.FontSizeComplexScript == null)) return;
+
+        var ancestors = new List<OpenXmlElement?>();
+        var visited = new HashSet<string> { style.StyleId?.Value ?? "" };
+        var basedOn = style.BasedOn?.Val?.Value;
+        while (basedOn != null && visited.Add(basedOn))
+        {
+            var parent = styles.Elements<Style>().FirstOrDefault(s => s.StyleId?.Value == basedOn);
+            ancestors.Add(parent?.StyleRunProperties);
+            basedOn = parent?.BasedOn?.Val?.Value;
+        }
+        ancestors.Add(styles.DocDefaults?.RunPropertiesDefault?.RunPropertiesBaseStyle);
+
+        if (rPr.FontSize == null)
+        {
+            var inherited = ancestors.Select(a => a?.GetFirstChild<FontSize>()?.Val?.Value).FirstOrDefault(v => v != null);
+            if (inherited != null) rPr.FontSize = new FontSize { Val = inherited };
+        }
+        else
+        {
+            var inherited = ancestors.Select(a => a?.GetFirstChild<FontSizeComplexScript>()?.Val?.Value).FirstOrDefault(v => v != null);
+            if (inherited != null) rPr.FontSizeComplexScript = new FontSizeComplexScript { Val = inherited };
+        }
+    }
+
+    private static long ParseTwips(string? value) =>
+        long.TryParse(value, out var twips) ? twips : 0;
+
+    /// <summary>Text box width minus left/right insets, in twips (0 when unknown).</summary>
+    private static long GetTextBoxInnerWidthTwips(TextBoxContent txbx)
+    {
+        const long defaultInsetEmu = 91440; // 0.1in — Word default lIns/rIns
+        foreach (var ancestor in txbx.Ancestors())
+        {
+            if (ancestor is WPS.WordprocessingShape shape)
+            {
+                var cx = shape.GetFirstChild<WPS.ShapeProperties>()?.GetFirstChild<A.Transform2D>()?.Extents?.Cx?.Value ?? 0;
+                if (cx <= 0) return 0;
+                var bodyPr = shape.GetFirstChild<WPS.TextBodyProperties>();
+                var insets = (bodyPr?.LeftInset?.Value ?? defaultInsetEmu) + (bodyPr?.RightInset?.Value ?? defaultInsetEmu);
+                return (cx - insets) / 635; // 1 twip = 635 EMU
+            }
+
+            if (ancestor.LocalName is "shape" or "rect")
+            {
+                var style = ancestor.GetAttributes().FirstOrDefault(a => a.LocalName == "style").Value;
+                if (string.IsNullOrEmpty(style)) continue;
+                var (widthEmu, _) = ParseVmlStyleDimensions(style);
+                return widthEmu > 0 ? (widthEmu - 2 * defaultInsetEmu) / 635 : 0;
+            }
+        }
+        return 0;
     }
 
     private static (long width, long height) ParseVmlStyleDimensions(string style)

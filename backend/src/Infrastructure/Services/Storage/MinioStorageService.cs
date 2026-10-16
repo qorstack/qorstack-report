@@ -5,30 +5,37 @@ using Minio;
 using Minio.DataModel;
 using Minio.DataModel.Args;
 using Minio.DataModel.ILM;
+using QorstackReportService.Application.Common.Exceptions;
 using QorstackReportService.Application.Common.Interfaces;
 
 namespace QorstackReportService.Infrastructure.Services.Storage;
 
 /// <summary>
-/// MinIO storage service implementation
+/// S3 storage service (RustFS, MinIO, AWS S3, R2, ...) using the MinIO .NET SDK with standard S3 calls only.
+/// Callers pass a logical area (<see cref="StorageAreas"/>) as the "bucket"; this service stores everything in the
+/// single physical bucket <see cref="StorageSettings.Bucket"/> under the area's folder
+/// (e.g. area "templates", key "a/b.docx" → bucket "qorstack-report", object "template/a/b.docx").
+/// Stored paths keep the logical form <c>minio:{area}/{key}</c>.
 /// </summary>
 public class MinioStorageService : IMinioStorageService
 {
     private readonly IMinioClient _minioClient;
-    private readonly IMinioClient _signingClient;
-    private readonly MinioSettings _settings;
+    private readonly FileUrlSigner _fileUrls;
+    private readonly StorageSettings _settings;
     private readonly ILogger<MinioStorageService> _logger;
     private readonly ConcurrentDictionary<string, bool> _knownBuckets = new();
 
     public MinioStorageService(
-        IOptions<MinioSettings> settings,
+        IOptions<StorageSettings> settings,
+        FileUrlSigner fileUrls,
         ILogger<MinioStorageService> logger)
     {
         _settings = settings.Value;
+        _fileUrls = fileUrls;
         _logger = logger;
 
-        // 1. Initialize Internal Client (for direct data access)
-        // MinIO SDK expects endpoint without protocol prefix (e.g., "host:port")
+        // The MinIO .NET SDK speaks plain S3, so this works with RustFS, MinIO, AWS S3, R2, ...
+        // It expects host:port without a scheme.
         var endpoint = _settings.Endpoint
             .Replace("https://", "", StringComparison.OrdinalIgnoreCase)
             .Replace("http://", "", StringComparison.OrdinalIgnoreCase);
@@ -37,37 +44,19 @@ public class MinioStorageService : IMinioStorageService
             .WithEndpoint(endpoint)
             .WithCredentials(_settings.AccessKey, _settings.SecretKey)
             .WithSSL(_settings.UseSsl)
+            .WithRegion(_settings.Region)
             .Build();
 
-        _logger.LogInformation("MinIO internal client initialized with endpoint: {Endpoint}, SSL: {UseSsl}", endpoint, _settings.UseSsl);
+        _logger.LogInformation("Storage client initialized with endpoint: {Endpoint}, SSL: {UseSsl}", endpoint, _settings.UseSsl);
+    }
 
-        // 2. Initialize Signing Client (for generating presigned URLs with public endpoint)
-        if (!string.IsNullOrEmpty(_settings.PublicEndpoint))
-        {
-            try
-            {
-                var uri = new Uri(_settings.PublicEndpoint);
-                var publicEndpoint = uri.Authority; // host:port
-                var usePublicSsl = uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
-
-                _signingClient = new MinioClient()
-                    .WithEndpoint(publicEndpoint)
-                    .WithCredentials(_settings.AccessKey, _settings.SecretKey)
-                    .WithSSL(usePublicSsl)
-                    .Build();
-
-                _logger.LogInformation("MinIO signing client initialized with public endpoint: {Endpoint}, SSL: {UseSsl}", publicEndpoint, usePublicSsl);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to initialize signing client with public endpoint. Falling back to internal client.");
-                _signingClient = _minioClient;
-            }
-        }
-        else
-        {
-            _signingClient = _minioClient;
-        }
+    /// <summary>Maps a logical area + key to the physical bucket + object key.</summary>
+    private (string Bucket, string Key) Locate(string area, string objectName)
+    {
+        if (StorageAreas.Folders.TryGetValue(area, out var folder))
+            return (_settings.Bucket, folder + objectName);
+        // Never pass an unknown name through as a bucket: on a shared MinIO that would expose other apps' data.
+        throw new ArgumentException($"Unknown storage area '{area}'.");
     }
 
     /// <inheritdoc />
@@ -76,10 +65,11 @@ public class MinioStorageService : IMinioStorageService
         try
         {
             await EnsureBucketExistsAsync(bucketName);
+            var (bucket, key) = Locate(bucketName, objectName);
 
             var putObjectArgs = new PutObjectArgs()
-                .WithBucket(bucketName)
-                .WithObject(objectName)
+                .WithBucket(bucket)
+                .WithObject(key)
                 .WithStreamData(data)
                 .WithObjectSize(data.Length)
                 .WithContentType(contentType);
@@ -92,6 +82,7 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to upload {ObjectName} to bucket {BucketName}", objectName, bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
@@ -102,10 +93,11 @@ public class MinioStorageService : IMinioStorageService
         try
         {
             var memoryStream = new MemoryStream();
+            var (bucket, key) = Locate(bucketName, objectName);
 
             var getObjectArgs = new GetObjectArgs()
-                .WithBucket(bucketName)
-                .WithObject(objectName)
+                .WithBucket(bucket)
+                .WithObject(key)
                 .WithCallbackStream(stream =>
                 {
                     stream.CopyTo(memoryStream);
@@ -120,45 +112,22 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to download {ObjectName} from bucket {BucketName}", objectName, bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
 
     /// <inheritdoc />
-    public async Task<string> GetPresignedUrlAsync(string bucketName, string objectName, int expirySeconds = 3600, string? downloadFileName = null)
+    /// <remarks>
+    /// Returns an API link (<c>{PublicUrl}/files/{token}</c>) instead of an S3 presigned URL, so the storage
+    /// server never needs a public address. The token is HMAC-signed and expires after <paramref name="expirySeconds"/>.
+    /// </remarks>
+    public Task<string> GetPresignedUrlAsync(string bucketName, string objectName, int expirySeconds = 3600, string? downloadFileName = null)
     {
-        try
-        {
-            var presignedGetObjectArgs = new PresignedGetObjectArgs()
-                .WithBucket(bucketName)
-                .WithObject(objectName)
-                .WithExpiry(expirySeconds);
-
-            // Force the saved file name via the S3 response-content-disposition override.
-            // This makes the download name independent of the (opaque) object key.
-            if (!string.IsNullOrWhiteSpace(downloadFileName))
-            {
-                var safeName = SanitizeDownloadFileName(downloadFileName);
-                presignedGetObjectArgs = presignedGetObjectArgs.WithHeaders(new Dictionary<string, string>
-                {
-                    ["response-content-disposition"] = $"attachment; filename=\"{safeName}\""
-                });
-            }
-
-            // Use the signing client (configured with public endpoint if available)
-            // This ensures the signature is generated using the correct host header (public domain)
-            // preventing 403 SignatureDoesNotMatch errors when accessed from the browser.
-            var url = await _signingClient.PresignedGetObjectAsync(presignedGetObjectArgs);
-
-            _logger.LogInformation("Generated presigned URL for {ObjectName} in bucket {BucketName}, expires in {ExpirySeconds}s",
-                objectName, bucketName, expirySeconds);
-            return url;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to generate presigned URL for {ObjectName} in bucket {BucketName}", objectName, bucketName);
-            throw;
-        }
+        Locate(bucketName, objectName); // validates the area
+        var fileName = string.IsNullOrWhiteSpace(downloadFileName) ? null : SanitizeDownloadFileName(downloadFileName);
+        var token = _fileUrls.CreateToken(bucketName, objectName, fileName, DateTimeOffset.UtcNow.AddSeconds(expirySeconds));
+        return Task.FromResult(_fileUrls.BuildUrl(token));
     }
 
     /// <inheritdoc />
@@ -166,9 +135,10 @@ public class MinioStorageService : IMinioStorageService
     {
         try
         {
+            var (bucket, key) = Locate(bucketName, objectName);
             var removeObjectArgs = new RemoveObjectArgs()
-                .WithBucket(bucketName)
-                .WithObject(objectName);
+                .WithBucket(bucket)
+                .WithObject(key);
 
             await _minioClient.RemoveObjectAsync(removeObjectArgs);
 
@@ -177,8 +147,82 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete {ObjectName} from bucket {BucketName}", objectName, bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<StoredObjectInfo?> StatAsync(string bucketName, string objectName, CancellationToken cancellationToken = default)
+    {
+        var (bucket, key) = Locate(bucketName, objectName);
+        try
+        {
+            var stat = await _minioClient.StatObjectAsync(new StatObjectArgs().WithBucket(bucket).WithObject(key), cancellationToken);
+            return new StoredObjectInfo(stat.Size, stat.ContentType, stat.ETag?.Trim('"'),
+                stat.LastModified == default ? null : stat.LastModified.ToUniversalTime());
+        }
+        catch (Minio.Exceptions.ObjectNotFoundException)
+        {
+            return null;
+        }
+        catch (Minio.Exceptions.BucketNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception ex) when (IsUnreachable(ex))
+        {
+            _logger.LogError(ex, "File storage unreachable at {Endpoint}", _settings.Endpoint);
+            throw new StorageUnavailableException(_settings.Endpoint);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task CopyToAsync(string bucketName, string objectName, Stream destination, long offset = 0, long? length = null, CancellationToken cancellationToken = default)
+    {
+        var (bucket, key) = Locate(bucketName, objectName);
+        var args = new GetObjectArgs()
+            .WithBucket(bucket)
+            .WithObject(key)
+            .WithCallbackStream(async (stream, ct) => await stream.CopyToAsync(destination, 81920, ct));
+        if (offset > 0 || length.HasValue)
+            args = args.WithOffsetAndLength(offset, length ?? 0);
+
+        try
+        {
+            await _minioClient.GetObjectAsync(args, cancellationToken);
+        }
+        catch (Exception ex) when (IsUnreachable(ex))
+        {
+            _logger.LogError(ex, "File storage unreachable at {Endpoint}", _settings.Endpoint);
+            throw new StorageUnavailableException(_settings.Endpoint);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> IsReachableAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(_settings.Bucket), cancellationToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "File storage not reachable at {Endpoint}", _settings.Endpoint);
+            return false;
+        }
+    }
+
+    /// <summary>Connection-level failures (DNS, refused, timeout) — not "object missing" or "access denied".</summary>
+    internal static bool IsUnreachable(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is Minio.Exceptions.ConnectionException or HttpRequestException or System.Net.Sockets.SocketException or TimeoutException)
+                return true;
+        }
+        return false;
     }
 
     /// <inheritdoc />
@@ -186,9 +230,10 @@ public class MinioStorageService : IMinioStorageService
     {
         try
         {
+            var (bucket, key) = Locate(bucketName, objectName);
             var statObjectArgs = new StatObjectArgs()
-                .WithBucket(bucketName)
-                .WithObject(objectName);
+                .WithBucket(bucket)
+                .WithObject(key);
 
             await _minioClient.StatObjectAsync(statObjectArgs);
             return true;
@@ -200,6 +245,7 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to check existence of {ObjectName} in bucket {BucketName}", objectName, bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
@@ -207,6 +253,7 @@ public class MinioStorageService : IMinioStorageService
     /// <inheritdoc />
     public async Task EnsureBucketExistsAsync(string bucketName)
     {
+        bucketName = Locate(bucketName, string.Empty).Bucket;
         if (_knownBuckets.ContainsKey(bucketName)) return;
 
         try
@@ -230,6 +277,7 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to ensure bucket {BucketName} exists", bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
@@ -239,6 +287,7 @@ public class MinioStorageService : IMinioStorageService
     {
         try
         {
+            (bucketName, prefix) = Locate(bucketName, prefix);
             var lifecycle = new LifecycleConfiguration { Rules = [] };
             var rule = new LifecycleRule
             {
@@ -261,6 +310,7 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to set lifecycle for bucket {BucketName}", bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
@@ -289,6 +339,7 @@ public class MinioStorageService : IMinioStorageService
     {
         try
         {
+            (bucketName, prefix) = Locate(bucketName, prefix);
             var listArgs = new ListObjectsArgs()
                 .WithBucket(bucketName)
                 .WithPrefix(prefix)
@@ -314,6 +365,7 @@ public class MinioStorageService : IMinioStorageService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to delete objects with prefix '{Prefix}' from bucket {BucketName}", prefix, bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
     }
@@ -324,22 +376,52 @@ public class MinioStorageService : IMinioStorageService
         try
         {
             var result = new List<MinioObjectInfo>();
+            var (bucket, folder) = Locate(bucketName, string.Empty);
             var args = new ListObjectsArgs()
-                .WithBucket(bucketName)
+                .WithBucket(bucket)
+                .WithPrefix(folder + (prefix ?? string.Empty))
                 .WithRecursive(true);
-            if (prefix != null)
-                args = args.WithPrefix(prefix);
 
+            // Return keys relative to the area so callers never see the folder.
             await foreach (var item in _minioClient.ListObjectsEnumAsync(args))
-                result.Add(new MinioObjectInfo(item.Key, item.Size, item.ETag.Trim('"')));
+                result.Add(new MinioObjectInfo(item.Key[folder.Length..], item.Size, item.ETag.Trim('"'), item.LastModifiedDateTime));
 
             return result;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to list objects in bucket {BucketName}", bucketName);
+            if (IsUnreachable(ex)) throw new StorageUnavailableException(_settings.Endpoint);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Finds data left in the pre-v2 buckets (templates / reports / fonts) whose folder in
+    /// <see cref="StorageSettings.Bucket"/> is still empty — i.e. the upgrade script was not run.
+    /// Read-only: nothing is copied or deleted.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> FindUnmigratedLegacyBucketsAsync(CancellationToken ct = default)
+    {
+        var found = new List<string>();
+        foreach (var (area, folder) in StorageAreas.Folders)
+        {
+            if (area.Equals(_settings.Bucket, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!await _minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(area), ct)) continue;
+            if (!await HasAnyObjectAsync(area, string.Empty, ct)) continue;
+            if (await HasAnyObjectAsync(_settings.Bucket, folder, ct)) continue;
+            found.Add(area);
+        }
+        return found;
+    }
+
+    private async Task<bool> HasAnyObjectAsync(string bucket, string prefix, CancellationToken ct)
+    {
+        if (!await _minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket), ct)) return false;
+        var args = new ListObjectsArgs().WithBucket(bucket).WithPrefix(prefix).WithRecursive(true);
+        await foreach (var _ in _minioClient.ListObjectsEnumAsync(args, ct))
+            return true;
+        return false;
     }
 
     /// <summary>
@@ -360,7 +442,11 @@ public class MinioStorageService : IMinioStorageService
     {
         if (string.IsNullOrEmpty(url)) return null;
 
-        // Only process URLs that look like presigned MinIO URLs (contain X-Amz- query params)
+        // Links issued by this API (/files/{token}) → minio:{area}/{key}
+        var fromFileLink = _fileUrls.TryConvertToStoragePath(url);
+        if (fromFileLink != null) return fromFileLink;
+
+        // Legacy (v1): presigned S3 URLs stored in old builder payloads (contain X-Amz- query params)
         if (!url.Contains("X-Amz-", StringComparison.OrdinalIgnoreCase)) return null;
 
         try
@@ -389,6 +475,18 @@ public class MinioStorageService : IMinioStorageService
             // Extract bucket/objectName from path: /{bucket}/{objectName}
             var path = uri.AbsolutePath.TrimStart('/');
             if (string.IsNullOrEmpty(path)) return null;
+
+            // Physical "{Bucket}/{folder}{key}" → logical "minio:{area}/{key}"
+            var bucketPrefix = _settings.Bucket + "/";
+            if (path.StartsWith(bucketPrefix, StringComparison.Ordinal))
+            {
+                var rest = path[bucketPrefix.Length..];
+                foreach (var (area, folder) in StorageAreas.Folders)
+                {
+                    if (rest.StartsWith(folder, StringComparison.Ordinal))
+                        return $"minio:{area}/{rest[folder.Length..]}";
+                }
+            }
 
             return $"minio:{path}";
         }

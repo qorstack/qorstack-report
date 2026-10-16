@@ -70,8 +70,11 @@ public class CustomExceptionHandler : IExceptionHandler
             // 502 Bad Gateway: failure calling downstream HTTP service
             { typeof(HttpRequestException),          HandleBadGatewayException },
 
-            // 503 Service Unavailable: service temporarily unavailable
-            // { typeof(ServiceUnavailableException),   HandleServiceUnavailableException },
+            // 429 Too Many Requests: too many unfinished async renders for this user
+            { typeof(RenderQueueFullException),      HandleTooManyRequestsException },
+
+            // 503 Service Unavailable: file storage (RustFS / MinIO / S3) cannot be reached
+            { typeof(StorageUnavailableException),   HandleStorageUnavailableException },
 
             // 504 Gateway Timeout: operation timed out
             { typeof(TimeoutException),              HandleGatewayTimeoutException },
@@ -352,6 +355,36 @@ public class CustomExceptionHandler : IExceptionHandler
         };
 
         return ctx.Response.WriteAsJsonAsync(problemDetails);
+    }
+
+    // 429
+    private Task HandleTooManyRequestsException(HttpContext ctx, Exception ex)
+    {
+        _logger.LogWarning(ex, "Too many requests");
+        ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        ctx.Response.Headers.RetryAfter = "30";
+
+        return ctx.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too Many Requests",
+            Detail = ex.Message
+        });
+    }
+
+    // 503
+    private Task HandleStorageUnavailableException(HttpContext ctx, Exception ex)
+    {
+        _logger.LogError("File storage unavailable: {Message}", ex.Message);
+        ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        ctx.Response.Headers.RetryAfter = "30";
+
+        return ctx.Response.WriteAsJsonAsync(new ProblemDetails
+        {
+            Status = StatusCodes.Status503ServiceUnavailable,
+            Title = "File storage unavailable",
+            Detail = ex.Message
+        });
     }
 
     // 504

@@ -44,9 +44,14 @@ public partial class QorstackApi
             }
             else
             {
-                BaseUrl = "http://localhost:8080";
+                BaseUrl = "http://localhost:8080/api";
             }
         }
+
+        // Since v2 the API lives under /api (same port as the web UI); append it to v1-style URLs.
+        var trimmed = BaseUrl.TrimEnd('/');
+        if (!trimmed.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
+            BaseUrl = trimmed + "/api";
     }
 
     /// <summary>

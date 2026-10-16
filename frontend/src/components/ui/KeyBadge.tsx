@@ -1,6 +1,7 @@
 'use client'
 
 import Icon from '@/components/icon'
+import { cn } from '@heroui/react'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 
 interface KeyBadgeProps {
@@ -9,22 +10,28 @@ interface KeyBadgeProps {
   className?: string
 }
 
-export const KeyBadge = ({ value, label = 'KEY', className }: KeyBadgeProps) => {
+export const KeyBadge = ({ value, label = 'Key', className }: KeyBadgeProps) => {
   const { copied, copy } = useCopyToClipboard()
+  const copyLabel = copied ? 'Copied' : `Copy ${label.toLowerCase()}`
 
   return (
     <div
-      className={`ring-hairline flex max-w-[160px] items-center gap-1 rounded-md bg-content2 px-1.5 py-0.5 sm:max-w-none ${className ?? ''}`}>
-      <span className='shrink-0 font-mono text-[9.5px] font-medium text-default-600'>{label}:</span>
-      <span className='truncate font-mono text-[9.5px] font-bold text-foreground'>{value}</span>
+      className={cn(
+        'flex h-7 max-w-[220px] items-center gap-1.5 border border-divider bg-content2 pl-2 text-[12px] sm:max-w-none',
+        className
+      )}>
+      <span className='shrink-0 text-default-500'>{label}</span>
+      <span className='truncate font-mono text-foreground'>{value}</span>
       <button
+        type='button'
         onClick={e => {
           e.stopPropagation()
           void copy(value)
         }}
-        title='Copy'
-        className='ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded text-default-500 hover:bg-content3 hover:text-foreground'>
-        <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} className='h-2.5 w-2.5' />
+        title={copyLabel}
+        aria-label={copyLabel}
+        className='flex h-full w-7 shrink-0 items-center justify-center border-l border-divider text-default-500 transition-colors hover:text-foreground'>
+        <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} className='h-3.5 w-3.5' />
       </button>
     </div>
   )

@@ -1,0 +1,40 @@
+# Override: run MinIO instead of RustFS (for v1 installs that keep their MinIO data).
+# Enable it in .env:   COMPOSE_FILE=docker-compose.yml:docker-compose.minio.yml
+# (Windows without WSL: separate with ";" or set COMPOSE_PATH_SEPARATOR=:)
+#
+# Official MinIO images left Docker Hub when MinIO stopped maintaining the community edition;
+# this pins the last release we tested from quay.io. Consider moving to RustFS:
+# `bash migrate-storage.sh to-rustfs`.
+services:
+  rustfs:
+    profiles: ["disabled"]   # replaced by MinIO
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: qorstack-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${STORAGE_ACCESS_KEY:-${MINIO_ACCESS_KEY:-qorstack}}
+      - MINIO_ROOT_PASSWORD=${STORAGE_SECRET_KEY:-${MINIO_SECRET_KEY:-}}
+    # Uncomment to open the MinIO console on http://localhost:9001
+    # ports:
+    #   - "9001:9001"
+    volumes:
+      - minio_data:/data   # same volume name as v1, so existing MinIO data is kept
+    networks:
+      qorstack-network:
+        aliases: [qorstack-storage]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    depends_on:
+      minio:
+        condition: service_healthy
+
+volumes:
+  minio_data:

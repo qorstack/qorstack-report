@@ -23,7 +23,7 @@ public class SandboxAssetService : ISandboxAssetService
     {
         _storage = storage;
         _logger = logger;
-        _reportBucket = config["Minio:ReportBucket"] ?? "reports";
+        _reportBucket = StorageAreas.Reports;
     }
 
     public void ConvertPresignedUrlsToMinioPaths(DocumentProcessingData data)
@@ -41,6 +41,35 @@ public class SandboxAssetService : ISandboxAssetService
             var minioPath = _storage.TryConvertToMinioPath(kvp.Value.Logo);
             if (minioPath != null) kvp.Value.Logo = minioPath;
         }
+    }
+
+    public void EnsureOwnStoragePaths(DocumentProcessingData data, Guid templateId)
+    {
+        var errors = new List<FluentValidation.Results.ValidationFailure>();
+
+        // minio:reports/sandbox-assets/{userId}/{templateId}/{file}
+        bool IsOwnAsset(string src)
+        {
+            if (src.Contains("..", StringComparison.Ordinal)) return false;
+            var parts = src.Split('/');
+            return parts.Length >= 5
+                && parts[0].Equals($"minio:{_reportBucket}", StringComparison.Ordinal)
+                && parts[1] == "sandbox-assets"
+                && Guid.TryParse(parts[3], out var id) && id == templateId;
+        }
+
+        void Check(string field, string? src)
+        {
+            if (src == null || !src.StartsWith("minio:", StringComparison.OrdinalIgnoreCase)) return;
+            if (IsOwnAsset(src)) return;
+            errors.Add(new(field, "Storage paths (minio:...) are not accepted here. Send an http(s) URL or base64 image instead."));
+        }
+
+        foreach (var kvp in data.Image) Check($"image[{kvp.Key}].src", kvp.Value?.Src);
+        foreach (var kvp in data.Qrcode) Check($"qrcode[{kvp.Key}].logo", kvp.Value?.Logo);
+
+        if (errors.Count > 0)
+            throw new QorstackReportService.Application.Common.Exceptions.ValidationException(errors);
     }
 
     public async Task ReplaceBase64WithMinioUrlsAsync(DocumentProcessingData data, string prefix)

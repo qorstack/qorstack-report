@@ -1,9 +1,7 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { useTheme } from 'next-themes'
 import { obsidianDark } from './code-themes'
 import Icon from '@/components/icon'
 
@@ -73,6 +71,7 @@ export interface CodeExamples {
 const OPTIONS: {
   id: string
   label: string
+  shortLabel: string
   icon: string
   subtext: string
   section: string
@@ -81,6 +80,7 @@ const OPTIONS: {
   {
     id: 'nodejs',
     label: 'Node.js / TypeScript SDK',
+    shortLabel: 'Node.js',
     icon: 'logos:nodejs-icon',
     subtext: 'Official SDK for Node.js, React and NextJs',
     section: 'SDK',
@@ -89,6 +89,7 @@ const OPTIONS: {
   {
     id: 'dotnet',
     label: '.NET SDK',
+    shortLabel: '.NET',
     icon: 'logos:dotnet',
     subtext: 'Official SDK for C# and .NET',
     section: 'SDK',
@@ -97,6 +98,7 @@ const OPTIONS: {
   {
     id: 'api',
     label: 'REST API',
+    shortLabel: 'REST API',
     icon: 'logos:postman-icon',
     subtext: 'Compatible with Go, Python, Java, PHP, Rust, etc.',
     section: 'Integration API',
@@ -107,92 +109,49 @@ const OPTIONS: {
 export const LanguageSelector = ({
   activeLang,
   onLangChange,
-  className = '',
-  variant = 'light'
+  className = ''
 }: {
   activeLang: Language
   onLangChange?: (lang: Language) => void
   className?: string
+  /** Kept for API compatibility — dark-only product. */
   variant?: 'light' | 'dark'
 }) => {
   const [internalLang, setInternalLang] = useSharedLanguage()
   const currentLang = activeLang || internalLang
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   const handleLangChange = (lang: Language) => {
     if (onLangChange) {
       onLangChange(lang)
-    } else {
-      setInternalLang(lang)
+      return
     }
-    setIsOpen(false)
+    setInternalLang(lang)
   }
 
   const selectedOption = OPTIONS.find(opt => opt.matchLangs.includes(currentLang)) || OPTIONS[0]
-  const isDark = variant === 'dark'
 
   return (
-    <div className={`relative ${className}`} ref={dropdownRef}>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-200 focus:outline-none ${
-          isDark
-            ? 'text-default-600 hover:bg-content2/60 hover:text-foreground'
-            : 'text-default-700 hover:bg-content2/60 hover:text-foreground'
-        }`}>
-        <Icon icon={selectedOption.icon} className='text-lg' />
-        <span>{selectedOption.label}</span>
-        <Icon
-          icon='solar:alt-arrow-down-linear'
-          className={`ml-1 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </button>
-
-      {isOpen && (
-        <div className='animate-in fade-in zoom-in-95 absolute left-0 top-full z-50 mt-1 w-72 origin-top-left rounded-lg bg-content1 p-1 shadow-lg ring-1 ring-default-200 duration-100 focus:outline-none dark:ring-white/10'>
-          {OPTIONS.map((opt, i) => {
-            const prevSection = i > 0 ? OPTIONS[i - 1].section : null
-            const showHeader = opt.section !== prevSection
-            const isActive = selectedOption.id === opt.id
-
-            return (
-              <React.Fragment key={opt.id}>
-                {showHeader && (
-                  <div
-                    className={`px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-default-400 ${i > 0 ? 'mt-1 border-t border-default-100 dark:border-white/5' : ''}`}>
-                    {opt.section}
-                  </div>
-                )}
-                <button
-                  onClick={() => handleLangChange(opt.id as Language)}
-                  className={`flex w-full items-start gap-3 rounded-md px-3 py-2 text-left transition-colors duration-200 ${
-                    isActive
-                      ? 'bg-primary/[0.18] font-semibold text-primary'
-                      : 'text-default-600 hover:bg-content2/60 hover:text-foreground'
-                  }`}>
-                  <Icon icon={opt.icon} className='mt-0.5 shrink-0 text-xl' />
-                  <div className='min-w-0 flex-1'>
-                    <div className={`text-sm ${isActive ? 'text-primary' : 'text-foreground'}`}>{opt.label}</div>
-                    <div className='text-xs text-default-500'>{opt.subtext}</div>
-                  </div>
-                  {isActive && <Icon icon='solar:check-read-linear' className='ml-auto shrink-0 text-primary' />}
-                </button>
-              </React.Fragment>
-            )
-          })}
-        </div>
-      )}
+    <div role='tablist' aria-label='Code language' className={`no-scrollbar flex min-w-0 overflow-x-auto ${className}`}>
+      {OPTIONS.map(opt => {
+        const isActive = selectedOption.id === opt.id
+        return (
+          <button
+            key={opt.id}
+            type='button'
+            role='tab'
+            aria-selected={isActive}
+            title={`${opt.label} — ${opt.subtext}`}
+            onClick={() => handleLangChange(opt.id as Language)}
+            className={`relative flex h-10 shrink-0 items-center gap-2 border-r border-divider px-4 font-mono text-[12px] uppercase tracking-[0.12em] transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-primary after:transition-transform ${
+              isActive
+                ? 'text-foreground after:scale-x-100'
+                : 'text-default-500 after:scale-x-0 hover:bg-content2 hover:text-foreground'
+            }`}>
+            <Icon icon={opt.icon} className='h-4 w-4 shrink-0' />
+            <span>{opt.shortLabel}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -212,14 +171,12 @@ const InlineCopyButton = ({ text }: { text: string }) => {
 
   return (
     <button
+      type='button'
       onClick={handleCopy}
-      title={copied ? 'Copied' : 'Copy to clipboard'}
-      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
-      className='flex h-8 w-8 items-center justify-center rounded-md text-default-500 transition-colors duration-200 hover:bg-content2/60 hover:text-foreground focus:outline-none'>
-      <Icon
-        icon={copied ? 'solar:check-circle-bold' : 'solar:copy-outline'}
-        className={`text-base transition-all duration-200 ${copied ? 'scale-110 text-success' : 'scale-100'}`}
-      />
+      aria-label={copied ? 'Copied to clipboard' : 'Copy code to clipboard'}
+      className='mr-1.5 inline-flex h-7 shrink-0 items-center gap-1.5 border border-default-300 px-2.5 font-mono text-[11px] uppercase tracking-[0.12em] text-default-500 transition-colors hover:border-foreground hover:text-foreground'>
+      <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} className={`h-3.5 w-3.5 ${copied ? 'text-success' : ''}`} />
+      <span className={copied ? 'text-success' : ''}>{copied ? 'Copied' : 'Copy'}</span>
     </button>
   )
 }
@@ -244,13 +201,6 @@ export const CodeSwitcher = ({
 }) => {
   const [internalLang, setInternalLang] = useSharedLanguage(defaultLanguage)
   const activeLang = fileActiveLang || internalLang
-  const { resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => setMounted(true), [])
-
-  const isDark = !mounted || resolvedTheme === 'dark'
-
   const getContent = (lang: Language): string | undefined => {
     if (examples[lang]) return examples[lang]
 
@@ -332,28 +282,32 @@ export const CodeSwitcher = ({
     return nums
   }, [currentCode])
 
-  const highlightBg = isDark ? 'rgba(255, 255, 255, 0.055)' : 'rgba(59, 130, 246, 0.07)'
-  const highlightBorder = isDark ? '#7DD3FC' : '#3B82F6'
+  const highlightBg = 'rgba(242, 39, 28, 0.08)'
+  const highlightBorder = '#F2271C'
 
   return (
     <div
-      className={`${isDisableMarginY ? '' : 'my-4'} builder-code-shell flex flex-col overflow-hidden rounded-xl shadow-sm`}>
-      <div className='builder-code-chrome flex items-center justify-between gap-2 border-b px-3 py-1.5'>
-        <LanguageSelector activeLang={activeLang} onLangChange={handleLangChange} variant='dark' />
+      className={`${isDisableMarginY ? '' : 'my-4'} dark flex flex-col overflow-hidden border border-divider bg-[#050505] text-foreground`}>
+      <div className='flex items-center justify-between gap-2 border-b border-divider bg-content1'>
+        <LanguageSelector activeLang={activeLang} onLangChange={handleLangChange} />
         <InlineCopyButton text={currentCode} />
       </div>
 
       <div
         className={`no-scrollbar relative overflow-x-auto ${maxHeight === undefined ? '' : 'overflow-y-auto'}`}
-        style={maxHeight === undefined ? undefined : { maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight }}>
+        style={
+          maxHeight === undefined
+            ? undefined
+            : { maxHeight: typeof maxHeight === 'number' ? `${maxHeight}px` : maxHeight }
+        }>
         <SyntaxHighlighter
           language={getHighlighterLang(currentCode)}
-          style={isDark ? obsidianDark : oneLight}
+          style={obsidianDark}
           customStyle={{
             margin: 0,
             borderRadius: 0,
-            fontSize: '12.5px',
-            lineHeight: 1.55,
+            fontSize: '13px',
+            lineHeight: 1.7,
             background: 'transparent',
             minHeight: '100px',
             padding: '12px',
@@ -366,7 +320,7 @@ export const CodeSwitcher = ({
             paddingRight: '1em',
             textAlign: 'right',
             userSelect: 'none',
-            color: isDark ? 'rgb(113, 113, 122)' : 'rgb(161, 161, 170)'
+            color: '#6E6A65'
           }}
           wrapLines={true}
           lineProps={lineNumber => {

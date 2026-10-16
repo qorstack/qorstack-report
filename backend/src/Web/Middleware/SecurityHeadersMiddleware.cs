@@ -18,6 +18,8 @@ public class SecurityHeadersMiddleware
         headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
         headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()";
         headers["X-Permitted-Cross-Domain-Policies"] = "none";
+        // Lets the web UI open OAuth popups (Google sign-in) while keeping cross-origin isolation.
+        headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups";
 
         // Remove server header to avoid fingerprinting
         headers.Remove("Server");

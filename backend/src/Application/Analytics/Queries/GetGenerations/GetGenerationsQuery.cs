@@ -110,7 +110,7 @@ public class GetGenerationsQueryHandler : IRequestHandler<GetGenerationsQuery, P
             .Take(request.PageSize)
             .ToListAsync(cancellationToken);
 
-        var bucketName = _configuration["Minio:ReportBucket"] ?? "reports";
+        var bucketName = StorageAreas.Reports;
 
         var tasks = items.Select(async j =>
         {

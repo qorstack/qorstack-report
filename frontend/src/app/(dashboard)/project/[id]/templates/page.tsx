@@ -1,25 +1,31 @@
 'use client'
 
-import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { DeleteTemplateModal } from '@/components/pdf/DeleteTemplateModal'
-import { Button, Spinner } from '@heroui/react'
-import Icon from '@/components/icon'
-import FileIcon from '@/components/FileIcon'
-import { useRouter, useParams } from 'next/navigation'
-import { api } from '@/api/generated/main-service'
-import { TemplateResponse, TemplatePerformanceDto } from '@/api/generated/main-service/apiGenerated'
-import { useProject } from '@/providers/ProjectContext'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Input, Spinner, Tooltip } from '@heroui/react'
+import { useRouter } from 'next/navigation'
+import { useRouteParams } from '@/hooks/use-route-params'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import { endOfMonth, format, startOfMonth } from 'date-fns'
+import Icon from '@/components/icon'
+import FileIcon from '@/components/FileIcon'
+import { DeleteTemplateModal } from '@/components/pdf/DeleteTemplateModal'
 import { PdfThumbnail } from '@/components/pdf/PdfThumbnail'
 import { CopyButton } from '@/components/common/CopyButton'
-import { Sparkline } from '@/components/common/Sparkline'
+import { PageHeader } from '@/components/ui/PageHeader'
+import { api } from '@/api/generated/main-service'
+import { TemplatePerformanceDto, TemplateResponse } from '@/api/generated/main-service/apiGenerated'
+import { useProject } from '@/providers/ProjectContext'
 import { formatDuration } from '@/utils/formatters'
-import { startOfMonth, endOfMonth, format } from 'date-fns'
+import { cn } from '@/utils/cn'
+import FileTypeBadge from '@/components/common/FileTypeBadge'
 
 dayjs.extend(relativeTime)
 
 type FilterType = 'all' | 'pdf' | 'excel'
+
+const PAGE_SIZE = 24
+const SEARCH_DEBOUNCE_MS = 300
 
 const getTemplateType = (tpl: TemplateResponse): 'pdf' | 'excel' => {
   const path = tpl.activeVersion?.filePath || ''
@@ -28,96 +34,111 @@ const getTemplateType = (tpl: TemplateResponse): 'pdf' | 'excel' => {
 
 const FILTERS: { key: FilterType; label: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'pdf', label: 'PDF' },
+  { key: 'pdf', label: 'Word' },
   { key: 'excel', label: 'Excel' }
 ]
 
+const TypeBadge = ({ type }: { type: 'pdf' | 'excel' }) => <FileTypeBadge type={type} />
+
 const Templates = () => {
   const router = useRouter()
-  const params = useParams()
+  const params = useRouteParams()
   const id = params.id as string
   const { projects } = useProject()
 
   const [templates, setTemplates] = useState<TemplateResponse[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<FilterType>('all')
+  const [search, setSearch] = useState('')
+  // The search box is debounced into the server query (the API searches name and template key).
+  const [query, setQuery] = useState('')
+  const [totalCount, setTotalCount] = useState(0)
   const [perfByKey, setPerfByKey] = useState<Record<string, TemplatePerformanceDto>>({})
 
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const loadedProjectIdRef = useRef<string | null>(null)
+  // Bumped on every new query (project or search); responses for an older query are dropped.
+  const querySeq = useRef(0)
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<string | null>(null)
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+
+  // Remember the chosen layout per browser (best effort — storage may be blocked).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('templates-view')
+      if (saved === 'grid' || saved === 'list') setView(saved)
+    } catch {
+      // ignore
+    }
+  }, [])
+  const changeView = (next: 'grid' | 'list') => {
+    setView(next)
+    try {
+      localStorage.setItem('templates-view', next)
+    } catch {
+      // ignore
+    }
+  }
 
   const projectName = projects.find(p => p.id === id)?.name || ''
-  const statsRangeLabel = format(new Date(), 'MMMM yyyy')
   const statsRangeShort = format(new Date(), 'MMM yyyy')
 
-  const hydrateTemplatePreviews = useCallback(async (items: TemplateResponse[]) => {
-    const missingPreview = items.filter(tpl => tpl.templateKey && !tpl.activeVersion?.previewFilePathPresigned)
-    if (missingPreview.length === 0) return items
-
-    const details = await Promise.allSettled(missingPreview.map(tpl => api.templates.getTemplateById(tpl.templateKey)))
-    const detailMap = new Map<string, TemplateResponse>()
-
-    details.forEach(result => {
-      if (result.status === 'fulfilled' && result.value?.templateKey) {
-        detailMap.set(result.value.templateKey, result.value)
-      }
-    })
-
-    return items.map(tpl => {
-      const detail = detailMap.get(tpl.templateKey)
-      if (!detail) return tpl
-
-      return {
-        ...tpl,
-        sandboxPayload: tpl.sandboxPayload ?? detail.sandboxPayload,
-        activeVersion: detail.activeVersion ?? tpl.activeVersion,
-        allVersions: detail.allVersions ?? tpl.allVersions
-      }
-    })
-  }, [])
-
+  // The list response already carries each active version's preview URL (previewFilePathPresigned) when a
+  // preview exists, so no per-template detail requests are needed here.
   const fetchTemplates = useCallback(
     async (pageToFetch: number, isLoadMore = false) => {
       if (!id || typeof id !== 'string') return
+      const seq = querySeq.current
       if (isLoadMore) setIsLoadingMore(true)
       else setIsLoading(true)
 
       try {
         const res = await api.templates.templatesList({
           pageNumber: pageToFetch,
-          pageSize: 24,
-          // @ts-ignore
-          projectId: id
+          pageSize: PAGE_SIZE,
+          projectId: id,
+          search: query || undefined
         })
+        if (seq !== querySeq.current) return
         if (res?.items) {
-          const hydratedItems = await hydrateTemplatePreviews(res.items)
-          if (isLoadMore) setTemplates(prev => [...prev, ...hydratedItems])
-          else setTemplates(hydratedItems)
-          setHasMore(res.items.length >= 24)
+          const items = res.items
+          if (isLoadMore) {
+            setTemplates(prev => {
+              const ids = new Set(prev.map(t => t.id))
+              return [...prev, ...items.filter(t => !ids.has(t.id))]
+            })
+          } else setTemplates(items)
+          setTotalCount(Number(res.totalCount ?? items.length))
+          setHasMore(res.hasNextPage ?? items.length >= PAGE_SIZE)
+          setPage(pageToFetch)
         }
       } catch {
         // handled by API interceptor
       } finally {
-        setIsLoading(false)
-        setIsLoadingMore(false)
+        if (seq === querySeq.current) {
+          setIsLoading(false)
+          setIsLoadingMore(false)
+        }
       }
     },
-    [hydrateTemplatePreviews, id]
+    [id, query]
   )
 
   useEffect(() => {
-    if (id && typeof id === 'string' && loadedProjectIdRef.current !== id) {
-      loadedProjectIdRef.current = id
-      setPage(1)
-      setTemplates([])
-      setHasMore(true)
-      fetchTemplates(1, false)
-    }
+    const handle = setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(handle)
+  }, [search])
+
+  useEffect(() => {
+    if (!id || typeof id !== 'string') return
+    querySeq.current += 1
+    setPage(1)
+    setHasMore(true)
+    setIsLoadingMore(false)
+    fetchTemplates(1, false)
   }, [id, fetchTemplates])
 
   useEffect(() => {
@@ -129,277 +150,354 @@ const Templates = () => {
       .templatesList({ projectId: id, fromDate, toDate } as any)
       .then(res => {
         const map: Record<string, TemplatePerformanceDto> = {}
-        ;(res || []).forEach(row => { if (row.templateKey) map[row.templateKey] = row })
+        ;(res || []).forEach(row => {
+          if (row.templateKey) map[row.templateKey] = row
+        })
         setPerfByKey(map)
       })
       .catch(error => console.error('Failed to fetch template performance:', error))
   }, [id])
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (isLoading || isLoadingMore || !hasMore) return
-      const scrollTop = window.scrollY || document.documentElement.scrollTop
-      const windowHeight = window.innerHeight
-      const docHeight = document.documentElement.scrollHeight
-      if (scrollTop + windowHeight >= docHeight - 200) {
-        setPage(prev => {
-          const nextPage = prev + 1
-          fetchTemplates(nextPage, true)
-          return nextPage
-        })
-      }
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [isLoading, isLoadingMore, hasMore, fetchTemplates])
+  const loadMore = useCallback(() => {
+    if (isLoading || isLoadingMore || !hasMore) return
+    fetchTemplates(page + 1, true)
+  }, [isLoading, isLoadingMore, hasMore, page, fetchTemplates])
 
-  const filtered = filter === 'all' ? templates : templates.filter(t => getTemplateType(t) === filter)
+  // "All" is the server total. The API has no type filter, so the Word/Excel counts are exact only once every
+  // page is loaded; until then they are hidden rather than shown as a misleading partial number.
+  const counts = useMemo(
+    (): Record<FilterType, number | null> => ({
+      all: totalCount,
+      pdf: hasMore ? null : templates.filter(t => getTemplateType(t) === 'pdf').length,
+      excel: hasMore ? null : templates.filter(t => getTemplateType(t) === 'excel').length
+    }),
+    [templates, totalCount, hasMore]
+  )
 
-  const handleManage = (tpl: TemplateResponse) => {
-    const type = getTemplateType(tpl)
-    if (type === 'excel') {
-      router.push(`/excel/templates/${tpl.templateKey}?projectId=${id}`)
-    } else {
-      router.push(`/pdf/templates/${tpl.templateKey}?projectId=${id}`)
-    }
+  const filtered = useMemo(
+    () => (filter === 'all' ? templates : templates.filter(t => getTemplateType(t) === filter)),
+    [templates, filter]
+  )
+
+  const openTemplate = (tpl: TemplateResponse) => {
+    const base = getTemplateType(tpl) === 'excel' ? '/excel/templates' : '/pdf/templates'
+    router.push(`${base}/${tpl.templateKey}?projectId=${id}`)
   }
 
   const handleNewTemplate = () => {
-    if (filter === 'excel') {
-      router.push(`/pdf/templates/create?projectId=${id}&type=excel`)
-    } else {
-      router.push(`/pdf/templates/create?projectId=${id}`)
-    }
+    router.push(`/pdf/templates/create?projectId=${id}${filter === 'excel' ? '&type=excel' : ''}`)
   }
 
-  if (isLoading) {
-    return (
-      <div className='flex min-h-screen items-center justify-center'>
-        <Spinner size='lg' />
-      </div>
-    )
+  const requestDelete = (templateKey: string) => {
+    setTemplateToDelete(templateKey)
+    setDeleteModalOpen(true)
   }
+
+  const newTemplateButton = (
+    <Button
+      color='primary'
+      className='h-10 font-medium'
+      startContent={<Icon icon='lucide:plus' className='h-4 w-4' />}
+      onPress={handleNewTemplate}>
+      New template
+    </Button>
+  )
+
+  const isSearching = query.length > 0
 
   return (
-    <div className='dashboard-panel flex flex-col'>
-      {/* Header */}
-      <div className='dashboard-header'>
-        <div>
-          <h1 className='dashboard-title'>Templates</h1>
-          <p className='dashboard-subtitle'>
-            {projectName ? `${projectName} · ` : ''}PDF and Excel report templates · Stats reflect {statsRangeLabel}
-          </p>
+    <div className='flex flex-col gap-6'>
+      <PageHeader
+        breadcrumb={[{ label: projectName || 'Project', href: `/project/${id}` }, { label: 'Templates' }]}
+        title='Your templates'
+        description='Word and Excel files you fill with data to produce PDF, DOCX or XLSX documents.'
+        actions={newTemplateButton}
+      />
+
+      {/* Toolbar: filter segments + search */}
+      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+        <div role='group' aria-label='Filter by file type' className='flex border border-default-300'>
+          {FILTERS.map((f, index) => {
+            const isActive = filter === f.key
+            return (
+              <button
+                key={f.key}
+                type='button'
+                aria-pressed={isActive}
+                onClick={() => setFilter(f.key)}
+                className={cn(
+                  'flex min-h-10 flex-1 items-center justify-center gap-2 px-4 text-[13px] font-medium transition-colors sm:flex-none',
+                  index > 0 && 'border-l border-default-300',
+                  isActive ? 'bg-content3 text-foreground' : 'text-default-500 hover:bg-content2 hover:text-foreground'
+                )}>
+                {f.label}
+                {counts[f.key] !== null && (
+                  <span className={cn('font-mono text-[12px] tabular-nums', isActive ? 'text-default-500' : 'text-default-400')}>
+                    {counts[f.key]}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
-        <Button
-          color='primary'
-          size='sm'
-          radius='md'
-          startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' />}
-          onPress={handleNewTemplate}
-          className='h-9 rounded-lg px-4 text-[12px] font-bold'>
-          New Template
-        </Button>
-      </div>
-
-      {/* Filter bar */}
-      <div className='dashboard-toolbar'>
-        {FILTERS.map(f => {
-          const isActive = filter === f.key
-          const count = f.key === 'all' ? templates.length : templates.filter(t => getTemplateType(t) === f.key).length
-          return (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-lg px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${
-                isActive
-                  ? 'bg-content3 text-foreground shadow-[inset_0_0_0_1px_var(--hairline-soft)]'
-                  : 'text-default-600 hover:bg-content2 hover:text-foreground'
-              }`}>
-              {f.label}
-              <span className={`ml-1.5 text-[10.5px] ${isActive ? 'opacity-70' : 'text-default-500'}`}>{count}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Grid */}
-      <div className='w-full px-4 pb-5 md:px-5'>
-        {filtered.length === 0 ? (
-          <div className='dashboard-soft mt-4 flex h-72 w-full flex-col items-center justify-center px-6 text-center'>
-            <div className='mb-4 rounded-lg bg-content3 p-4'>
-              <Icon icon='lucide:file-plus' className='h-6 w-6 text-default-500' />
-            </div>
-            <h3 className='text-lg font-medium text-foreground'>
-              {filter === 'all' ? 'No templates yet' : `No ${filter.toUpperCase()} templates yet`}
-            </h3>
-            <p className='mt-1 text-sm text-default-500'>
-              {filter === 'excel'
-                ? 'Upload your first .xlsx template to get started'
-                : 'Create your first PDF template to get started'}
-            </p>
-            <Button
-              className='mt-4 h-9 rounded-lg px-5 text-[12px] font-bold'
-              color='primary'
-              radius='md'
-              onPress={handleNewTemplate}>
-              {filter === 'excel' ? 'Upload Template' : 'Create Template'}
-            </Button>
+        <div className='flex items-center gap-2'>
+          <Input
+            aria-label='Search templates'
+            placeholder='Search by name or key'
+            value={search}
+            onValueChange={setSearch}
+            isClearable
+            onClear={() => setSearch('')}
+            variant='bordered'
+            className='w-full sm:w-72'
+            classNames={{ inputWrapper: 'h-10 min-h-10 border-default-300 bg-content2', input: 'text-[14px]' }}
+            startContent={<Icon icon='lucide:search' className='h-4 w-4 text-default-500' />}
+          />
+          <div role='group' aria-label='Layout' className='flex shrink-0 border border-default-300'>
+            {(
+              [
+                { key: 'grid', icon: 'lucide:layout-grid', label: 'Card view' },
+                { key: 'list', icon: 'lucide:list', label: 'List view' }
+              ] as const
+            ).map((v, index) => (
+              <button
+                key={v.key}
+                type='button'
+                aria-label={v.label}
+                title={v.label}
+                aria-pressed={view === v.key}
+                onClick={() => changeView(v.key)}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center transition-colors',
+                  index > 0 && 'border-l border-default-300',
+                  view === v.key ? 'bg-content3 text-foreground' : 'text-default-500 hover:bg-content2 hover:text-foreground'
+                )}>
+                <Icon icon={v.icon} className='h-4 w-4' />
+              </button>
+            ))}
           </div>
-        ) : (
-          <div className='w-full pt-5'>
-            <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'>
-              {filtered.map(tpl => {
-                const type = getTemplateType(tpl)
-                const perf = tpl.templateKey ? perfByKey[tpl.templateKey] : undefined
-                const volume = perf ? Number(perf.totalGenerations) || 0 : 0
-                const successRate = perf && volume > 0 ? Number(perf.successRate) : null
-                const avgDurationMs = perf ? Number(perf.avgDurationMs) : 0
-                const dailyVolume = perf?.dailyVolume ?? []
-                const hasActivity = volume > 0
-                return (
-                  <div
-                    key={tpl.id}
-                    className='dashboard-card dashboard-card-hover relative flex min-h-[224px] flex-col justify-between p-4 2xl:min-h-[216px]'>
-                    {/* Badges */}
-                    <div className='absolute right-3 top-3 z-10 flex items-center gap-1.5'>
-                      <span className={`qs-chip uppercase ${type === 'excel' ? 'qs-chip-excel' : 'qs-chip-pdf'}`}>
-                        {type}
-                      </span>
-                      <span className='qs-chip qs-chip-neutral text-[11px]'>v{tpl.activeVersion?.version || '1'}</span>
-                    </div>
+        </div>
+      </div>
 
-                    <div className='flex gap-4'>
-                      {/* Gotenberg stores template previews as PDF, including XLSX templates. */}
-                      <div className='h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-content2 ring-hairline'>
-                        {tpl.activeVersion?.previewFilePathPresigned ? (
-                          <PdfThumbnail
-                            url={tpl.activeVersion.previewFilePathPresigned}
-                            templateKey={tpl.templateKey}
-                            templateType={type}
-                            templateName={tpl.name}
-                          />
-                        ) : (
-                          <div className='flex h-full w-full items-center justify-center'>
-                            <FileIcon type={type} size='sm' />
-                          </div>
-                        )}
-                      </div>
+      {isLoading ? (
+        <div className='flex min-h-[320px] items-center justify-center border border-divider bg-content1'>
+          <Spinner color='default' label='Loading templates' classNames={{ label: 'text-[13px] text-default-500' }} />
+        </div>
+      ) : filtered.length === 0 && !hasMore ? (
+        <div className='flex min-h-[300px] flex-col items-center justify-center border border-divider bg-content1 px-6 py-12 text-center'>
 
-                      {/* Content */}
-                      <div className='flex min-w-0 flex-1 flex-col pt-0.5'>
-                        <h3
-                          className='mr-16 truncate text-base font-bold text-foreground'
-                          title={tpl.name || 'Untitled'}>
-                          {tpl.name || 'Untitled'}
-                        </h3>
-                        <div className='mt-2 space-y-1.5'>
-                          <div className='flex items-center gap-1.5 text-xs text-default-500'>
-                            <Icon icon='lucide:clock' className='h-3 w-3 text-default-400' />
-                            <span className='truncate'>
-                              Updated {tpl.updatedDatetime ? dayjs(new Date(tpl.updatedDatetime)).fromNow() : '-'}
-                            </span>
+          <Icon icon={isSearching ? 'lucide:search-x' : 'lucide:file-plus-2'} className='h-8 w-8 text-default-400' />
+          <h2 className='mt-4 text-[16px] font-semibold text-foreground'>
+            {isSearching ? 'No matching templates' : filter === 'excel' ? 'No Excel templates yet' : filter === 'pdf' ? 'No Word templates yet' : 'No templates yet'}
+          </h2>
+          <p className='mt-2 max-w-md text-[14px] text-default-500'>
+            {isSearching
+              ? 'Try another name or template key.'
+              : 'Upload a Word (.docx) or Excel (.xlsx) file with {{placeholders}} to start generating documents.'}
+          </p>
+          <div className='mt-6'>
+            {isSearching ? (
+              <Button variant='bordered' className='h-10 border-default-300 font-medium' onPress={() => setSearch('')}>
+                Clear search
+              </Button>
+            ) : (
+              newTemplateButton
+            )}
+          </div>
+        </div>
+      ) : (
+        <>
+          {filtered.length === 0 ? (
+            <p className='border border-divider bg-content1 px-6 py-8 text-center text-[14px] text-default-500'>
+              No {filter === 'excel' ? 'Excel' : 'Word'} templates in the loaded results yet. Load more to keep looking.
+            </p>
+          ) : view === 'list' ? (
+            <div className='overflow-x-auto border border-divider bg-content1'>
+              <table className='w-full min-w-[720px] text-left'>
+                <thead>
+                  <tr className='border-b border-divider'>
+                    {['Name', 'Type', 'Version', 'Updated', 'Runs', ''].map(h => (
+                      <th key={h || 'actions'} scope='col' className='px-4 py-3 text-[13px] font-medium text-default-500'>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(tpl => {
+                    const type = getTemplateType(tpl)
+                    const perf = tpl.templateKey ? perfByKey[tpl.templateKey] : undefined
+                    const volume = perf ? Number(perf.totalGenerations) || 0 : 0
+                    const name = tpl.name || 'Untitled'
+                    return (
+                      <tr key={tpl.id} className='border-b border-divider last:border-0 hover:bg-content2'>
+                        <td className='max-w-[360px] px-4 py-3'>
+                          <button
+                            type='button'
+                            onClick={() => openTemplate(tpl)}
+                            className='line-clamp-2 text-left text-[14px] font-medium text-foreground underline-offset-4 hover:underline'>
+                            {name}
+                          </button>
+                          <code className='block truncate font-mono text-[11px] text-default-400'>{tpl.templateKey}</code>
+                        </td>
+                        <td className='px-4 py-3'>
+                          <TypeBadge type={type} />
+                        </td>
+                        <td className='px-4 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                          {tpl.activeVersion?.version || '1'}
+                        </td>
+                        <td className='whitespace-nowrap px-4 py-3 text-[13px] text-default-500'>
+                          {tpl.updatedDatetime ? dayjs(new Date(tpl.updatedDatetime)).fromNow() : '—'}
+                        </td>
+                        <td className='px-4 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                          {volume > 0 ? volume.toLocaleString() : '—'}
+                        </td>
+                        <td className='px-4 py-3'>
+                          <div className='flex items-center justify-end gap-1'>
+                            <Button
+                              size='sm'
+                              variant='bordered'
+                              className='h-9 border-default-300 font-medium'
+                              onPress={() => openTemplate(tpl)}>
+                              Open
+                            </Button>
+                            <CopyButton text={tpl.templateKey || ''} />
+                            <Button
+                              isIconOnly
+                              size='sm'
+                              variant='light'
+                              aria-label={`Delete ${name}`}
+                              className='h-9 w-9 min-w-9 text-default-500 hover:text-danger'
+                              onPress={() => tpl.templateKey && requestDelete(tpl.templateKey)}>
+                              <Icon icon='lucide:trash-2' className='h-4 w-4' />
+                            </Button>
                           </div>
-                          <div className='flex items-center gap-1.5 text-xs text-default-500'>
-                            <Icon icon='lucide:calendar-plus' className='h-3 w-3 text-default-400' />
-                            <span className='truncate'>
-                              Created{' '}
-                              {tpl.createdDatetime ? dayjs(new Date(tpl.createdDatetime)).format('MMM D, YYYY') : '-'}
-                            </span>
-                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+          <ul className='grid grid-cols-1 border-l border-t border-divider sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'>
+            {filtered.map(tpl => {
+              const type = getTemplateType(tpl)
+              const perf = tpl.templateKey ? perfByKey[tpl.templateKey] : undefined
+              const volume = perf ? Number(perf.totalGenerations) || 0 : 0
+              const successRate = perf && volume > 0 ? Number(perf.successRate) : null
+              const avgDurationMs = perf ? Number(perf.avgDurationMs) : 0
+              const hasActivity = volume > 0
+              const name = tpl.name || 'Untitled'
+
+              return (
+                <li
+                  key={tpl.id}
+                  className='group relative flex flex-col border-b border-r border-divider bg-content1 transition-colors hover:bg-content2/50'>
+                  {/* Paper surface with document preview */}
+                  <div className='flex h-44 items-center justify-center border-b border-divider bg-[#FFFFFF] p-4'>
+                    <div className='h-36 w-[104px] overflow-hidden border border-black/10 bg-[#FFFFFF] shadow-[0_8px_20px_-12px_rgba(0,0,0,.6)]'>
+                      {tpl.activeVersion?.previewFilePathPresigned ? (
+                        <PdfThumbnail
+                          url={tpl.activeVersion.previewFilePathPresigned}
+                          templateKey={tpl.templateKey}
+                          templateType={type}
+                          templateName={tpl.name}
+                        />
+                      ) : (
+                        <div className='flex h-full w-full items-center justify-center'>
+                          <FileIcon type={type} size='sm' />
                         </div>
+                      )}
+                    </div>
+                  </div>
 
-                      </div>
+                  <div className='flex flex-1 flex-col gap-3 p-4'>
+                    <div className='flex items-start justify-between gap-3'>
+                      <button
+                        type='button'
+                        onClick={() => openTemplate(tpl)}
+                        className='min-w-0 text-left after:absolute after:inset-0 after:content-[""] focus-visible:outline-none'
+                        title={name}>
+                        <h3 className='line-clamp-2 break-words text-[16px] font-semibold leading-snug text-foreground'>{name}</h3>
+                      </button>
+                      <TypeBadge type={type} />
                     </div>
 
-                    {/* Metrics bar — full-width between identity & footer */}
-                    <div className='mt-4 border-t border-default-200/60 pt-3 dark:border-white/10'>
-                      <div className='flex items-baseline justify-between gap-3 text-[11.5px]'>
-                        <div className='flex items-baseline gap-3'>
-                          <div className='flex items-baseline gap-1'>
-                            <span className='font-bold tabular-nums text-foreground'>
-                              {hasActivity ? volume.toLocaleString() : '—'}
-                            </span>
-                            <span className='text-default-500'>runs</span>
-                          </div>
-                          <span className='text-default-300'>·</span>
-                          <div className='flex items-baseline gap-1'>
-                            <span
-                              className={`font-bold tabular-nums ${
-                                successRate === null
-                                  ? 'text-default-400'
-                                  : successRate >= 99
-                                    ? 'text-success-600'
-                                    : successRate >= 90
-                                      ? 'text-foreground'
-                                      : 'text-danger-500'
-                              }`}>
-                              {successRate === null ? '—' : `${successRate.toFixed(0)}%`}
-                            </span>
-                            <span className='text-default-500'>ok</span>
-                          </div>
-                          <span className='text-default-300'>·</span>
-                          <div className='flex items-baseline gap-1'>
-                            <span className='font-bold tabular-nums text-foreground'>
-                              {hasActivity ? formatDuration(avgDurationMs) : '—'}
-                            </span>
-                            <span className='text-default-500'>avg</span>
-                          </div>
+                    <p className='text-[13px] text-default-500'>
+                      Version {tpl.activeVersion?.version || '1'} · Updated{' '}
+                      {tpl.updatedDatetime ? dayjs(new Date(tpl.updatedDatetime)).fromNow() : '—'}
+                    </p>
+
+                    <dl className='grid grid-cols-3 gap-3'>
+                      {[
+                        { label: 'Runs', value: hasActivity ? volume.toLocaleString() : '—' },
+                        { label: 'Success', value: successRate === null ? '—' : `${successRate.toFixed(0)}%` },
+                        { label: 'Avg time', value: hasActivity ? formatDuration(avgDurationMs) : '—' }
+                      ].map(stat => (
+                        <div key={stat.label}>
+                          <dt className='text-[13px] text-default-500'>{stat.label}</dt>
+                          <dd
+                            className={cn(
+                              'mt-0.5 font-mono text-[14px] tabular-nums text-foreground',
+                              stat.label === 'Success' && successRate !== null && successRate < 90 && 'text-warning'
+                            )}>
+                            {stat.value}
+                          </dd>
                         </div>
-                        <span className='font-label text-[9px] uppercase tracking-wider text-default-400'>
-                          {statsRangeShort}
-                        </span>
-                      </div>
-                      <div className='mt-2 h-10' title={`Daily volume — ${statsRangeShort}`}>
-                        {hasActivity ? (
-                          <Sparkline
-                            values={dailyVolume}
-                            width={400}
-                            height={40}
-                            className='h-full w-full'
-                            colorClass={successRate !== null && successRate < 90 ? 'text-danger' : 'text-primary'}
-                          />
-                        ) : (
-                          <div className='flex h-full w-full items-center'>
-                            <div className='h-px w-full border-t border-dashed border-default-300/60 dark:border-default-200/40' />
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                      ))}
+                    </dl>
+                    <p className='-mt-1 text-[12px] text-default-500'>
+                      Stats for {statsRangeShort}
+                    </p>
 
-                    {/* Footer */}
-                    <div className='mt-3 flex items-center justify-between gap-2 border-t border-default-200/60 pt-3 dark:border-white/10'>
-                      <div className='flex flex-1 items-center gap-1.5 rounded-lg bg-content2 p-1.5 px-2 ring-hairline'>
-                        <Icon icon='lucide:key' className='h-3 w-3 text-default-500' />
-                        <code
-                          className='flex-1 truncate font-mono text-[10.5px] font-medium text-default-600'
-                          title={tpl.templateKey || ''}>
+                    {/* Footer: key + actions (z-10 so they sit above the card-wide click target) */}
+                    <div className='relative z-10 mt-auto flex items-center gap-2 border-t border-divider pt-3'>
+                      <Button
+                        variant='bordered'
+                        className='h-10 border-default-300 font-medium'
+                        endContent={<Icon icon='lucide:arrow-right' className='h-4 w-4' />}
+                        onPress={() => openTemplate(tpl)}>
+                        Open
+                      </Button>
+                      <div className='flex min-h-10 min-w-0 flex-1 items-center gap-1 pl-1'>
+                        <span className='sr-only'>Template key</span>
+                        <code className='min-w-0 flex-1 truncate font-mono text-[11px] text-default-400' title={tpl.templateKey || ''}>
                           {tpl.templateKey}
                         </code>
                         <CopyButton text={tpl.templateKey || ''} className='shrink-0' />
                       </div>
-                      <Button
-                        className='h-8 rounded-lg px-4 text-[11.5px] font-bold'
-                        variant='solid'
-                        color='primary'
-                        size='sm'
-                        radius='md'
-                        endContent={<Icon icon='lucide:arrow-right' className='h-3 w-3' />}
-                        onPress={() => handleManage(tpl)}>
-                        Manage
-                      </Button>
+                      <Tooltip content='Delete template' placement='top'>
+                        <Button
+                          isIconOnly
+                          variant='light'
+                          aria-label={`Delete ${name}`}
+                          className='h-10 w-10 min-w-10 text-default-500 hover:text-danger'
+                          onPress={() => tpl.templateKey && requestDelete(tpl.templateKey)}>
+                          <Icon icon='lucide:trash-2' className='h-4 w-4' />
+                        </Button>
+                      </Tooltip>
                     </div>
                   </div>
-                )
-              })}
-              {isLoadingMore && (
-                <div className='col-span-full flex justify-center p-4'>
-                  <Spinner size='md' />
-                </div>
-              )}
+                </li>
+              )
+            })}
+          </ul>
+          )}
+
+          {hasMore && (
+            <div className='flex justify-center'>
+              <Button
+                variant='bordered'
+                className='h-10 border-default-300 font-medium'
+                isLoading={isLoadingMore}
+                onPress={loadMore}>
+                Load more
+              </Button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </>
+      )}
 
       <DeleteTemplateModal
         isOpen={deleteModalOpen}
@@ -407,6 +505,7 @@ const Templates = () => {
         onSuccess={() => {
           if (templateToDelete) {
             setTemplates(prev => prev.filter(t => t.templateKey !== templateToDelete))
+            setTotalCount(n => Math.max(0, n - 1))
             setTemplateToDelete(null)
           }
         }}

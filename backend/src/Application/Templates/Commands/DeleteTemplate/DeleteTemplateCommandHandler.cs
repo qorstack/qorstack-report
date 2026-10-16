@@ -27,8 +27,8 @@ public class DeleteTemplateCommandHandler : IRequestHandler<DeleteTemplateComman
         _context = context;
         _storageService = storageService;
         _logger = logger;
-        _templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
-        _reportBucket = configuration["Minio:ReportBucket"] ?? "reports";
+        _templateBucket = StorageAreas.Templates;
+        _reportBucket = StorageAreas.Reports;
     }
 
     public async Task<Unit> Handle(DeleteTemplateCommand request, CancellationToken cancellationToken)

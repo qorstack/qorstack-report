@@ -1,7 +1,6 @@
 'use client'
 
-import { Button } from '@heroui/react'
-import { cn } from '@heroui/react'
+import { Button, cn } from '@heroui/react'
 import Icon from '@/components/icon'
 import { ReactNode } from 'react'
 
@@ -23,16 +22,16 @@ interface PillButtonProps {
 }
 
 const variantClass: Record<Variant, string> = {
-  primary: 'bg-primary text-primary-foreground hover:brightness-110',
-  accent: 'bg-primary/15 text-primary-700 hover:bg-primary/25 ring-hairline',
-  ghost: 'bg-content3 text-default-700 hover:bg-content4 ring-hairline',
-  danger: 'bg-danger-50 text-danger hover:bg-danger-100 dark:bg-danger/15 dark:hover:bg-danger/25'
+  primary: 'bg-primary text-primary-foreground hover:bg-primary-600',
+  accent: 'border border-default-500 bg-transparent text-foreground hover:bg-content2',
+  ghost: 'border border-default-300 bg-transparent text-foreground hover:border-foreground',
+  danger: 'border border-danger/60 bg-transparent text-danger hover:bg-danger/10'
 }
 
 const sizeClass: Record<Size, string> = {
-  xs: 'h-7 px-2.5 text-[10.5px] font-black uppercase tracking-wider gap-1.5',
-  sm: 'h-8 px-3.5 text-[11.5px] font-bold gap-1.5',
-  md: 'h-9 px-4 text-[12px] font-bold gap-2'
+  xs: 'h-7 px-2.5 text-[12px] gap-1.5',
+  sm: 'h-8 px-3.5 text-[13px] gap-1.5',
+  md: 'h-10 px-4 text-[14px] gap-2'
 }
 
 const iconSize: Record<Size, string> = {
@@ -41,6 +40,7 @@ const iconSize: Record<Size, string> = {
   md: 'h-4 w-4'
 }
 
+/** Square Press button. The name is kept for compatibility. */
 export const PillButton = ({
   children,
   onPress,
@@ -60,9 +60,10 @@ export const PillButton = ({
     isLoading={isLoading}
     isDisabled={isDisabled}
     title={title}
-    radius='md'
+    aria-label={!children && title ? title : undefined}
+    radius='none'
     className={cn(
-      'min-w-0 shrink-0 rounded-lg transition-all',
+      'min-w-0 shrink-0 font-medium transition-colors',
       variantClass[variant],
       sizeClass[size],
       className

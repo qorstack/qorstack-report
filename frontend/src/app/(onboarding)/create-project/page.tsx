@@ -7,12 +7,13 @@ import Icon from '@/components/icon'
 import { useProject } from '@/providers/ProjectContext'
 import { api } from '@/api/generated/main-service'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { absoluteApiUrl } from '@/api/base-url'
 
 const HOW_IT_WORKS = [
-  { icon: 'lucide:key', label: 'Create a project and get your API key' },
-  { icon: 'lucide:file-text', label: 'Upload or design a PDF template' },
-  { icon: 'lucide:send', label: 'POST JSON data to the render endpoint' },
-  { icon: 'lucide:file-check', label: 'Receive a generated PDF instantly' }
+  { icon: 'lucide:folder', label: 'Create a project — it holds templates, the API key and history' },
+  { icon: 'lucide:file-text', label: 'Upload a Word or Excel template with {{placeholders}}' },
+  { icon: 'lucide:key', label: 'Copy the project API key into your app' },
+  { icon: 'lucide:send', label: 'Generate: POST JSON → PDF / DOCX (Word) or XLSX (Excel)' }
 ]
 
 export default function CreateProjectPage() {
@@ -52,95 +53,111 @@ export default function CreateProjectPage() {
   const handleCopyKey = () => void copy(generatedApiKey)
 
   const codeLines = [
-    { prefix: '$', text: 'curl -X POST {BASE_URL}/render/word/template \\' },
+    { prefix: '$', text: `curl -X POST ${absoluteApiUrl()}/render/word/template \\` },
     { prefix: ' ', text: '  -H "X-API-Key: ' + (generatedApiKey || 'YOUR_API_KEY') + '" \\' },
     { prefix: ' ', text: '  -H "Content-Type: application/json" \\' },
-    { prefix: ' ', text: "  -d '{\"templateKey\":\"tpl_xxx\",\"replace\":{\"name\":\"John\"}}'" }
+    {
+      prefix: ' ',
+      text: `  -d '{"templateKey":"tpl_xxx","replace":[{"key":"customer","value":"ACME"}]}'`
+    }
   ]
 
-  return (
-    <div className='flex h-full flex-col lg:flex-row'>
-      {/* ── Left: Form ── */}
-      <div className='flex flex-1 flex-col items-center justify-center px-8 py-12 lg:px-16'>
-        <div className='w-full max-w-sm'>
+  const stepClass = (active: boolean): string =>
+    `text-[13px] font-medium transition-colors ${active ? 'text-foreground' : 'text-default-500'}`
 
+  return (
+    <div className='flex min-h-full flex-col lg:flex-row'>
+      {/* ── Left: Form ── */}
+      <div className='flex flex-1 flex-col items-center justify-center px-4 py-12 sm:px-8 lg:px-16'>
+        <div className='w-full max-w-md'>
           {/* Step indicator */}
-          <div className='mb-12 flex items-center gap-3'>
-            <span className={`font-label text-[10px] font-bold uppercase tracking-widest transition-colors ${!showApiKey ? 'text-primary' : 'text-default-300'}`}>
-              01 — Create
-            </span>
-            <div className={`h-px flex-1 transition-colors ${showApiKey ? 'bg-primary/50' : 'bg-default-200'}`} />
-            <span className={`font-label text-[10px] font-bold uppercase tracking-widest transition-colors ${showApiKey ? 'text-primary' : 'text-default-400'}`}>
-              02 — API Key
-            </span>
-          </div>
+          <ol aria-label='Setup progress' className='mb-12 flex items-center gap-3'>
+            <li className={stepClass(!showApiKey)} aria-current={!showApiKey ? 'step' : undefined}>
+              1. Create
+            </li>
+            <li
+              aria-hidden='true'
+              className={`h-px flex-1 transition-colors ${showApiKey ? 'bg-default-400' : 'bg-divider'}`}
+            />
+            <li className={stepClass(showApiKey)} aria-current={showApiKey ? 'step' : undefined}>
+              2. API key
+            </li>
+          </ol>
 
           {showApiKey ? (
             /* ── Step 2: API Key ── */
-            <div className='space-y-7'>
+            <div className='space-y-8'>
               <div>
-                <p className='mb-2 font-mono text-[11px] font-bold text-success'>✓ project.created</p>
-                <h1 className='font-headline text-[26px] font-bold leading-tight tracking-tight text-foreground'>
-                  {isFirstProject ? 'Your workspace is live.' : 'Project is live.'}
-                </h1>
-                <p className='mt-2 text-sm text-default-500'>
-                  Copy the API key below before continuing.
+                <p className='mb-2 flex items-center gap-1.5 text-[13px] font-medium text-default-500'>
+                  <Icon icon='lucide:check' aria-hidden='true' className='h-3.5 w-3.5 text-success' />
+                  Project created
                 </p>
+                <h1 className='text-[26px] font-extrabold uppercase leading-tight tracking-[-0.01em] text-foreground [font-variation-settings:"wdth"_72] sm:text-[28px]'>
+                  {isFirstProject ? 'Your workspace is live' : 'Project is live'}
+                </h1>
+                <p className='mt-2 text-[14px] text-default-500'>Copy the API key below before continuing.</p>
               </div>
 
               {/* Key block */}
-              <div className='space-y-2'>
-                <div className='flex items-center justify-between'>
-                  <span className='font-label text-[10px] font-bold uppercase tracking-widest text-default-400'>
-                    API Key
-                  </span>
-                  <button
-                    onClick={handleCopyKey}
-                    className={`flex h-7 items-center gap-1.5 rounded px-2.5 text-xs font-semibold transition-all ${
-                      copied
-                        ? 'text-success-600 dark:text-success-400'
-                        : 'text-default-500 hover:bg-default-100 hover:text-default-700'
-                    }`}>
-                    <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} className='h-3.5 w-3.5' />
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-
-                <div className='overflow-hidden rounded-md bg-default-100 dark:bg-default-100/40'>
-                  <p className='break-all px-4 py-3.5 font-mono text-[12px] leading-loose text-default-600 dark:text-default-300 select-all'>
+              <div>
+                <div className='border border-divider bg-content2'>
+                  <div className='flex items-center justify-between border-b border-divider bg-content1 py-1.5 pl-4 pr-1.5'>
+                    <span className='text-[13px] text-default-500'>API key</span>
+                    <button
+                      type='button'
+                      onClick={handleCopyKey}
+                      aria-label={copied ? 'API key copied' : 'Copy API key'}
+                      className='inline-flex h-8 items-center gap-1.5 px-2.5 text-[13px] font-medium text-default-500 transition-colors hover:bg-content2 hover:text-foreground'>
+                      <Icon
+                        icon={copied ? 'lucide:check' : 'lucide:copy'}
+                        aria-hidden='true'
+                        className={`h-3.5 w-3.5 ${copied ? 'text-success' : ''}`}
+                      />
+                      <span className={copied ? 'text-success' : ''}>{copied ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <p className='select-all break-all px-4 py-4 font-mono text-[13px] leading-relaxed text-foreground'>
                     {generatedApiKey}
                   </p>
                 </div>
               </div>
 
               {/* Warning */}
-              <p className='text-xs leading-relaxed text-default-400'>
-                <span className='font-semibold text-amber-600 dark:text-amber-400'>Not retrievable after this page.</span>
-                {' '}Store it in a password manager or as an environment variable.
-              </p>
+              <div
+                role='note'
+                className='flex items-start gap-3'>
+                <Icon
+                  icon='lucide:triangle-alert'
+                  aria-hidden='true'
+                  className='mt-0.5 h-4 w-4 shrink-0 text-warning'
+                />
+                <p className='text-[14px] leading-relaxed text-default-500'>
+                  <span className='font-semibold text-foreground'>Keep this key secret.</span> Store it in a password
+                  manager or as an environment variable. You can view, copy or regenerate it later on the project&apos;s
+                  API key page.
+                </p>
+              </div>
 
               <Button
                 size='lg'
                 color='primary'
-                className='w-full rounded-sm font-semibold'
-                onPress={() => router.push(`/project/${projectId}`)}>
-                Open Dashboard
-                <Icon icon='lucide:arrow-right' className='h-4 w-4' />
+                className='w-full font-medium'
+                onPress={() => router.push(`/project/${projectId}`)}
+                endContent={<Icon icon='lucide:arrow-right' aria-hidden='true' className='h-4 w-4' />}>
+                Open dashboard
               </Button>
             </div>
           ) : (
             /* ── Step 1: Name ── */
-            <div className='space-y-7'>
+            <div className='space-y-8'>
               <div>
-                <p className='mb-3 font-label text-[10px] font-bold uppercase tracking-widest text-default-400'>
-                  {isFirstProject ? 'Getting started' : 'New project'}
-                </p>
-                <h1 className='font-headline text-[28px] font-bold leading-tight tracking-tight text-foreground'>
-                  {isFirstProject ? 'Your first project.' : 'Name your project.'}
+                <p className='mb-2 text-[13px] font-medium text-default-500'>{isFirstProject ? 'Getting started' : 'New project'}</p>
+                <h1 className='text-[26px] font-extrabold uppercase leading-tight tracking-[-0.01em] text-foreground [font-variation-settings:"wdth"_72] sm:text-[28px]'>
+                  {isFirstProject ? 'Your first project' : 'Name your project'}
                 </h1>
-                <p className='mt-2 text-sm text-default-500'>
+                <p className='mt-2 text-[14px] text-default-500'>
                   {isFirstProject
-                    ? 'Projects hold your PDF templates, API keys, and generation history.'
+                    ? 'Project → Template → API key → Generate. A project holds your Word and Excel templates, its API key and the generation history.'
                     : 'Groups your templates, API keys, and generation history.'}
                 </p>
               </div>
@@ -150,35 +167,37 @@ export default function CreateProjectPage() {
                   e.preventDefault()
                   handleCreate()
                 }}
-                className='space-y-3'>
+                className='space-y-4'>
                 <Input
                   size='lg'
-                  variant='flat'
+                  variant='bordered'
                   label='Project name'
+                  labelPlacement='outside'
                   placeholder='e.g. Invoice Service'
                   value={projectName}
                   onValueChange={setProjectName}
                   autoFocus
                   classNames={{
+                    label: 'text-[13px] font-medium text-foreground',
                     inputWrapper:
-                      'bg-default-100 data-[hover=true]:bg-default-200 group-data-[focus=true]:bg-default-100 dark:bg-default-100/40 dark:data-[hover=true]:bg-default-200/40'
+                      'bg-content2 border-default-300 data-[hover=true]:border-default-500 group-data-[focus=true]:border-foreground'
                   }}
                 />
 
                 <Button
                   size='lg'
                   color='primary'
-                  className='w-full rounded-sm font-semibold'
+                  className='w-full font-medium'
                   isLoading={loading}
                   onPress={handleCreate}
-                  isDisabled={!projectName.trim()}>
+                  isDisabled={!projectName.trim()}
+                  endContent={<Icon icon='lucide:arrow-right' aria-hidden='true' className='h-4 w-4' />}>
                   Continue
-                  <Icon icon='lucide:arrow-right' className='h-4 w-4' />
                 </Button>
 
                 <button
                   type='button'
-                  className='w-full py-2 text-xs text-default-400 transition-colors hover:text-default-600'
+                  className='w-full py-2 text-[14px] font-medium text-default-500 transition-colors hover:text-foreground'
                   onClick={() => (isFirstProject ? router.push('/') : router.push(`/project/${projects[0].id}`))}>
                   Cancel
                 </button>
@@ -189,37 +208,39 @@ export default function CreateProjectPage() {
       </div>
 
       {/* ── Right: Info / Code ── */}
-      <div className='hidden w-[420px] shrink-0 flex-col justify-center border-l border-default-200/70 bg-code-panel px-10 py-12 lg:flex'>
+      {/* The first-call snippet (step 2) shows on every screen size; the step-1 explainer only on large screens. */}
+      <aside
+        className={`${showApiKey ? 'flex' : 'hidden'} w-full shrink-0 flex-col justify-center border-t border-divider bg-content1 px-4 py-12 sm:px-8 lg:flex lg:w-[460px] lg:border-l lg:border-t-0 lg:px-10`}>
         {showApiKey ? (
-          /* Step 2 right: dark terminal */
+          /* Step 2 right: first API call */
           <div>
-            <p className='mb-1 text-[11px] font-bold uppercase tracking-widest text-code-subtle'>Quick Start</p>
-            <h2 className='mb-5 text-lg font-bold text-white'>Make your first API call</h2>
+            <p className='mb-2 text-[13px] font-medium text-default-500'>Quick start</p>
+            <h2 className='mb-6 text-[20px] font-semibold text-foreground'>Make your first API call</h2>
 
-            <div className='overflow-hidden rounded-xl bg-code-body'>
-              <div className='flex items-center gap-2 bg-code-chrome px-4 py-2.5'>
-                <div className='flex gap-1.5'>
-                  <div className='h-2.5 w-2.5 rounded-full bg-danger/50' />
-                  <div className='h-2.5 w-2.5 rounded-full bg-warning/50' />
-                  <div className='h-2.5 w-2.5 rounded-full bg-success/50' />
+            <div>
+              <div className='border border-divider bg-[#0E0E0E]'>
+                <div className='flex items-center justify-between border-b border-white/10 bg-[#161616] px-4 py-2'>
+                  <span className='text-[13px] text-[#A9A59F]'>Terminal</span>
+                  <span className='font-mono text-[12px] text-[#A9A59F]'>POST</span>
                 </div>
-                <span className='ml-1 text-[11px] text-code-subtle'>Terminal</span>
-              </div>
-              <div className='p-5'>
-                {codeLines.map((line, i) => (
-                  <div key={i} className='flex gap-2 font-mono text-[11.5px] leading-relaxed'>
-                    <span className='select-none text-code-subtle'>{line.prefix}</span>
-                    <span className='break-all text-code-base'>{line.text}</span>
-                  </div>
-                ))}
+                <div className='overflow-x-auto p-4 font-mono text-[12px] leading-[1.75]'>
+                  {codeLines.map((line, i) => (
+                    <div key={i} className='flex gap-2'>
+                      <span aria-hidden='true' className='select-none text-[#8C8882]'>
+                        {line.prefix}
+                      </span>
+                      <span className='whitespace-pre-wrap break-all text-[#EDEBE6]'>{line.text}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
-            <div className='mt-4 flex items-start gap-2.5 rounded-xl bg-code-chrome p-3.5'>
-              <Icon icon='lucide:lightbulb' className='mt-0.5 h-4 w-4 shrink-0 text-code-accent' />
-              <p className='text-[11.5px] leading-relaxed text-code-base'>
+            <div className='mt-6 flex items-start gap-3'>
+              <Icon icon='lucide:lightbulb' aria-hidden='true' className='mt-0.5 h-4 w-4 shrink-0 text-default-500' />
+              <p className='text-[14px] leading-relaxed text-default-500'>
                 Replace{' '}
-                <code className='rounded bg-code-chip px-1 py-0.5 font-mono text-[11px] text-code-high'>
+                <code className='bg-content2 px-1 py-0.5 font-mono text-[13px] text-foreground'>
                   tpl_xxx
                 </code>{' '}
                 with your template key after uploading a template from the dashboard.
@@ -229,32 +250,31 @@ export default function CreateProjectPage() {
         ) : (
           /* Step 1 right: how it works */
           <div>
-            <p className='mb-1 text-[11px] font-bold uppercase tracking-widest text-code-subtle'>How it works</p>
-            <h2 className='mb-2 text-lg font-bold text-white'>From data to PDF in seconds.</h2>
-            <p className='mb-8 text-sm leading-relaxed text-code-base'>
-              Qorstack Report turns JSON data and your templates into pixel-perfect PDFs via a simple REST API.
+            <p className='mb-2 text-[13px] font-medium text-default-500'>How it works</p>
+            <h2 className='mb-3 text-[20px] font-semibold text-foreground'>From template to document</h2>
+            <p className='mb-8 text-[14px] leading-relaxed text-default-500'>
+              Qorstack Report fills your Word or Excel template with JSON data and returns the finished document through a REST API.
             </p>
 
-            <div className='space-y-4'>
+            <ol className='divide-y divide-divider border-y border-divider'>
               {HOW_IT_WORKS.map((item, i) => (
-                <div key={i} className='flex items-center gap-3.5'>
-                  <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-code-chip'>
-                    <Icon icon={item.icon} className='h-4 w-4 text-code-accent' />
-                  </div>
-                  <p className='text-sm text-code-base'>{item.label}</p>
-                </div>
+                <li key={item.label} className='flex items-center gap-4 py-3.5'>
+                  <span className='font-mono text-[12px] text-default-500'>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <Icon icon={item.icon} aria-hidden='true' className='h-4 w-4 shrink-0 text-default-500' />
+                  <p className='text-[14px] text-foreground'>{item.label}</p>
+                </li>
               ))}
-            </div>
+            </ol>
 
-            <div className='mt-10 border-t border-code-chip pt-6'>
-              <div className='flex items-center gap-2 text-sm text-code-subtle'>
-                <Icon icon='lucide:zap' className='h-4 w-4 text-code-accent' />
-                <span>Free during Beta · Unlimited generations</span>
-              </div>
-            </div>
+            <p className='mt-8 flex items-center gap-2 text-[13px] text-default-500'>
+              <Icon icon='lucide:zap' aria-hidden='true' className='h-4 w-4' />
+              Self-hosted · Unlimited generations
+            </p>
           </div>
         )}
-      </div>
+      </aside>
     </div>
   )
 }

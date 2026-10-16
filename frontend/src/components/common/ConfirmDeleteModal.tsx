@@ -74,7 +74,7 @@ export const ConfirmDeleteModal: React.FC<Props> = ({
           <>
             <ModalHeader className='flex flex-col gap-1'>{title}</ModalHeader>
             <ModalBody>
-              <p className='text-sm text-default-500'>
+              <p className='text-[14px] text-default-500'>
                 {message ?? (
                   <>
                     Do you want to delete <span className='font-bold text-foreground'>&quot;{resourceName}&quot;</span>?
@@ -82,17 +82,17 @@ export const ConfirmDeleteModal: React.FC<Props> = ({
                 )}
               </p>
               {warning && (
-                <p className='rounded-sm bg-danger-50 p-2 text-sm font-medium text-danger-500'>{warning}</p>
+                <p className='text-[14px] text-danger'>{warning}</p>
               )}
               {requiresTyping && (
                 <div className='mt-2'>
-                  <label className='mb-1 block text-xs font-medium text-default-700'>
+                  <label className='mb-1 block text-[13px] font-medium text-default-500'>
                     Enter <span className='font-bold'>{requiredText}</span> to confirm
                   </label>
                   <Input
                     value={typed}
                     onValueChange={setTyped}
-                    placeholder={requiredText as string}
+                    placeholder='Type it here'
                     variant='bordered'
                     color={typed && !canConfirm ? 'danger' : 'default'}
                   />
@@ -104,7 +104,7 @@ export const ConfirmDeleteModal: React.FC<Props> = ({
                 {cancelLabel}
               </Button>
               <Button
-                variant={canConfirm ? 'solid' : 'flat'}
+                variant={canConfirm ? 'bordered' : 'flat'}
                 color={canConfirm ? 'danger' : 'default'}
                 onPress={handleConfirm}
                 isLoading={isLoading}

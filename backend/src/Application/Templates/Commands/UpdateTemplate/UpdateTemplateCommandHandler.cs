@@ -49,7 +49,7 @@ public class UpdateTemplateCommandHandler : IRequestHandler<UpdateTemplateComman
         _gotenbergService = gotenbergService;
         _featureFlags = featureFlags;
         _configuration = configuration;
-        _templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
+        _templateBucket = StorageAreas.Templates;
     }
 
     public async Task<TemplateDetailResponse> Handle(UpdateTemplateCommand request, CancellationToken cancellationToken)
@@ -114,7 +114,7 @@ public class UpdateTemplateCommandHandler : IRequestHandler<UpdateTemplateComman
                 // Normalize any presigned URLs back to minio: paths before persisting.
                 // The frontend may send stale/fresh presigned URLs; we always store the
                 // immutable minio: path so URLs can be regenerated on each GET.
-                activeVersion.SandboxPayload = NormalizePayloadUrls(request.SandboxPayload);
+                activeVersion.SandboxPayload = NormalizePayloadUrls(KeyedPayloadNormalizer.Normalize(request.SandboxPayload)!);
                 activeVersion.UpdatedBy = _user.Id;
                 activeVersion.UpdatedDatetime = DateTime.UtcNow;
             }
@@ -359,7 +359,7 @@ public class UpdateTemplateCommandHandler : IRequestHandler<UpdateTemplateComman
             };
 
             // Sandbox Last Test Presigned URL
-            var reportBucket = _configuration["Minio:ReportBucket"] ?? "reports";
+            var reportBucket = StorageAreas.Reports;
 
             // Use version specific sandbox path if available
             if (activeVersionEntity?.SandboxFilePath != null)

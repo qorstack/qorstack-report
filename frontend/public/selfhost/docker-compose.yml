@@ -7,8 +7,11 @@ services:
       - POSTGRES_DB=qorstack_report
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${DB_PASSWORD}
-    ports:
-      - "5432:5432"
+    # Not published to the host — only the app talks to it, inside the Docker network
+    # (so nothing clashes with a PostgreSQL already running on this machine).
+    # Need it from a desktop DB client? Uncomment (localhost only; pick another host port if 5432 is taken):
+    # ports:
+    #   - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -19,67 +22,69 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: qorstack-minio
+  # ── S3 storage: RustFS (Apache-2.0) starts by default ─────────────────────
+  # Want MinIO or an external S3 instead? Add ONE override file (see the comments in .env.example):
+  #   COMPOSE_FILE=docker-compose.yml:docker-compose.minio.yml        bundled MinIO (keeps v1 data)
+  #   COMPOSE_FILE=docker-compose.yml:docker-compose.external-s3.yml  AWS S3 / R2 / your own server
+  # The bundled server answers on the network alias "qorstack-storage", so STORAGE_ENDPOINT stays the same.
+  # Storage is NOT published to the host: downloads go through the API (/files/...).
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: qorstack-rustfs
     restart: unless-stopped
-    command: server /data --console-address ":9001"
     environment:
-      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
-      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+      - RUSTFS_ACCESS_KEY=${STORAGE_ACCESS_KEY:-${MINIO_ACCESS_KEY:-qorstack}}
+      - RUSTFS_SECRET_KEY=${STORAGE_SECRET_KEY:-${MINIO_SECRET_KEY:-}}
+      - RUSTFS_VOLUMES=/data
+      - RUSTFS_ADDRESS=0.0.0.0:9000
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001
+    # Uncomment to open the RustFS web console on http://localhost:9001
+    # ports:
+    #   - "9001:9001"
     volumes:
-      - minio_data:/data
+      - rustfs_data:/data
     networks:
-      - qorstack-network
+      qorstack-network:
+        aliases: [qorstack-storage]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # The image ships curl; /health is RustFS's S3-port health endpoint.
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
 
-  # Mirrors fonts from MinIO into the shared volume used by Gotenberg.
+  # Mirrors uploaded fonts (STORAGE_BUCKET/fonts/) into the volume Gotenberg reads, every 30 s.
+  # rclone speaks plain S3, so it works with RustFS, MinIO and any external S3.
   font-syncer:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: rclone/rclone:1.74
     container_name: qorstack-font-syncer
     restart: unless-stopped
-    entrypoint: >
-      /bin/sh -c "
-        until mc alias set minio http://${MINIO_ENDPOINT:-qorstack-minio:9000} $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY 2>/dev/null; do
-          echo '[font-syncer] Waiting for MinIO...'; sleep 3;
-        done;
-        mc mb --ignore-existing minio/fonts;
-        sync_fonts() {
-          for ext in ttf otf woff woff2; do
-            mc find minio/fonts --name \"*.$$ext\" 2>/dev/null | while read -r obj; do
-              fname=$$(basename $$obj);
-              test ! -f /fonts-cache/$$fname && mc cp $$obj /fonts-cache/$$fname 2>/dev/null && echo \"[font-syncer] + $$fname\";
-            done;
-          done;
-          for ext in ttf otf woff woff2; do
-            for f in /fonts-cache/*.$$ext; do
-              test -f $$f || continue;
-              fname=$$(basename $$f);
-              in_usr=$$(mc find minio/fonts --name $$fname 2>/dev/null);
-              test -z \"$$in_usr\" && rm -f $$f && echo \"[font-syncer] - $$fname\";
-            done;
-          done;
-        };
-        echo '[font-syncer] Initial sync...';
-        sync_fonts;
-        echo '[font-syncer] Polling every 30s...';
-        while true; do sleep 30; sync_fonts; done
-      "
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        case "$$STORAGE_ENDPOINT" in http://*|https://*) EP="$$STORAGE_ENDPOINT" ;;
+          *) if [ "$$STORAGE_USE_SSL" = "true" ]; then EP="https://$$STORAGE_ENDPOINT"; else EP="http://$$STORAGE_ENDPOINT"; fi ;; esac
+        export RCLONE_CONFIG_STORE_ENDPOINT="$$EP"
+        echo '[font-syncer] syncing $$STORAGE_BUCKET/fonts every 30s'
+        while true; do
+          rclone sync "store:$$STORAGE_BUCKET/fonts" /fonts-cache \
+            --include "*.{ttf,otf,woff,woff2,TTF,OTF,WOFF,WOFF2}" --s3-no-check-bucket -q \
+            || echo '[font-syncer] storage not reachable yet, retrying'
+          sleep 30
+        done
     environment:
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - STORAGE_BUCKET=${STORAGE_BUCKET:-${MINIO_BUCKET:-qorstack-report}}
+      - RCLONE_CONFIG_STORE_TYPE=s3
+      - RCLONE_CONFIG_STORE_PROVIDER=Other
+      - STORAGE_ENDPOINT=${STORAGE_ENDPOINT:-${MINIO_ENDPOINT:-qorstack-storage:9000}}
+      - STORAGE_USE_SSL=${STORAGE_USE_SSL:-${MINIO_USE_SSL:-false}}
+      - RCLONE_CONFIG_STORE_ACCESS_KEY_ID=${STORAGE_ACCESS_KEY:-${MINIO_ACCESS_KEY:-qorstack}}
+      - RCLONE_CONFIG_STORE_SECRET_ACCESS_KEY=${STORAGE_SECRET_KEY:-${MINIO_SECRET_KEY:-}}
+      - RCLONE_CONFIG_STORE_REGION=${STORAGE_REGION:-us-east-1}
+      - RCLONE_CONFIG_STORE_FORCE_PATH_STYLE=true
     volumes:
       - fonts_cache:/fonts-cache
-    depends_on:
-      minio:
-        condition: service_healthy
     networks:
       - qorstack-network
 
@@ -104,68 +109,75 @@ services:
       timeout: 10s
       retries: 3
 
-  backend:
-    image: qorstack/report-api:${REPORT_API_TAG:-latest}
-    container_name: qorstack-report-api
+  # Web UI + API in ONE container on ONE port: open http://localhost:8080 — the API is http://localhost:8080/api
+  app:
+    image: qorstack/report:${REPORT_TAG:-latest}
+    container_name: qorstack-report
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "${APP_PORT:-8080}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - Admin__Email=${ADMIN_EMAIL}
       - Admin__Password=${ADMIN_PASSWORD}
       - ConnectionStrings__DefaultConnection=Host=${DB_HOST:-qorstack-postgres};Port=${DB_PORT:-5432};Database=${DB_NAME:-qorstack_report};Username=${DB_USER:-postgres};Password=${DB_PASSWORD}
       - Database__MigrationPaths__0=database
-      - Minio__Endpoint=${MINIO_ENDPOINT:-qorstack-minio:9000}
-      - Minio__PublicEndpoint=${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
-      - Minio__AccessKey=${MINIO_ACCESS_KEY}
-      - Minio__SecretKey=${MINIO_SECRET_KEY}
-      - Minio__UseSsl=${MINIO_USE_SSL:-false}
-      - Minio__TemplateBucket=templates
-      - Minio__ReportBucket=reports
+      # S3 storage — STORAGE_* (v1 MINIO_* names still work as fallbacks)
+      - Storage__Endpoint=${STORAGE_ENDPOINT:-${MINIO_ENDPOINT:-qorstack-storage:9000}}
+      - Storage__AccessKey=${STORAGE_ACCESS_KEY:-${MINIO_ACCESS_KEY:-qorstack}}
+      - Storage__SecretKey=${STORAGE_SECRET_KEY:-${MINIO_SECRET_KEY:-}}
+      - Storage__UseSsl=${STORAGE_USE_SSL:-${MINIO_USE_SSL:-false}}
+      - Storage__Region=${STORAGE_REGION:-us-east-1}
+      - Storage__Bucket=${STORAGE_BUCKET:-${MINIO_BUCKET:-qorstack-report}}
+      # URL people open (web UI + API). Download links are {PUBLIC_URL}/api/files/...
+      - App__PublicUrl=${PUBLIC_URL:-http://localhost:8080}
+      - ImageFetch__AllowPrivateNetworks=${IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
+      - Render__AsyncWorkers=${RENDER_ASYNC_WORKERS:-2}
+      - Render__JobLeaseSeconds=${RENDER_JOB_LEASE_SECONDS:-300}
+      - Render__PollSeconds=${RENDER_POLL_SECONDS:-5}
+      - Render__MaxPendingJobsPerUser=${RENDER_MAX_PENDING_JOBS_PER_USER:-100}
+      - Render__MaxBodyMb=${RENDER_MAX_BODY_MB:-30}
+      - Render__MaxTableRows=${RENDER_MAX_TABLE_ROWS:-50000}
+      - Render__MaxItemsPerField=${RENDER_MAX_ITEMS_PER_FIELD:-1000}
+      - Transfer__MaxZipMb=${PROJECT_IMPORT_MAX_MB:-200}
+      - Webhook__SigningSecret=${WEBHOOK_SIGNING_SECRET:-}
+      - Webhook__AllowPrivateNetworks=${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}
       - Gotenberg__BaseUrl=http://qorstack-gotenberg:3000
+      - Fonts__RendererCachePath=/renderer-fonts   # read-only view of the font-syncer volume → GET /fonts/status
       - Jwt__Key=${JWT_KEY}
       - Jwt__Issuer=qorstack-report
       - Jwt__Audience=qorstack-report
       - Encryption__Key=${ENCRYPTION_KEY}
       - Encryption__IV=${ENCRYPTION_IV}
-      - Cors__AllowedOriginsString=${CORS_ORIGINS:-http://localhost:3000}
+      # Only for browser apps on OTHER origins that call the API directly (the built-in UI needs nothing).
+      - Cors__AllowedOriginsString=${CORS_ORIGINS:-}
+      # Optional social sign-in (leave empty to use username/password only)
+      - Google__ClientId=${GOOGLE_CLIENT_ID:-}
+      - GitHub__ClientId=${GITHUB_CLIENT_ID:-}
+      - GitHub__ClientSecret=${GITHUB_CLIENT_SECRET:-}
       # --- Pro license (optional) ---
       # Have a Pro license? You received a file named like:  license-you_at_example_com.json
       # 1) Put that file next to this docker-compose.yml (keep its original name).
-      # 2) Uncomment the line below AND the volumes block, then run: docker compose up -d
+      # 2) Uncomment the line below AND the license line under `volumes:` further down (put your
+      #    file name on its left), then run: docker compose up -d   (`restart` does not apply changes)
       #    left  = your downloaded file   |   right = /app/license.json (fixed path the backend reads — don't change)
       # - Pro__LicenseFile=/app/license.json
-    # volumes:
-    #   - ./license-you_at_example_com.json:/app/license.json:ro
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
-    networks:
-      - qorstack-network
-
-  frontend:
-    image: qorstack/report-web:${REPORT_WEB_TAG:-latest}
-    container_name: qorstack-report-web
-    restart: unless-stopped
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      # URL that your browser uses to reach the API.
-      # VPN/LAN: http://<vpn-ip>:8080
-      # Local:   http://localhost:8080
-      - NEXT_PUBLIC_SERVICE=${API_URL:-http://localhost:8080}
-    depends_on:
-      backend:
-        condition: service_healthy
+        required: false   # disabled by the minio / external-s3 override files
+    volumes:
+      - fonts_cache:/renderer-fonts:ro
+      # Pro license (see step 2 above):
+      # - ./license-you_at_example_com.json:/app/license.json:ro
     networks:
       - qorstack-network
 
 volumes:
   postgres_data:
-  minio_data:
+  rustfs_data:
   fonts_cache:
 
 networks:

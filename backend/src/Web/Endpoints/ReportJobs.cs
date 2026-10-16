@@ -13,7 +13,7 @@ namespace QorstackReportService.Web.Endpoints;
 /// </summary>
 public class ReportJobs : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/report-jobs")
             .WithTags("Report Jobs")

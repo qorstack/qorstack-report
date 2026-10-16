@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using QorstackReportService.Application.Common.Exceptions;
+using QorstackReportService.Application.Common.Helpers;
 using QorstackReportService.Application.Common.Interfaces;
 using QorstackReportService.Application.Common.Models;
 using QorstackReportService.Application.Reports.Commands.ExportPdf;
@@ -23,7 +24,6 @@ public class RenderWithSandboxPayloadCommandHandler : IRequestHandler<RenderWith
     private readonly IUser _user;
     private readonly IMinioStorageService _storageService;
     private readonly ISandboxAssetService _assetService;
-    private readonly string _reportBucket;
 
     public RenderWithSandboxPayloadCommandHandler(
         IApplicationDbContext context,
@@ -40,7 +40,6 @@ public class RenderWithSandboxPayloadCommandHandler : IRequestHandler<RenderWith
         _user = user;
         _storageService = storageService;
         _assetService = assetService;
-        _reportBucket = configuration["Minio:ReportBucket"] ?? "reports";
     }
 
     public async Task<RenderResult> Handle(RenderWithSandboxPayloadCommand request, CancellationToken cancellationToken)
@@ -74,6 +73,9 @@ public class RenderWithSandboxPayloadCommandHandler : IRequestHandler<RenderWith
             // Update sandbox payload if provided
             if (request.SandboxPayload != null)
             {
+                // Keyed arrays ([{ key, ... }]) → stored object-map shape
+                KeyedPayloadNormalizer.Normalize(request.SandboxPayload);
+
                 var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false };
                 activeVersion.SandboxPayload = JsonSerializer.Serialize(request.SandboxPayload, options);
 

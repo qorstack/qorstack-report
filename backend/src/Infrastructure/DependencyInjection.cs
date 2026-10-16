@@ -88,13 +88,18 @@ namespace Microsoft.Extensions.DependencyInjection
             // Database migration on startup (runs SQL files from /databases/ folder)
             services.AddHostedService<DatabaseMigrationService>();
 
-            // MinIO Storage Service
-            services.Configure<MinioSettings>(configuration.GetSection("Minio"));
+            // S3 storage (RustFS / MinIO / any S3). "Storage" section, falling back to the v1 "Minio" section.
+            services.Configure<StorageSettings>(s => StorageSettings.Bind(s, configuration));
+            services.AddSingleton(sp => new FileUrlSigner(
+                configuration,
+                sp.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()));
             services.AddScoped<IMinioStorageService, MinioStorageService>();
             services.AddHostedService<StorageInitializer>();
+            services.AddHostedService<TempDownloadCleanupService>();
 
             // Font sync — detects add/update/delete in FontStorage:LocalPath every startup
             services.AddHostedService<FontSyncService>();
+            services.AddSingleton<IFontRendererCache, FontRendererCache>();
 
             // Gotenberg PDF Service
             services.Configure<GotenbergSettings>(configuration.GetSection("Gotenberg"));
@@ -114,7 +119,16 @@ namespace Microsoft.Extensions.DependencyInjection
             services.AddScoped<IBarcodeService, BarcodeService>();
 
             // DOCX Processing Service
-            services.AddHttpClient(); // For image downloads in DOCX/Excel processing
+            services.AddHttpClient();
+            // Image URLs from render requests: blocks private/internal addresses (SSRF), size + time limits.
+            services.AddRemoteImageFetcher(configuration);
+
+            // Async renders (Pro): queue in report_jobs (Postgres), workers, webhooks.
+            services.AddSingleton(_ => Npgsql.NpgsqlDataSource.Create(connectionString));
+            services.AddSingleton<QorstackReportService.Infrastructure.Services.Render.RenderJobStore>();
+            services.AddSingleton<IAsyncRenderQueue, QorstackReportService.Infrastructure.Services.Render.AsyncRenderQueue>();
+            QorstackReportService.Infrastructure.Services.Render.WebhookSender.AddRenderWebhooks(services, configuration);
+            services.AddHostedService<QorstackReportService.Infrastructure.Services.Render.AsyncRenderWorker>();
             services.AddScoped<IDocxProcessingService, DocxProcessingService>();
 
             // Excel Processing Service (ClosedXML)
@@ -132,8 +146,11 @@ namespace Microsoft.Extensions.DependencyInjection
             // Health checks for all external dependencies
             services.AddHealthChecks()
                 .AddCheck<DatabaseHealthCheck>("database")
-                .AddCheck<MinioHealthCheck>("minio")
+                .AddCheck<MinioHealthCheck>("storage")
                 .AddCheck<GotenbergHealthCheck>("gotenberg");
+
+            // Log retention — daily cleanup of expired report job logs per project policy
+            services.AddHostedService<LogRetentionService>();
 
             // Startup environment check — prints readiness banner on boot
             services.AddHostedService<StartupReadinessService>();

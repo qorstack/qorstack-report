@@ -25,7 +25,6 @@ operated by the Licensee. There is no per-instance, per-seat, or per-server fee.
 Pro features are those disabled in the open-source build and unlocked only by a
 valid `license.json`. As of this version they are:
 
-- Live Preview (real-time document rendering)
 - PDF password protection
 - PDF watermarking
 - Export / download results as a ZIP file

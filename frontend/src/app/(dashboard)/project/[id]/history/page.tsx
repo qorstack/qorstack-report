@@ -1,138 +1,227 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
-import { Button, Chip, Select, SelectItem, Skeleton } from '@heroui/react'
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Select, SelectItem, Skeleton } from '@heroui/react'
+import { useRouteParams } from '@/hooks/use-route-params'
+import { useMediaQuery } from 'usehooks-ts'
+import { endOfMonth, format, parse, startOfMonth } from 'date-fns'
 import Icon from '@/components/icon'
-import FileIcon from '@/components/FileIcon'
-import { useRouter, useParams } from 'next/navigation'
+import { PageHeader } from '@/components/ui/PageHeader'
 import { useProject } from '@/providers/ProjectContext'
 import { api } from '@/api/generated/main-service'
-import type { GenerationDto, PaginatedListOfGenerationDto } from '@/api/generated/main-service/apiGenerated'
-import { format, startOfMonth, endOfMonth, parse } from 'date-fns'
-import clsx from 'clsx'
-
-import { formatDuration, formatFileSize } from '@/utils/formatters'
+import type { GenerationDto, PaginatedListOfGenerationDto, ReportJobDto } from '@/api/generated/main-service/apiGenerated'
+import { formatDuration } from '@/utils/formatters'
+import { cn } from '@/utils/cn'
+import FileTypeBadge from '@/components/common/FileTypeBadge'
 
 const POLL_INTERVAL = 4000
 const PAGE_SIZE = 15
 
-// --- Toolbar ---
-const HistoryToolbar = ({
-  projectName,
-  selectedMonth,
-  onMonthChange,
-  onRefresh,
-  isPolling,
-  totalCount
-}: {
-  projectName: string
-  selectedMonth: string
-  onMonthChange: (month: string) => void
-  onRefresh: () => void
-  isPolling: boolean
-  totalCount: number
-}) => {
-  const months = useMemo(() => {
-    const today = new Date()
-    const result = []
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      result.push({
-        value: format(d, 'yyyy-MM'),
-        label: format(d, 'MMMM yyyy'),
-        month: format(d, 'MMMM'),
-        year: format(d, 'yyyy')
+type StatusFilter = 'all' | 'success' | 'failed'
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'success', label: 'Success' },
+  { key: 'failed', label: 'Failed' }
+]
+
+/** Merges a fresh first page into the loaded rows: updates rows it already has, prepends new ones, keeps the rest. */
+const mergeById = (fresh: GenerationDto[], loaded: GenerationDto[]): GenerationDto[] => {
+  const freshById = new Map(fresh.map(item => [item.id, item]))
+  const loadedIds = new Set(loaded.map(item => item.id))
+  const added = fresh.filter(item => !loadedIds.has(item.id))
+  return [...added, ...loaded.map(item => freshById.get(item.id) ?? item)]
+}
+
+/** Appends a page, skipping rows already loaded (new jobs shift the server's pages). */
+const appendUnique = (loaded: GenerationDto[], page: GenerationDto[]): GenerationDto[] => {
+  const ids = new Set(loaded.map(item => item.id))
+  return [...loaded, ...page.filter(item => !ids.has(item.id))]
+}
+
+const formatBytes = (bytes: number | null | undefined): string => {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const isSuccessStatus = (status?: string | null): boolean => {
+  const s = status?.toLowerCase()
+  return s === 'success' || s === 'completed'
+}
+
+const isRunningStatus = (status?: string | null): boolean => {
+  const s = status?.toLowerCase()
+  return s === 'pending' || s === 'processing' || s === 'queued'
+}
+
+// Async jobs (Pro) go pending → processing → success | failed; sync renders are success | failed.
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'Queued',
+  queued: 'Queued',
+  processing: 'Rendering',
+  success: 'Success',
+  completed: 'Success',
+  failed: 'Failed',
+  error: 'Failed'
+}
+
+const StatusChip = ({ status }: { status?: string | null }) => {
+  const s = status?.toLowerCase() || ''
+  const ok = isSuccessStatus(s)
+  const running = isRunningStatus(s)
+  return (
+    <span className='inline-flex items-center gap-2 text-[13px] text-default-500'>
+      <Icon
+        icon={ok ? 'lucide:check-circle-2' : running ? 'lucide:loader-circle' : 'lucide:alert-circle'}
+        className={cn('h-3.5 w-3.5', ok ? 'text-success' : running ? 'animate-spin text-default-500' : 'text-danger')}
+      />
+      {STATUS_LABEL[s] || s || 'Unknown'}
+    </span>
+  )
+}
+
+// Times are shown in the viewer's zone; say which one.
+const getTimezoneLabel = (): string => {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const offset = -new Date().getTimezoneOffset() / 60
+    return `${zone} (UTC${offset >= 0 ? '+' : ''}${offset})`
+  } catch {
+    return 'local time'
+  }
+}
+
+/** Pretty-prints the stored request (base64 already stripped by the server), capped for the page. */
+const formatRequest = (raw?: string | null): string => {
+  if (!raw) return ''
+  try {
+    const text = JSON.stringify(JSON.parse(raw), null, 2)
+    return text.length > 6000 ? `${text.slice(0, 6000)}\n…` : text
+  } catch {
+    return raw.slice(0, 6000)
+  }
+}
+
+const DownloadOrExpired = ({ item }: { item: GenerationDto }) => {
+  if (!isSuccessStatus(item.status)) return null
+  return item.downloadUrl ? (
+    <a
+      href={item.downloadUrl}
+      className='inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground underline-offset-4 hover:underline'>
+      <Icon icon='lucide:download' className='h-3.5 w-3.5' />
+      Download
+    </a>
+  ) : (
+    <span className='text-[13px] text-default-500' title='Generated files are kept for a limited time, then deleted.'>
+      File expired
+    </span>
+  )
+}
+
+/** Expanded row: fetched on demand from GET /render/jobs/{id}. */
+const JobDetails = ({ item }: { item: GenerationDto }) => {
+  const [job, setJob] = useState<ReportJobDto | null>(null)
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+
+  useEffect(() => {
+    let alive = true
+    api.render
+      .getRenderJobById(item.id)
+      .then(res => {
+        if (!alive) return
+        setJob(res)
+        setState('ready')
       })
+      .catch(() => alive && setState('error'))
+    return () => {
+      alive = false
     }
-    return result
-  }, [])
+  }, [item.id])
+
+  const request = formatRequest(job?.requestData)
+  const error = job?.errorMessage || item.errorMessage
 
   return (
-    <div className='dashboard-header sm:flex-nowrap'>
-      {/* Title */}
-      <div>
-        <h1 className='dashboard-title'>History</h1>
-        <p className='text-[11.5px] text-default-500'>{projectName} · Generation logs</p>
-      </div>
-
-      {/* Controls */}
-      <div className='flex items-center gap-2'>
-        <Select
-          aria-label='Select Month'
-          placeholder='Select Month'
-          selectedKeys={[selectedMonth]}
-          className='flex-1 sm:w-48 sm:flex-none'
-          size='sm'
-          onChange={e => onMonthChange(e.target.value)}
-          startContent={<Icon icon='lucide:calendar' className='h-4 w-4 text-default-400' />}
-          classNames={{
-            value: 'text-sm font-medium',
-            trigger: 'bg-content2 hover:bg-content3 data-[hover=true]:bg-content3'
-          }}
-          renderValue={items =>
-            items.map(item => {
-              const m = months.find(m => m.value === item.key)
-              return (
-                <div key={item.key} className='flex items-center gap-1.5'>
-                  <span className='font-semibold text-foreground'>{m?.month}</span>
-                  <span className='text-default-500'>{m?.year}</span>
-                </div>
-              )
-            })
-          }>
-          {months.map(month => (
-            <SelectItem key={month.value} textValue={month.label}>
-              <div className='flex w-full items-center justify-between gap-8'>
-                <span className='font-medium text-default-700'>{month.month}</span>
-                <span className='rounded-md bg-content3 px-2 py-0.5 text-xs font-bold text-default-400'>
-                  {month.year}
-                </span>
-              </div>
-            </SelectItem>
-          ))}
-        </Select>
-
-        {/* Live indicator */}
-        <div className='flex shrink-0 items-center gap-1.5'>
-          <div className={clsx('h-2 w-2 rounded-full', isPolling ? 'animate-pulse bg-success' : 'bg-default-300')} />
-          <span className='hidden text-xs font-medium text-default-400 sm:inline'>{isPolling ? 'Live' : 'Paused'}</span>
+    <div className='flex flex-col gap-4 bg-content2 px-5 py-4'>
+      <dl className='grid grid-cols-2 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-4'>
+        <div>
+          <dt className='text-default-500'>Job ID</dt>
+          <dd className='break-all font-mono text-[12px] text-foreground'>{item.id}</dd>
         </div>
+        <div>
+          <dt className='text-default-500'>Source</dt>
+          <dd className='text-foreground'>{job?.apiKeyId ? 'API key' : job ? 'Web app' : '—'}</dd>
+        </div>
+        <div>
+          <dt className='text-default-500'>Started</dt>
+          <dd className='font-mono text-[12px] text-foreground'>
+            {job?.startedAt ? format(new Date(job.startedAt), 'dd MMM yyyy, HH:mm:ss') : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className='text-default-500'>Finished</dt>
+          <dd className='font-mono text-[12px] text-foreground'>
+            {job?.finishedAt ? format(new Date(job.finishedAt), 'dd MMM yyyy, HH:mm:ss') : '—'}
+          </dd>
+        </div>
+      </dl>
 
-        {/* Refresh */}
-        <Button
-          size='sm'
-          variant='flat'
-          radius='md'
-          className='h-8 shrink-0 gap-1 rounded-lg bg-content3 px-3 text-[11px] font-bold text-default-600 hover:bg-content4'
-          onPress={onRefresh}
-          startContent={<Icon icon='lucide:refresh-cw' className='h-3.5 w-3.5' />}>
-          <span className='hidden sm:inline'>Refresh</span>
-        </Button>
+      {isRunningStatus(item.status) && (
+        <p className='text-[13px] text-default-500'>
+          This async job is still {item.status?.toLowerCase() === 'processing' ? 'rendering' : 'waiting in the queue'}. Failed
+          network or storage steps are retried automatically (up to 3 tries).
+        </p>
+      )}
+
+      {error && !isSuccessStatus(item.status) && (
+        <div className='flex flex-col gap-1'>
+          <span className='text-[13px] font-medium text-foreground'>Error</span>
+          <p className='whitespace-pre-wrap break-words border-l-2 border-danger pl-3 text-[13px] text-default-600'>{error}</p>
+        </div>
+      )}
+
+      <div className='flex flex-col gap-1'>
+        <span className='text-[13px] font-medium text-foreground'>Request</span>
+        {state === 'loading' ? (
+          <Skeleton className='h-16 w-full' />
+        ) : state === 'error' ? (
+          <p className='text-[13px] text-default-500'>Request details are not available for this job.</p>
+        ) : request ? (
+          <pre className='max-h-72 overflow-auto border border-divider bg-background p-3 font-mono text-[12px] leading-relaxed text-default-600'>
+            {request}
+          </pre>
+        ) : (
+          <p className='text-[13px] text-default-500'>
+            The request body was not stored (request logging is off for this project).
+          </p>
+        )}
       </div>
     </div>
   )
 }
 
-// --- Skeleton ---
+const TypeBadge = ({ type }: { type?: string | null }) => <FileTypeBadge type={type} />
+
 const HistorySkeleton = () => (
-  <div className='flex w-full flex-col divide-y divide-default-200/50'>
+  <div className='flex w-full flex-col divide-y divide-divider'>
     {Array.from({ length: 8 }).map((_, i) => (
-      <div key={i} className='flex items-center gap-3 px-5 py-4'>
-        <Skeleton className='h-8 w-8 shrink-0 rounded-lg' />
-        <div className='flex flex-1 flex-col gap-1.5'>
-          <Skeleton className='h-3.5 w-32 rounded-md' />
-          <Skeleton className='h-2.5 w-20 rounded-md' />
+      <div key={i} className='flex items-center gap-4 px-5 py-4'>
+        <div className='flex flex-1 flex-col gap-2'>
+          <Skeleton className='h-3.5 w-40' />
+          <Skeleton className='h-3 w-24' />
         </div>
-        <Skeleton className='h-5 w-16 rounded-full' />
+        <Skeleton className='h-5 w-20' />
       </div>
     ))}
   </div>
 )
 
+
 // --- Main ---
 const ProjectHistory = () => {
-  const router = useRouter()
-  const params = useParams()
+  const params = useRouteParams()
   const id = params.id as string
   const { currentProject } = useProject()
 
@@ -144,7 +233,22 @@ const ProjectHistory = () => {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [isPolling, setIsPolling] = useState(true)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [openRow, setOpenRow] = useState<string | null>(null)
+  // Resolved after mount so server and browser render the same first frame.
+  const [timezoneLabel, setTimezoneLabel] = useState('local time')
+  useEffect(() => setTimezoneLabel(getTimezoneLabel()), [])
+  const HEADERS = ['Template', 'Type', 'Date & time', 'Duration', 'Size', 'Status', '']
+  const toggleRow = (rowId: string) => setOpenRow(prev => (prev === rowId ? null : rowId))
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const months = useMemo(() => {
+    const today = new Date()
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      return { value: format(d, 'yyyy-MM'), label: format(d, 'MMMM yyyy') }
+    })
+  }, [])
 
   const getQueryDates = useCallback(() => {
     const selectedDate = parse(selectedMonth, 'yyyy-MM', new Date())
@@ -154,70 +258,80 @@ const ProjectHistory = () => {
     }
   }, [selectedMonth])
 
+  // Only the current month can receive new rows, so only it is polled.
+  const isCurrentMonth = selectedMonth === format(new Date(), 'yyyy-MM')
+
+  // Bumped whenever the query (project, month, status) changes; responses for an older query are dropped.
+  const querySeq = useRef(0)
+
+  const queryFor = useCallback(
+    (page: number) => {
+      const { fromDate, toDate } = getQueryDates()
+      return {
+        projectId: id,
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        fromDate,
+        toDate,
+        pageNumber: page,
+        pageSize: PAGE_SIZE
+      }
+    },
+    [id, getQueryDates, statusFilter]
+  )
+
   const fetchPage = useCallback(
     async (page: number, silent = false) => {
       if (!id || typeof id !== 'string') return
+      const seq = querySeq.current
       if (!silent) setLoading(true)
       try {
-        const { fromDate, toDate } = getQueryDates()
-        const res: PaginatedListOfGenerationDto = await api.analytics.generationsList({
-          projectId: id,
-          fromDate,
-          toDate,
-          pageNumber: page,
-          pageSize: PAGE_SIZE
-        })
-        if (page === 1) {
-          setActivityData(res.items ?? [])
-        } else {
-          setActivityData(prev => [...prev, ...(res.items ?? [])])
-        }
+        const res: PaginatedListOfGenerationDto = await api.analytics.generationsList(queryFor(page))
+        if (seq !== querySeq.current) return
+        const items = res.items ?? []
+        setActivityData(prev => (page === 1 ? items : appendUnique(prev, items)))
         setTotalCount(Number(res.totalCount ?? 0))
         setHasMore(res.hasNextPage ?? false)
         setCurrentPage(page)
       } catch (err) {
         console.error('Failed to fetch history', err)
       } finally {
-        if (!silent) setLoading(false)
+        if (!silent && seq === querySeq.current) setLoading(false)
       }
     },
-    [id, getQueryDates]
+    [id, queryFor]
   )
 
   const pollData = useCallback(async () => {
     if (!id || typeof id !== 'string') return
+    const seq = querySeq.current
     try {
-      const { fromDate, toDate } = getQueryDates()
-      const res: PaginatedListOfGenerationDto = await api.analytics.generationsList({
-        projectId: id,
-        fromDate,
-        toDate,
-        pageNumber: 1,
-        pageSize: PAGE_SIZE
-      })
+      const res: PaginatedListOfGenerationDto = await api.analytics.generationsList(queryFor(1))
+      if (seq !== querySeq.current) return
       setTotalCount(Number(res.totalCount ?? 0))
-      const newItems = res.items ?? []
-      setActivityData(prev => {
-        if (currentPage === 1) return newItems
-        return [...newItems, ...prev.slice(PAGE_SIZE)]
-      })
+      setActivityData(prev => mergeById(res.items ?? [], prev))
     } catch (err) {
       console.error('Polling failed', err)
     }
-  }, [id, getQueryDates, currentPage])
+  }, [id, queryFor])
 
   useEffect(() => {
+    querySeq.current += 1
     setActivityData([])
     setCurrentPage(1)
     setHasMore(true)
+    setOpenRow(null)
     fetchPage(1)
   }, [fetchPage])
 
   useEffect(() => {
-    if (!isPolling) return
-    pollingRef.current = setInterval(() => { pollData() }, POLL_INTERVAL)
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
-  }, [isPolling, pollData])
+    if (!isPolling || !isCurrentMonth) return
+    pollingRef.current = setInterval(() => {
+      pollData()
+    }, POLL_INTERVAL)
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current)
+    }
+  }, [isPolling, isCurrentMonth, pollData])
 
   const loadMore = useCallback(() => {
     if (loadingMore || !hasMore) return
@@ -225,19 +339,8 @@ const ProjectHistory = () => {
     fetchPage(currentPage + 1, true).finally(() => setLoadingMore(false))
   }, [loadingMore, hasMore, currentPage, fetchPage])
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (loadingMore || !hasMore) return
-      const scrollTop = window.scrollY || document.documentElement.scrollTop
-      const windowHeight = window.innerHeight
-      const docHeight = document.documentElement.scrollHeight
-      if (scrollTop + windowHeight >= docHeight - 200) loadMore()
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [loadingMore, hasMore, currentPage, loadMore])
-
   const handleRefresh = useCallback(() => {
+    querySeq.current += 1
     setLoading(true)
     setActivityData([])
     setCurrentPage(1)
@@ -245,157 +348,269 @@ const ProjectHistory = () => {
     setTimeout(() => fetchPage(1), 800)
   }, [fetchPage])
 
+  const handleMonthChange = (month: string) => {
+    if (!month) return
+    setSelectedMonth(month)
+    setActivityData([])
+    setCurrentPage(1)
+    setHasMore(true)
+  }
+
+  // The status filter is applied by the server; this only hides rows whose status changed since (polling).
+  const visibleRows = useMemo(() => {
+    if (statusFilter === 'all') return activityData
+    return activityData.filter(item => (statusFilter === 'success') === isSuccessStatus(item.status))
+  }, [activityData, statusFilter])
+
+  // Render one layout only, so an expanded row mounts (and fetches) its details once.
+  const isDesktop = useMediaQuery('(min-width: 768px)')
+
   return (
-    <div className='dashboard-panel flex flex-col'>
-      {/* Toolbar */}
-      <div>
-        <HistoryToolbar
-          projectName={currentProject?.name || 'Loading...'}
-          selectedMonth={selectedMonth}
-          onMonthChange={month => { setSelectedMonth(month); setActivityData([]); setCurrentPage(1); setHasMore(true) }}
-          onRefresh={handleRefresh}
-          isPolling={isPolling}
-          totalCount={totalCount}
-        />
-      </div>
+    <div className='flex flex-col gap-6'>
+      <PageHeader
+        breadcrumb={[
+          { label: currentProject?.name || 'Project', href: id ? `/project/${id}` : undefined },
+          { label: 'History' }
+        ]}
+        title='Generation history'
+        description={`Every document this project generated, newest first. Times are in ${timezoneLabel}. The list refreshes itself while Live is on.`}
+      />
 
-      {/* Sub-header */}
-      <div className='dashboard-toolbar justify-between py-2.5'>
-        <span className='label-mono text-default-500'>Generation Logs</span>
-        <span className='rounded-md bg-content3 px-2.5 py-0.5 font-mono text-[10px] font-bold text-default-500'>
-          {totalCount}
-        </span>
-      </div>
+      <section className='border border-divider bg-content1'>
+        {/* Toolbar — all filters in one row */}
+        <div className='flex flex-col gap-3 border-b border-divider p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between'>
+          <div className='flex flex-col gap-3 sm:flex-row sm:items-center'>
+            <Select
+              aria-label='Month'
+              selectedKeys={[selectedMonth]}
+              disallowEmptySelection
+              variant='bordered'
+              className='w-full sm:w-52'
+              onChange={e => handleMonthChange(e.target.value)}
+              startContent={<Icon icon='lucide:calendar' className='h-4 w-4 text-default-500' />}
+              classNames={{ trigger: 'h-10 min-h-10 border-default-300 bg-content2', value: 'text-[14px]' }}>
+              {months.map(month => (
+                <SelectItem key={month.value} textValue={month.label}>
+                  {month.label}
+                </SelectItem>
+              ))}
+            </Select>
 
-      {/* Desktop table header — hidden on mobile */}
-      <div className='hidden grid-cols-12 gap-4 border-b border-default-200/50 px-6 py-2.5 text-[9px] font-black uppercase tracking-wider text-default-500 md:grid'>
-        <div className='col-span-4'>Template</div>
-        <div className='col-span-1'>Type</div>
-        <div className='col-span-3'>Date & Time</div>
-        <div className='col-span-1'>Duration</div>
-        <div className='col-span-1'>Size</div>
-        <div className='col-span-2 text-right'>Status</div>
-      </div>
+            <div role='group' aria-label='Filter by status' className='flex border border-default-300'>
+              {STATUS_FILTERS.map((f, index) => {
+                const isActive = statusFilter === f.key
+                return (
+                  <button
+                    key={f.key}
+                    type='button'
+                    aria-pressed={isActive}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={cn(
+                      'flex min-h-10 flex-1 items-center justify-center px-4 text-[13px] font-medium transition-colors sm:flex-none',
+                      index > 0 && 'border-l border-default-300',
+                      isActive ? 'bg-content3 text-foreground' : 'text-default-500 hover:bg-content2 hover:text-foreground'
+                    )}>
+                    {f.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
 
-      {/* Content */}
-      <div className='w-full'>
+          <div className='flex items-center gap-2'>
+            <span className='mr-auto text-[14px] text-default-500 lg:mr-2'>
+              <span className='font-mono tabular-nums text-foreground'>{totalCount.toLocaleString()}</span> total
+            </span>
+            <Button
+              variant='bordered'
+              aria-pressed={isPolling && isCurrentMonth}
+              isDisabled={!isCurrentMonth}
+              title={isCurrentMonth ? undefined : 'Only the current month updates live'}
+              onPress={() => setIsPolling(v => !v)}
+              className='h-10 border-default-300 px-3 text-[13px] font-medium'
+              startContent={
+                <span
+                  className={cn('h-2 w-2 rounded-full', isPolling && isCurrentMonth ? 'animate-pulse bg-success' : 'bg-default-400')}
+                  aria-hidden
+                />
+              }>
+              {isPolling && isCurrentMonth ? 'Live' : 'Paused'}
+            </Button>
+            <Button
+              variant='bordered'
+              onPress={handleRefresh}
+              className='h-10 border-default-300 px-3 text-[13px] font-medium'
+              startContent={<Icon icon='lucide:refresh-cw' className='h-4 w-4' />}>
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Table */}
         {loading && activityData.length === 0 ? (
           <HistorySkeleton />
+        ) : visibleRows.length === 0 ? (
+          <div className='flex flex-col items-center justify-center gap-2 px-6 py-16 text-center'>
+            <Icon icon='lucide:inbox' className='h-8 w-8 text-default-400' />
+            <p className='text-[15px] font-medium text-foreground'>
+              {statusFilter !== 'all'
+                ? `No ${statusFilter === 'success' ? 'successful' : 'failed'} documents in this month`
+                : 'No documents generated in this month'}
+            </p>
+            <p className='text-[13px] text-default-500'>
+              {statusFilter !== 'all'
+                ? 'Choose “All” to see every request.'
+                : 'Pick another month, or render a template through the API.'}
+            </p>
+          </div>
         ) : (
           <>
-            {activityData.map((item: GenerationDto) => (
-              <div key={item.id} className='border-b border-default-200/50 last:border-0'>
-                {/* Desktop row */}
-                <div className='hidden grid-cols-12 items-center gap-4 px-6 py-4 transition-colors hover:bg-content2/40 md:grid'>
-                  <div className='col-span-4 flex items-center gap-3'>
-                    <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-content2'>
-                      <FileIcon type={(item.type?.toLowerCase() ?? 'pdf') as 'pdf' | 'excel'} size='sm' />
-                    </div>
-                    <div className='flex min-w-0 flex-col'>
-                      <span className='truncate text-sm font-semibold text-foreground'>
-                        {item.templateName || 'Untitled'}
-                      </span>
-                      <span className='truncate text-[10px] text-default-400'>{item.templateKey || item.id}</span>
-                    </div>
-                  </div>
-                  <div className='col-span-1'>
-                    <span className='rounded-md bg-content3 px-1.5 py-0.5 text-[10px] font-bold uppercase text-default-500'>
-                      {item.type || 'PDF'}
-                    </span>
-                  </div>
-                  <div className='col-span-3 flex flex-col'>
-                    <span className='text-xs font-medium text-foreground'>
-                      {item.createdDatetime ? format(new Date(item.createdDatetime), 'dd MMM yyyy') : '-'}
-                    </span>
-                    <span className='text-[10px] text-default-400'>
-                      {item.createdDatetime ? format(new Date(item.createdDatetime), 'HH:mm:ss') : '-'}
-                    </span>
-                  </div>
-                  <div className='col-span-1'>
-                    <span className='text-xs font-medium text-default-600'>
-                      {formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}
-                    </span>
-                  </div>
-                  <div className='col-span-1'>
-                    <span className='text-xs font-medium text-default-600'>
-                      {formatFileSize(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}
-                    </span>
-                  </div>
-                  <div className='col-span-2 text-right'>
-                    <Chip
-                      size='sm'
-                      variant='flat'
-                      color={
-                        item.status?.toLowerCase() === 'success' || item.status?.toLowerCase() === 'completed'
-                          ? 'success'
-                          : 'danger'
-                      }
-                      className='h-5 px-2 text-[9px] font-bold uppercase'>
-                      {item.status}
-                    </Chip>
-                  </div>
-                </div>
-
-                {/* Mobile card */}
-                <div className='flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-content2/50 md:hidden'>
-                  <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-content2'>
-                    <FileIcon type={(item.type?.toLowerCase() ?? 'pdf') as 'pdf' | 'excel'} size='sm' />
-                  </div>
-                  <div className='flex min-w-0 flex-1 flex-col gap-1'>
-                    <div className='flex items-start justify-between gap-2'>
-                      <div className='min-w-0'>
-                        <p className='truncate text-sm font-semibold text-foreground'>
-                          {item.templateName || 'Untitled'}
-                        </p>
-                        <p className='truncate text-[10px] text-default-400'>{item.templateKey || item.id}</p>
-                      </div>
-                      <Chip
-                        size='sm'
-                        variant='flat'
-                        color={
-                          item.status?.toLowerCase() === 'success' || item.status?.toLowerCase() === 'completed'
-                            ? 'success'
-                            : 'danger'
-                        }
-                        className='h-5 shrink-0 px-2 text-[9px] font-bold uppercase'>
-                        {item.status}
-                      </Chip>
-                    </div>
-                    <div className='flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-default-400'>
-                      <span>{item.createdDatetime ? format(new Date(item.createdDatetime), 'dd MMM yyyy, HH:mm') : '-'}</span>
-                      <span>·</span>
-                      <span>{formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}</span>
-                      <span>·</span>
-                      <span>{formatFileSize(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}</span>
-                      <span className='rounded-md bg-content3 px-1.5 py-0.5 text-[9px] font-bold uppercase text-default-500'>
-                        {item.type || 'PDF'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            {/* Desktop */}
+            {isDesktop ? (
+              <div className='overflow-x-auto'>
+                <table className='w-full text-left'>
+                  <thead>
+                    <tr className='border-b border-divider'>
+                      {HEADERS.map(h => (
+                        <th
+                          key={h || 'actions'}
+                          scope='col'
+                          className={cn(
+                            'px-5 py-3 text-[13px] font-medium text-default-500',
+                            h === 'Status' && 'text-right'
+                          )}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRows.map(item => (
+                      <React.Fragment key={item.id}>
+                      <tr className={cn('border-b border-divider align-top hover:bg-content2', openRow === item.id && 'bg-content2')}>
+                        <td className='max-w-[320px] px-5 py-3'>
+                          <span className='block truncate text-[14px] font-medium text-foreground'>
+                            {item.templateName || 'Untitled'}
+                          </span>
+                          <span className='block truncate font-mono text-[12px] text-default-500'>
+                            {item.templateKey || item.id}
+                          </span>
+                        </td>
+                        <td className='px-5 py-3'>
+                          <TypeBadge type={item.type} />
+                        </td>
+                        <td className='whitespace-nowrap px-5 py-3'>
+                          <span className='block text-[14px] text-foreground'>
+                            {item.createdDatetime ? format(new Date(item.createdDatetime), 'dd MMM yyyy') : '—'}
+                          </span>
+                          <span className='block font-mono text-[12px] text-default-500'>
+                            {item.createdDatetime ? format(new Date(item.createdDatetime), 'HH:mm:ss') : ''}
+                          </span>
+                        </td>
+                        <td className='whitespace-nowrap px-5 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                          {formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}
+                        </td>
+                        <td className='whitespace-nowrap px-5 py-3 font-mono text-[13px] tabular-nums text-default-500'>
+                          {formatBytes(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}
+                        </td>
+                        <td className='px-5 py-3 text-right'>
+                          <StatusChip status={item.status} />
+                          {item.errorMessage && !isSuccessStatus(item.status) && (
+                            <p className='ml-auto mt-1 max-w-[260px] text-[12px] text-default-500' title={item.errorMessage}>
+                              <span className='line-clamp-2'>{item.errorMessage}</span>
+                            </p>
+                          )}
+                        </td>
+                        <td className='whitespace-nowrap px-5 py-3'>
+                          <div className='flex items-center justify-end gap-4'>
+                            <DownloadOrExpired item={item} />
+                            <button
+                              type='button'
+                              aria-expanded={openRow === item.id}
+                              onClick={() => toggleRow(item.id)}
+                              className='inline-flex items-center gap-1 text-[13px] font-medium text-default-500 hover:text-foreground'>
+                              Details
+                              <Icon
+                                icon='lucide:chevron-down'
+                                className={cn('h-3.5 w-3.5 transition-transform', openRow === item.id && 'rotate-180')}
+                              />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {openRow === item.id && (
+                        <tr className='border-b border-divider'>
+                          <td colSpan={HEADERS.length} className='p-0'>
+                            <JobDetails item={item} />
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            ) : (
+              /* Mobile */
+              <ul className='divide-y divide-divider'>
+                {visibleRows.map(item => (
+                  <li key={item.id} className='flex flex-col gap-2 px-4 py-3.5'>
+                    <div className='flex items-start justify-between gap-3'>
+                      <div className='min-w-0'>
+                        <p className='truncate text-[14px] font-medium text-foreground'>{item.templateName || 'Untitled'}</p>
+                        <p className='truncate font-mono text-[12px] text-default-500'>{item.templateKey || item.id}</p>
+                      </div>
+                      <StatusChip status={item.status} />
+                    </div>
+                    <div className='flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-default-500'>
+                      <TypeBadge type={item.type} />
+                      <span title={timezoneLabel}>
+                        {item.createdDatetime ? format(new Date(item.createdDatetime), 'dd MMM yyyy, HH:mm') : '—'}
+                      </span>
+                      <span className='font-mono tabular-nums'>
+                        {formatDuration(item.durationMs != null ? Number(item.durationMs) : null)}
+                      </span>
+                      <span className='font-mono tabular-nums'>
+                        {formatBytes(item.fileSizeBytes != null ? Number(item.fileSizeBytes) : null)}
+                      </span>
+                    </div>
+                    {item.errorMessage && !isSuccessStatus(item.status) && (
+                      <p className='text-[12px] text-default-500'>{item.errorMessage}</p>
+                    )}
+                    <div className='flex items-center gap-4'>
+                      <DownloadOrExpired item={item} />
+                      <button
+                        type='button'
+                        aria-expanded={openRow === item.id}
+                        onClick={() => toggleRow(item.id)}
+                        className='inline-flex min-h-9 items-center gap-1 text-[13px] font-medium text-default-500 hover:text-foreground'>
+                        Details
+                        <Icon icon='lucide:chevron-down' className={cn('h-3.5 w-3.5', openRow === item.id && 'rotate-180')} />
+                      </button>
+                    </div>
+                    {openRow === item.id && <JobDetails item={item} />}
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
 
-        {loadingMore && (
-          <div className='flex justify-center py-4'>
-            <Icon icon='lucide:loader-2' className='h-5 w-5 animate-spin text-default-400' />
+        {hasMore && activityData.length > 0 && (
+          <div className='flex justify-center border-t border-divider p-4'>
+            <Button
+              variant='bordered'
+              isLoading={loadingMore}
+              onPress={loadMore}
+              className='h-10 border-default-300 font-medium'>
+              Load more
+            </Button>
           </div>
         )}
-
-        {!loading && !loadingMore && activityData.length === 0 && (
-          <div className='flex flex-col items-center justify-center gap-2 py-16 text-default-400'>
-            <Icon icon='lucide:inbox' className='h-10 w-10 opacity-40' />
-            <span className='text-sm font-medium'>No history found</span>
-          </div>
-        )}
-      </div>
+      </section>
     </div>
   )
 }
-
-import { Suspense } from 'react'
 
 export default function ProjectHistoryPage() {
   return (

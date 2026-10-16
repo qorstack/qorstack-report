@@ -1,3 +1,5 @@
+# API-only image (no web UI) — used by scripts/export-enterprise.sh. The released image is the
+# root Dockerfile (qorstack/report: web UI + API on one port).
 # Build stage — context must be the repo root (context: .)
 # Pin to the BUILD host's arch (never emulated): the .NET SDK/MSBuild crashes under
 # QEMU when cross-building. We publish framework-dependent (arch-neutral IL) output,
@@ -65,6 +67,10 @@ COPY --chown=appuser:appuser --from=build /app/publish .
 
 # Bundle database migrations into the image (no host mount required)
 COPY --chown=appuser:appuser database/*.sql /app/database/
+
+# Bundle the template gallery (curated ready-made templates) — read by GalleryService
+# from <ContentRoot>/gallery by default. Override with Gallery__Path if mounted elsewhere.
+COPY --chown=appuser:appuser gallery/ /app/gallery/
 
 # Install custom fonts and rebuild font cache — all in one layer
 RUN mkdir -p /usr/share/fonts/truetype/thaisansneue /usr/share/fonts/truetype/ocrb && \

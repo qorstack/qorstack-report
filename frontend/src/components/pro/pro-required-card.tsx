@@ -1,6 +1,6 @@
 'use client'
 
-import { Card, CardBody } from '@heroui/react'
+import type { JSX } from 'react'
 import Icon from '@/components/icon'
 
 type ProRequiredCardProps = {
@@ -10,42 +10,31 @@ type ProRequiredCardProps = {
 
 const isSelfhost = process.env.NEXT_PUBLIC_SITE_MODE !== 'cloud'
 
-export const ProRequiredCard = ({ featureLabel, description }: ProRequiredCardProps) => {
+const CTA_CLASS =
+  'inline-flex min-h-10 items-center gap-2 border border-default-300 px-4 text-[14px] font-medium text-foreground transition-colors hover:border-foreground'
 
-  return (
-    <Card className='border border-default-200 bg-default-50'>
-      <CardBody className='flex flex-col items-center gap-4 py-8 text-center'>
-        <div className='flex h-12 w-12 items-center justify-center rounded-full bg-warning-100 text-warning-600'>
-          <Icon icon='solar:lock-bold' width={24} />
-        </div>
+export const ProRequiredCard = ({ featureLabel, description }: ProRequiredCardProps): JSX.Element => (
+  <div className='flex flex-col items-center gap-4 border border-divider bg-content1 px-6 py-8 text-center'>
+    <span className='flex h-11 w-11 items-center justify-center text-default-500'>
+      <Icon icon='lucide:lock' width={20} />
+    </span>
 
-        <div className='space-y-1'>
-          <p className='text-sm font-semibold text-foreground'>
-            {featureLabel} requires a Pro license
-          </p>
-          {description && (
-            <p className='text-xs text-default-500'>{description}</p>
-          )}
-        </div>
+    <div className='space-y-1'>
+      <p className='text-[13px] text-default-500'>Pro feature</p>
+      <p className='text-[15px] font-semibold text-foreground'>{featureLabel} requires a Pro license</p>
+      {description && <p className='text-[14px] text-default-500'>{description}</p>}
+    </div>
 
-        {isSelfhost ? (
-          <a
-            href='/self-host#pro'
-            className='inline-flex items-center gap-1.5 rounded-lg bg-warning-100 px-4 py-2 text-sm font-semibold text-warning-700 transition-colors hover:bg-warning-200'>
-            <Icon icon='lucide:key' width={14} />
-            Get Pro License
-          </a>
-        ) : (
-          <a
-            href='https://qorstack.com/pricing'
-            target='_blank'
-            rel='noopener noreferrer'
-            className='inline-flex items-center gap-1.5 rounded-lg bg-warning-100 px-4 py-2 text-sm font-semibold text-warning-700 transition-colors hover:bg-warning-200'>
-            <Icon icon='solar:arrow-right-linear' width={14} />
-            Upgrade to Pro
-          </a>
-        )}
-      </CardBody>
-    </Card>
-  )
-}
+    {isSelfhost ? (
+      <a href='/self-host#pro' className={CTA_CLASS}>
+        <Icon icon='lucide:key-round' width={16} />
+        Get Pro license
+      </a>
+    ) : (
+      <a href='https://qorstack.com/pricing' target='_blank' rel='noopener noreferrer' className={CTA_CLASS}>
+        Upgrade to Pro
+        <Icon icon='lucide:arrow-up-right' width={16} />
+      </a>
+    )}
+  </div>
+)

@@ -1,75 +1,70 @@
 import { oneDark } from 'react-syntax-highlighter/dist/cjs/styles/prism'
 
-// Near-black code theme
-// Variable names (plain text) = cyan-blue base color
-// String values = muted gray (visible but not prominent)
-// Keys/properties = bright sky blue
-// Numbers = gold, Keywords = rose italic, Functions = periwinkle
+// Press code theme — restrained, warm, dark-only.
+// Keys = soft red (#FFB4AC), strings = foreground, comments = default-400,
+// numbers/booleans = amber, keywords = brand-red tint. Punctuation recedes.
+const FG = '#D9D5CE'
+const INK = '#F4F1EC'
+const KEY = '#FFB4AC'
+const KEYWORD = '#FF6B5F'
+const NUMBER = '#FFB020'
+const MUTED = '#8C8882'
+const PUNCT = '#6E6A65'
+
 export const obsidianDark: Record<string, React.CSSProperties> = {
   ...oneDark,
 
-  // Base surfaces — color sets the fallback for all undecorated tokens (variable names, identifiers)
   'code[class*="language-"]': {
     ...oneDark['code[class*="language-"]'],
-    color: '#60B8FF', // bright sky-blue = local variable names
+    color: FG,
     background: '#050505',
-    textShadow: 'none'
+    textShadow: 'none',
+    fontFamily: 'var(--font-jetbrains-mono), ui-monospace, monospace'
   },
   'pre[class*="language-"]': {
     ...oneDark['pre[class*="language-"]'],
-    color: '#60B8FF',
+    color: FG,
     background: '#050505',
-    textShadow: 'none'
+    textShadow: 'none',
+    fontFamily: 'var(--font-jetbrains-mono), ui-monospace, monospace'
   },
 
-  // ── KEYS / PROPERTIES — warm peach (distinct from blue vars, periwinkle types, amber numbers) ──
-  property: { color: '#FFB871', fontWeight: 500 },
-  'attr-name': { color: '#FFB871' },
-  tag: { color: '#FFB871' },
+  property: { color: KEY },
+  'attr-name': { color: KEY },
+  tag: { color: KEY },
 
-  // ── FUNCTIONS — periwinkle ──
-  function: { color: '#B8C5F7' },
-  'function-variable': { color: '#B8C5F7' },
+  function: { color: INK },
+  'function-variable': { color: INK },
+  'class-name': { color: INK, fontWeight: 600 },
 
-  // ── KEYWORDS — rose, italic ──
-  keyword: { color: '#F28FA8', fontStyle: 'italic' },
-  atrule: { color: '#F28FA8' },
-  important: { color: '#F28FA8', fontWeight: 600 },
-  rule: { color: '#F28FA8' },
+  keyword: { color: KEYWORD },
+  atrule: { color: KEYWORD },
+  important: { color: KEYWORD, fontWeight: 600 },
+  rule: { color: KEYWORD },
 
-  // ── STRING VALUES — soft green (classic, distinct from blue vars) ──
-  string: { color: '#A8D4A0' },
-  char: { color: '#A8D4A0' },
-  'attr-value': { color: '#A8D4A0' },
-  inserted: { color: '#A8D4A0' },
-  regex: { color: '#A8D4A0' },
-  selector: { color: '#A8D4A0' },
-  builtin: { color: '#A8D4A0' },
+  string: { color: INK },
+  char: { color: INK },
+  'attr-value': { color: INK },
+  inserted: { color: INK },
+  regex: { color: INK },
+  selector: { color: INK },
+  builtin: { color: INK },
 
-  // ── NUMBERS, BOOLEANS — golden amber ──
-  number: { color: '#FBBF24' },
-  boolean: { color: '#FBBF24', fontWeight: 500 },
-  constant: { color: '#FBBF24' },
+  number: { color: NUMBER },
+  boolean: { color: NUMBER },
+  constant: { color: NUMBER },
 
-  // ── EXPLICIT VARIABLE TOKEN ($var in PHP/SCSS) ──
-  variable: { color: '#60B8FF' },
+  variable: { color: FG },
 
-  // ── CLASSES — light periwinkle ──
-  'class-name': { color: '#C8D5FA' },
+  symbol: { color: KEY },
+  deleted: { color: KEY },
 
-  // ── SYMBOLS, DELETED ──
-  symbol: { color: '#F28B8B' },
-  deleted: { color: '#F28B8B' },
+  url: { color: INK, textDecoration: 'underline' },
 
-  // ── URLS ──
-  url: { color: '#B8C5F7', textDecoration: 'underline' },
+  operator: { color: PUNCT },
+  punctuation: { color: PUNCT },
 
-  // ── OPERATORS, PUNCTUATION — muted (recede) ──
-  operator: { color: '#5A6070' },
-  punctuation: { color: '#5A6070' },
-
-  // ── COMMENTS — muted italic ──
-  comment: { color: '#6A6D7C', fontStyle: 'italic' },
-  prolog: { color: '#6A6D7C', fontStyle: 'italic' },
-  cdata: { color: '#6A6D7C', fontStyle: 'italic' }
+  comment: { color: MUTED, fontStyle: 'italic' },
+  prolog: { color: MUTED, fontStyle: 'italic' },
+  cdata: { color: MUTED, fontStyle: 'italic' }
 }

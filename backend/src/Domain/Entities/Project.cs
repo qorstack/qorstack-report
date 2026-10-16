@@ -22,6 +22,16 @@ public partial class Project : BaseAuditableEntity
 
     public string? Status { get; set; }
 
+    /// <summary>
+    /// Whether report job logging is enabled for this project.
+    /// </summary>
+    public bool LogEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Number of days to retain report job logs. 0 = keep forever.
+    /// </summary>
+    public int LogRetentionDays { get; set; } = 90;
+
     public virtual ICollection<ApiKey> ApiKeys { get; set; } = new List<ApiKey>();
 
     public virtual ICollection<FontOwnership> FontOwnerships { get; set; } = new List<FontOwnership>();

@@ -13,7 +13,7 @@ namespace QorstackReportService.Infrastructure.Services.Font;
 /// </summary>
 public class FontSyncService : BackgroundService
 {
-    private const string UserFontsBucket = "fonts";
+    private const string UserFontsBucket = StorageAreas.Fonts;
 
     private readonly IServiceProvider _serviceProvider;
     private readonly IGotenbergFontCache _fontCache;

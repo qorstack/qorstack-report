@@ -428,8 +428,15 @@ export interface RenderResponse {
 
 export type PdfFromTemplateRequest = DocumentProcessingRequestBase & {
   templateKey?: string;
+  /**
+   * Render this stored version of the template. Omit for the current version.
+   * @format int32
+   * @min 1
+   */
+  templateVersion?: number | null;
   fileName?: string | null;
-  fileType?: string;
+  /** Output format: pdf (default) or docx */
+  fileType?: "pdf" | "docx";
   table?: WordTableDataRequest[] | null;
 };
 
@@ -438,7 +445,10 @@ export type WordTableDataRequest = TableDataRequest & {
 };
 
 export interface TableDataRequest {
-  rows?: Record<string, any>[];
+  /** Column marker names ({{row:name}}), listed once, in the order of the row values. Unique. */
+  columns: string[];
+  /** Rows; each row is an array of cell values in the order of columns, e.g. [["A", 2]] */
+  rows: (string | number | boolean | null)[][];
   sort?: SortDefinition[] | null;
   verticalMerge?: string[] | null;
   collapse?: string[] | null;
@@ -446,29 +456,46 @@ export interface TableDataRequest {
 
 export interface SortDefinition {
   field?: string;
-  direction?: string;
+  direction?: "asc" | "desc";
 }
 
 export interface DocumentProcessingRequestBase {
-  replace?: Record<string, string>;
-  image?: Record<string, ImageDataRequest>;
-  qrcode?: Record<string, QrCodeDataRequest>;
-  barcode?: Record<string, BarcodeDataRequest>;
+  /** Variable replacements ({{variable}}): [{ "key": "customer_name", "value": "ACME" }] */
+  replace?: KeyValueRequest[] | null;
+  /** Images for {{image:key}} markers */
+  image?: ImageDataRequest[] | null;
+  /** QR codes for {{qr:key}} markers */
+  qrcode?: QrCodeDataRequest[] | null;
+  /** Barcodes for {{barcode:key}} markers */
+  barcode?: BarcodeDataRequest[] | null;
   pdfPassword?: PdfPasswordRequest | null;
   watermark?: PdfWatermarkRequest | null;
   zipOutput?: boolean;
+  /** Pro: queue the render and return 202 with a job id instead of the file. Poll GET /render/jobs/{jobId} or set webhookUrl. */
+  async?: boolean;
+  /**
+   * With async: true, receives a POST {jobId, status, downloadUrl?, expiresIn?, error?} when the job finishes. Signed with X-Qorstack-Signature when the server has a signing secret.
+   * @format uri
+   * @maxLength 2048
+   */
+  webhookUrl?: string | null;
 }
 
 export interface ImageDataRequest {
+  /** Image marker name ({{image:key}}) */
+  key?: string;
   src?: string;
   /** @format int32 */
   width?: number | null;
   /** @format int32 */
   height?: number | null;
-  fit?: string | null;
+  /** How the image fills its box: cover, contain (default) or fill */
+  fit?: "cover" | "contain" | "fill" | null;
 }
 
 export interface QrCodeDataRequest {
+  /** QR marker name ({{qr:key}}) */
+  key?: string;
   text?: string;
   /** @format int32 */
   size?: number;
@@ -478,6 +505,8 @@ export interface QrCodeDataRequest {
 }
 
 export interface BarcodeDataRequest {
+  /** Barcode marker name ({{barcode:key}}) */
+  key?: string;
   text?: string;
   format?: string;
   /** @format int32 */
@@ -524,7 +553,7 @@ export interface KeyValuePairOfStringAndJsonNode {
 }
 
 export interface JsonNode {
-  underlyingElement?: any;
+  underlyingElement?: any | null;
   options?: JsonNodeOptions | null;
   parent?: JsonNode | null;
   root?: JsonNode;
@@ -547,8 +576,13 @@ export interface ExportExcelUrlResponse {
 
 export type ExcelFromTemplateRequest = DocumentProcessingRequestBase & {
   templateKey?: string;
+  /**
+   * Render this stored version of the template. Omit for the current version.
+   * @format int32
+   * @min 1
+   */
+  templateVersion?: number | null;
   fileName?: string | null;
-  fileType?: string;
   table?: ExcelTableDataRequest[] | null;
 };
 
@@ -559,8 +593,10 @@ export type ExcelTableDataRequest = TableDataRequest & {
   asExcelTable?: boolean;
   excelTableStyle?: string | null;
   outline?: boolean;
-  generateTotals?: Record<string, string>;
-  numberFormat?: Record<string, string>;
+  /** Totals per column: [{ "key": "amount", "value": "sum" }] */
+  generateTotals?: KeyValueRequest[] | null;
+  /** Number format per column: [{ "key": "amount", "value": "#,##0.00" }] */
+  numberFormat?: KeyValueRequest[] | null;
   conditionalFormat?: ConditionalFormatConfigRequest[] | null;
   splitToSheets?: SplitToSheetsConfigRequest | null;
 };
@@ -571,7 +607,7 @@ export interface ConditionalFormatConfigRequest {
 }
 
 export interface ConditionalFormatRuleRequest {
-  value?: any;
+  value?: any | null;
   operator?: string | null;
   fontColor?: string | null;
   backgroundColor?: string | null;
@@ -851,6 +887,23 @@ export interface ApiKeyDto {
   updatedBy?: string | null;
   /** @format date-time */
   updatedDatetime?: string | null;
+}
+
+/** Marker name with a text value (replace / generateTotals / numberFormat) */
+export interface KeyValueRequest {
+  /** Marker / column name */
+  key?: string;
+  /** Text value */
+  value?: string;
+}
+
+export interface ExportPdfAsyncResponse {
+  /** @format uuid */
+  jobId?: string;
+  /** pending → processing → success | failed */
+  status?: string;
+  /** GET this URL to poll the job; it returns a fresh downloadUrl once status is success. */
+  statusUrl?: string | null;
 }
 
 export type QueryParamsType = Record<string | number, any>;

@@ -7,7 +7,7 @@ interface SparklineProps {
   width?: number
   height?: number
   className?: string
-  /** Tailwind color class for the line / area, e.g. 'text-primary' */
+  /** Tailwind color class for the line / area, e.g. 'text-default-500' */
   colorClass?: string
 }
 
@@ -20,7 +20,7 @@ export const Sparkline = ({
   width = 90,
   height = 22,
   className,
-  colorClass = 'text-primary'
+  colorClass = 'text-default-500'
 }: SparklineProps) => {
   const { line, area } = useMemo(() => {
     if (!values.length) return { line: '', area: '' }

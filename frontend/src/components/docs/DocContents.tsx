@@ -12,12 +12,11 @@ import {
   getFileSettingsExamples
 } from './examples'
 
-const introClass = 'mb-6 max-w-[65ch] text-[13px] leading-relaxed text-default-500'
-const inlineCodeClass = 'rounded bg-content2 px-1.5 py-0.5 font-mono text-[12px] text-foreground'
+const introClass = 'mb-6 max-w-[65ch] text-[15px] leading-relaxed text-default-500'
+const inlineCodeClass = 'border border-divider bg-content2 px-1.5 py-0.5 font-mono text-[12px] text-primary-600 dark:text-[#FFB4AC]'
 const tokenClass = 'font-mono text-[12px] text-primary'
-const imageFrameClass =
-  'relative overflow-hidden rounded-md bg-content2 ring-1 ring-default-200 dark:ring-white/5'
-const cardSurfaceClass = 'rounded-md bg-content2 ring-1 ring-default-200 dark:ring-white/5'
+const imageFrameClass = 'relative overflow-hidden border border-divider bg-content1'
+const cardSurfaceClass = 'border border-divider bg-content1'
 
 export const VariablesContent = () => {
   const [activeLang, setActiveLang] = useSharedLanguage()
@@ -67,15 +66,17 @@ export const TablesBasicContent = () => {
   return (
     <div>
       <p className={introClass}>
-        Create dynamic tables using <Highlight>{`{{row:field}}`}</Highlight> markers inside a table row. The API
-        expects a <code className={inlineCodeClass}>table</code> array where each item contains <code className={inlineCodeClass}>rows</code>.
+        Create dynamic tables using <Highlight>{`{{row:field}}`}</Highlight> markers inside a table row. The API expects
+        a <code className={inlineCodeClass}>table</code> array where each item contains{' '}
+        <code className={inlineCodeClass}>rows</code>.
       </p>
 
       <SubSection title='Template (.docx)'>
         <div className='grid grid-cols-1 gap-4'>
-          <p className='text-[11.5px] font-normal leading-snug text-default-500'>
-            Put <code className={inlineCodeClass}>{`{{row:name}}`}</code>, <code className={inlineCodeClass}>{`{{row:qty}}`}</code>,
-            and other row markers in the template row that should repeat.
+          <p className='text-[13px] font-normal leading-snug text-default-500'>
+            Put <code className={inlineCodeClass}>{`{{row:name}}`}</code>,{' '}
+            <code className={inlineCodeClass}>{`{{row:qty}}`}</code>, and other row markers in the template row that
+            should repeat.
           </p>
           <div className={imageFrameClass}>
             <Image
@@ -90,10 +91,16 @@ export const TablesBasicContent = () => {
             data={[
               { name: 'table', type: 'WordTableDataRequest[]', required: false, desc: 'Array of table data requests.' },
               {
-                name: 'rows',
-                type: 'Record<string, any>[]',
+                name: 'columns',
+                type: 'string[]',
                 required: true,
-                desc: 'Array of row objects matching {{row:key}} markers in the template.'
+                desc: 'Column names, listed once; each matches a {{row:name}} marker. Must be unique.'
+              },
+              {
+                name: 'rows',
+                type: '(string | number | boolean | null)[][]',
+                required: true,
+                desc: 'Array of rows; each row holds the values in the order of columns. A row with the wrong number of values returns 400 naming the row.'
               },
               {
                 name: 'repeatHeader',
@@ -125,9 +132,9 @@ export const TablesAdvancedContent = () => {
           data={[
             {
               name: 'sort',
-              type: 'Record<string, "asc" | "desc">',
+              type: '{ field, direction }[]',
               required: false,
-              desc: 'Sorting rules (e.g. { "price": "desc" }).'
+              desc: 'Sorting rules, applied in order (e.g. [{ "field": "price", "direction": "desc" }]).'
             },
             {
               name: 'verticalMerge',
@@ -135,8 +142,8 @@ export const TablesAdvancedContent = () => {
               required: false,
               desc: (
                 <div className='flex flex-col gap-1'>
-                  <span>Merges cells with identical values vertically.</span>
-                  <span className='text-[11.5px] text-default-500'>{`ex. ["category", "date"]`}</span>
+                  <span>Merges cells with identical values vertically. Names must be in columns.</span>
+                  <span className='text-[13px] text-default-500'>{`ex. ["category", "date"]`}</span>
                 </div>
               )
             },
@@ -147,7 +154,7 @@ export const TablesAdvancedContent = () => {
               desc: (
                 <div className='flex flex-col gap-1'>
                   <span>Collapses identical rows into a single row.</span>
-                  <span className='text-[11.5px] text-default-500'>{`ex. ["date", "store_branch"]`}</span>
+                  <span className='text-[13px] text-default-500'>{`ex. ["date", "store_branch"]`}</span>
                 </div>
               )
             }
@@ -156,47 +163,43 @@ export const TablesAdvancedContent = () => {
       </SubSection>
 
       <div className='flex flex-col gap-6'>
-        <SubSection title='Template Grouping Styles'>
+        <SubSection id='tables-grouping' title='Template Grouping Styles'>
           <div className='flex flex-col gap-4'>
             <div className={`${cardSurfaceClass} flex min-w-0 flex-col p-4`}>
-              <h5 className='mb-2 text-[13px] font-bold tracking-tight text-foreground'>Header Row Grouping</h5>
-              <p className='mb-3 text-[11.5px] font-normal leading-snug text-default-500'>
+              <h5 className='mb-2 text-[14px] font-bold uppercase tracking-[0.02em] text-foreground'>
+                Header Row Grouping
+              </h5>
+              <p className='mb-3 text-[13px] font-normal leading-snug text-default-500'>
                 Place the Header row <strong className='font-semibold text-foreground'>above</strong> the data row to
                 display a group header (used in conjunction with the first{' '}
                 <code className={inlineCodeClass}>verticalMerge</code> item).
               </p>
-              <div className='mt-auto overflow-x-auto rounded-md bg-content1 ring-1 ring-default-200 dark:ring-white/5'>
-                <table className='w-full min-w-max text-left text-[11px]'>
-                  <thead className='bg-content2 text-default-600'>
+              <div className='mt-auto overflow-x-auto border border-divider bg-background'>
+                <table className='w-full min-w-max text-left text-[12px]'>
+                  <thead className='bg-content1 font-mono uppercase tracking-[0.1em] text-default-500'>
                     <tr>
-                      <th className='whitespace-nowrap border-r border-default-200 p-2 font-medium dark:border-white/5'>
-                        Item Name
-                      </th>
-                      <th className='whitespace-nowrap border-r border-default-200 p-2 font-medium dark:border-white/5'>
-                        Qty
-                      </th>
+                      <th className='whitespace-nowrap border-r border-divider p-2 font-medium'>Item Name</th>
+                      <th className='whitespace-nowrap border-r border-divider p-2 font-medium'>Qty</th>
                       <th className='whitespace-nowrap p-2 font-medium'>Price</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr className='bg-primary/5'>
+                    <tr className='bg-primary/10'>
                       <td className={`whitespace-nowrap p-2 ${tokenClass}`} colSpan={3}>
                         Category: {'{{group:category}}'} ({'{{group_count}}'} items)
                       </td>
                     </tr>
-                    <tr className='border-t border-default-200 dark:border-white/5'>
-                      <td className={`whitespace-nowrap border-r border-default-200 p-2 dark:border-white/5 ${tokenClass}`}>
+                    <tr className='border-t border-divider'>
+                      <td className={`whitespace-nowrap border-r border-divider p-2 ${tokenClass}`}>
                         {'{{row:name}}'}
                       </td>
-                      <td className={`whitespace-nowrap border-r border-default-200 p-2 dark:border-white/5 ${tokenClass}`}>
-                        {'{{row:qty}}'}
-                      </td>
+                      <td className={`whitespace-nowrap border-r border-divider p-2 ${tokenClass}`}>{'{{row:qty}}'}</td>
                       <td className={`whitespace-nowrap p-2 ${tokenClass}`}>{'{{row:price}}'}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <p className='mt-3 text-[11.5px] font-normal leading-snug text-default-500'>
+              <p className='mt-3 text-[13px] font-normal leading-snug text-default-500'>
                 <strong className='font-semibold text-foreground'>Note:</strong> Use the{' '}
                 <code className={inlineCodeClass}>{`{{group:field}}`}</code> marker in the Header Row to indicate where
                 the group name will be displayed.
@@ -204,13 +207,15 @@ export const TablesAdvancedContent = () => {
             </div>
 
             <div className={`${cardSurfaceClass} flex min-w-0 flex-col p-4`}>
-              <h5 className='mb-2 text-[13px] font-bold tracking-tight text-foreground'>Footer Grouping</h5>
-              <p className='mb-3 text-[11.5px] font-normal leading-snug text-default-500'>
+              <h5 className='mb-2 text-[14px] font-bold uppercase tracking-[0.02em] text-foreground'>
+                Footer Grouping
+              </h5>
+              <p className='mb-3 text-[13px] font-normal leading-snug text-default-500'>
                 Place a summary row <strong className='font-semibold text-foreground'>below</strong> the data row to
                 show the total at the end of each group.
               </p>
-              <div className='overflow-x-auto rounded-md bg-content1 ring-1 ring-default-200 dark:ring-white/5'>
-                <table className='w-full min-w-max text-left text-[11px]'>
+              <div className='overflow-x-auto border border-divider bg-background'>
+                <table className='w-full min-w-max text-left text-[12px]'>
                   <thead className='sr-only'>
                     <tr>
                       <th>Item Name</th>
@@ -220,19 +225,17 @@ export const TablesAdvancedContent = () => {
                   </thead>
                   <tbody>
                     <tr>
-                      <td className={`whitespace-nowrap border-r border-default-200 p-2 dark:border-white/5 ${tokenClass}`}>
+                      <td className={`whitespace-nowrap border-r border-divider p-2 ${tokenClass}`}>
                         {'{{row:name}}'}
                       </td>
-                      <td className={`whitespace-nowrap border-r border-default-200 p-2 dark:border-white/5 ${tokenClass}`}>
-                        {'{{row:qty}}'}
-                      </td>
+                      <td className={`whitespace-nowrap border-r border-divider p-2 ${tokenClass}`}>{'{{row:qty}}'}</td>
                       <td className={`whitespace-nowrap p-2 ${tokenClass}`}>{'{{row:price}}'}</td>
                     </tr>
-                    <tr className='border-t border-default-200 bg-primary/5 font-medium dark:border-white/5'>
-                      <td className='whitespace-nowrap border-r border-default-200 p-2 text-[12px] font-semibold text-foreground dark:border-white/5'>
+                    <tr className='border-t border-divider bg-primary/10 font-medium'>
+                      <td className='whitespace-nowrap border-r border-divider p-2 text-[12px] font-semibold text-foreground'>
                         Total for <span className={tokenClass}>{'{{group:category}}'}</span>
                       </td>
-                      <td className={`whitespace-nowrap border-r border-default-200 p-2 dark:border-white/5 ${tokenClass}`}>
+                      <td className={`whitespace-nowrap border-r border-divider p-2 ${tokenClass}`}>
                         {'{{group_sum:qty}}'}
                       </td>
                       <td className='whitespace-nowrap p-2 text-[12px] font-semibold text-foreground'>
@@ -246,7 +249,7 @@ export const TablesAdvancedContent = () => {
           </div>
         </SubSection>
 
-        <SubSection title='Aggregates'>
+        <SubSection id='tables-aggregates' title='Aggregates'>
           <div className='grid grid-cols-1 gap-4 md:grid-cols-3'>
             {[
               {
@@ -277,15 +280,15 @@ export const TablesAdvancedContent = () => {
               }
             ].map(group => (
               <div key={group.scope} className={`${cardSurfaceClass} flex flex-col p-4`}>
-                <h6 className='mb-1 text-[13px] font-bold tracking-tight text-foreground'>{group.scope}</h6>
-                <p className='mb-3 text-[11.5px] font-normal leading-snug text-default-500'>{group.desc}</p>
+                <h6 className='mb-1 font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-foreground'>
+                  {group.scope}
+                </h6>
+                <p className='mb-3 text-[13px] font-normal leading-snug text-default-500'>{group.desc}</p>
                 <div className='flex flex-col gap-2'>
                   {group.rows.map(row => (
-                    <div
-                      key={row.token}
-                      className='flex items-center justify-between gap-2 rounded-md bg-content1 px-2.5 py-1.5 ring-1 ring-default-200 dark:ring-white/5'>
-                      <code className={tokenClass}>{row.token}</code>
-                      <span className='text-[11px] text-default-500'>{row.desc}</span>
+                    <div key={row.token} className='flex min-w-0 flex-col gap-1 border border-divider bg-background px-2.5 py-2'>
+                      <code className={`${tokenClass} break-all`}>{row.token}</code>
+                      <span className='text-[12px] leading-snug text-default-500'>{row.desc}</span>
                     </div>
                   ))}
                 </div>
@@ -321,17 +324,19 @@ export const ImagesContent = () => {
         <SubSection title='Data Payload'>
           <PropertyTable
             data={[
+              {
+                name: 'key',
+                type: 'string',
+                required: true,
+                desc: 'Image marker name (e.g. {{image:logo}} -> "logo").'
+              },
               { name: 'src', type: 'string', required: true, desc: 'Image URL, data URL, or stored file URL.' },
               { name: 'width', type: 'number', required: false, desc: 'Image width (px).' },
               { name: 'height', type: 'number', required: false, desc: 'Image height (px).' },
               { name: 'fit', type: 'string', required: false, desc: 'Image fit: "cover", "contain", "fill".' }
             ]}
           />
-          <CodeSwitcher
-            activeLang={activeLang}
-            onLangChange={setActiveLang}
-            examples={getImageExamples('template')}
-          />
+          <CodeSwitcher activeLang={activeLang} onLangChange={setActiveLang} examples={getImageExamples('template')} />
         </SubSection>
       </div>
     </div>
@@ -361,6 +366,12 @@ export const QrCodesContent = () => {
         <SubSection title='Data Payload'>
           <PropertyTable
             data={[
+              {
+                name: 'key',
+                type: 'string',
+                required: true,
+                desc: 'QR code marker name (e.g. {{qrcode:payment}} -> "payment").'
+              },
               { name: 'text', type: 'string', required: true, desc: 'Content to encode.' },
               { name: 'size', type: 'number', required: false, desc: 'QR code size (px).' },
               { name: 'color', type: 'string', required: false, desc: 'Foreground color, e.g. "#111827".' },
@@ -398,11 +409,22 @@ export const BarcodesContent = () => {
         <SubSection title='Data Payload'>
           <PropertyTable
             data={[
+              {
+                name: 'key',
+                type: 'string',
+                required: true,
+                desc: 'Barcode marker name (e.g. {{barcode:sku}} -> "sku").'
+              },
               { name: 'text', type: 'string', required: true, desc: 'Content to encode.' },
               { name: 'format', type: 'string', required: false, desc: 'Barcode format, default "Code128".' },
               { name: 'width', type: 'number', required: false, desc: 'Barcode width (px).' },
               { name: 'height', type: 'number', required: false, desc: 'Barcode height (px).' },
-              { name: 'includeText', type: 'boolean', required: false, desc: 'Show human-readable text under the bars.' },
+              {
+                name: 'includeText',
+                type: 'boolean',
+                required: false,
+                desc: 'Show human-readable text under the bars.'
+              },
               { name: 'color', type: 'string', required: false, desc: 'Foreground color.' },
               { name: 'backgroundColor', type: 'string', required: false, desc: 'Background color.' }
             ]}
@@ -440,7 +462,7 @@ export const FileSettingsContent = () => {
         </SubSection>
 
         <SubSection title='Security & Encryption'>
-          <p className='mb-4 text-[11.5px] font-normal leading-snug text-default-500'>
+          <p className='mb-4 text-[13px] font-normal leading-snug text-default-500'>
             Protect your generated PDF files with a password. This uses standard PDF encryption which prevents
             unauthorized viewing.
           </p>
@@ -486,7 +508,7 @@ export const FileSettingsContent = () => {
         </SubSection>
 
         <SubSection title='Branding & Watermarking'>
-          <p className='mb-4 text-[11.5px] font-normal leading-snug text-default-500'>
+          <p className='mb-4 text-[13px] font-normal leading-snug text-default-500'>
             Add a non-removable watermark text across all pages of the document.
           </p>
           <PropertyTable
@@ -500,13 +522,31 @@ export const FileSettingsContent = () => {
               },
               { name: 'fontSize', type: 'number', required: false, desc: 'Watermark font size.', plan: 'pro' },
               { name: 'fontFamily', type: 'string', required: false, desc: 'Font family name.', plan: 'pro' },
-              { name: 'fontWeight', type: 'number', required: false, desc: 'Font weight, e.g. 400 or 700.', plan: 'pro' },
+              {
+                name: 'fontWeight',
+                type: 'number',
+                required: false,
+                desc: 'Font weight, e.g. 400 or 700.',
+                plan: 'pro'
+              },
               { name: 'fontItalic', type: 'boolean', required: false, desc: 'Use italic font style.', plan: 'pro' },
               { name: 'color', type: 'string', required: false, desc: 'Watermark color.', plan: 'pro' },
               { name: 'opacity', type: 'number', required: false, desc: 'Opacity from 0 to 1.', plan: 'pro' },
               { name: 'rotation', type: 'number', required: false, desc: 'Rotation angle in degrees.', plan: 'pro' },
-              { name: 'positionX', type: 'string', required: false, desc: 'Horizontal position, e.g. "center".', plan: 'pro' },
-              { name: 'positionY', type: 'string', required: false, desc: 'Vertical position, e.g. "center".', plan: 'pro' },
+              {
+                name: 'positionX',
+                type: 'string',
+                required: false,
+                desc: 'Horizontal position, e.g. "center".',
+                plan: 'pro'
+              },
+              {
+                name: 'positionY',
+                type: 'string',
+                required: false,
+                desc: 'Vertical position, e.g. "center".',
+                plan: 'pro'
+              },
               { name: 'pages', type: 'number[]', required: false, desc: 'Optional 1-based page list.', plan: 'pro' }
             ]}
           />

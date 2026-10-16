@@ -14,6 +14,8 @@ namespace QorstackReportService.Infrastructure.Data.Configurations
             builder.HasIndex(e => e.GitlabId, "idx_users_gitlab_id");
             builder.HasIndex(e => e.GoogleId, "idx_users_google_id");
             builder.HasIndex(e => e.Email, "users_email_key").IsUnique();
+            builder.HasIndex(e => e.IsSystemAdmin, "ux_users_system_admin").IsUnique().HasFilter("is_system_admin");
+            builder.Property(e => e.IsSystemAdmin).HasDefaultValue(false);
         }
     }
 }

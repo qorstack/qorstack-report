@@ -1,26 +1,49 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { Button, Input, Avatar } from '@heroui/react'
+import { Button, Input } from '@heroui/react'
 import Icon from '@/components/icon'
+import { PageHeader, PanelHeader } from '@/components/ui/PageHeader'
 import { useAuth } from '@/providers/AuthContext'
 import { api } from '@/api/generated/main-service'
 import { UpdateProfileRequest } from '@/api/generated/main-service/apiGenerated'
 
+type FormMessage = { type: string; text: string }
+
+const FIELD_CLASS_NAMES = {
+  label: 'text-[13px] font-medium !text-default-500',
+  inputWrapper: 'h-10 border-default-300 bg-content2',
+  input: 'text-[14px]',
+  description: 'text-[12px] text-default-500'
+}
+
+const Message = ({ message }: { message: FormMessage }) => {
+  if (!message.text) return null
+  const isError = message.type === 'error'
+  return (
+    <p
+      role='status'
+      className={`flex items-center gap-2 text-[13px] font-medium ${isError ? 'text-danger' : 'text-success'}`}>
+      <Icon icon={isError ? 'lucide:alert-circle' : 'lucide:check-circle-2'} className='h-4 w-4' />
+      {message.text}
+    </p>
+  )
+}
+
 export default function SettingsPage() {
-  const { user, refreshUser, changePassword } = useAuth()
+  const { user, refreshUser, changePassword, logout } = useAuth()
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [msg, setMsg] = useState({ type: '', text: '' })
+  const [msg, setMsg] = useState<FormMessage>({ type: '', text: '' })
 
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordLoading, setPasswordLoading] = useState(false)
-  const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' })
+  const [passwordMsg, setPasswordMsg] = useState<FormMessage>({ type: '', text: '' })
 
   useEffect(() => {
     if (user) {
@@ -28,6 +51,10 @@ export default function SettingsPage() {
       setLastName(user.lastName || '')
     }
   }, [user])
+
+  const isProfileDirty = firstName !== (user?.firstName || '') || lastName !== (user?.lastName || '')
+  const loginId = user?.email || ''
+  const loginIsEmail = loginId.includes('@')
 
   const handleUpdateProfile = async () => {
     setLoading(true)
@@ -65,145 +92,178 @@ export default function SettingsPage() {
       setShowPasswordForm(false)
     } catch (error: any) {
       console.error('Change password failed', error)
-      setPasswordMsg({ type: 'error', text: 'Failed to change password' })
+      setPasswordMsg({ type: 'error', text: 'Failed to change password. Check your current password and try again.' })
     } finally {
       setPasswordLoading(false)
     }
   }
 
+  const initial = (user?.firstName || user?.email || 'U').charAt(0).toUpperCase()
+  const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email
+
   return (
-    <div className='dashboard-page mx-auto w-full max-w-2xl pb-20 pt-4'>
-      <div className='dashboard-panel'>
-        <div className='dashboard-header'>
-          <div>
-            <h1 className='dashboard-title'>Account Settings</h1>
-            <p className='dashboard-subtitle'>Manage your profile and preferences</p>
-          </div>
-        </div>
-      </div>
+    <div className='mx-auto flex w-full max-w-3xl flex-col gap-6'>
+      <PageHeader
+        breadcrumb={[{ label: 'Account' }, { label: 'Settings' }]}
+        title='Account settings'
+        description='Your name and password. These apply to every project.'
+      />
 
       {/* Profile */}
-      <div className='dashboard-panel'>
-        <div className='dashboard-header'>
-          <h3 className='text-[13px] font-bold text-foreground'>Personal Information</h3>
-          <p className='mt-0.5 text-[11.5px] text-default-500'>Update your personal details</p>
-        </div>
-        <div className='space-y-5 p-6'>
+      <section className='border border-divider bg-content1'>
+        <PanelHeader title='Profile' description='How your name appears in the app.' />
+        <div className='flex flex-col gap-6 p-5'>
           <div className='flex items-center gap-4'>
-            <Avatar
-              src={user?.profileImageUrl || undefined}
-              name={user?.firstName?.charAt(0) || 'U'}
-              className='h-16 w-16 text-xl'
-            />
-            <Button variant='flat' size='sm' radius='md' className='h-8 px-4 text-[11.5px] font-bold'>
-              Change Avatar
-            </Button>
+            <span className='flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-content3 text-[20px] font-bold text-foreground'>
+              {initial}
+            </span>
+            <div className='min-w-0'>
+              <p className='truncate text-[15px] font-semibold text-foreground'>{displayName}</p>
+              <p className='truncate text-[13px] text-default-500'>{user?.email}</p>
+            </div>
           </div>
 
-          <div className='grid gap-4 md:grid-cols-2'>
-            <Input label='First Name' value={firstName} onValueChange={setFirstName} variant='bordered' size='sm' />
-            <Input label='Last Name' value={lastName} onValueChange={setLastName} variant='bordered' size='sm' />
+          <div className='grid gap-6 md:grid-cols-2'>
+            <Input
+              label='First name'
+              labelPlacement='outside'
+              placeholder='First name'
+              value={firstName}
+              onValueChange={setFirstName}
+              variant='bordered'
+              classNames={FIELD_CLASS_NAMES}
+            />
+            <Input
+              label='Last name'
+              labelPlacement='outside'
+              placeholder='Last name'
+              value={lastName}
+              onValueChange={setLastName}
+              variant='bordered'
+              classNames={FIELD_CLASS_NAMES}
+            />
           </div>
 
           <Input
-            label='Email'
-            value={user?.email || ''}
+            label={loginIsEmail ? 'Email' : 'Username'}
+            labelPlacement='outside'
+            value={loginId}
             isReadOnly
-            variant='faded'
-            size='sm'
-            description='Email cannot be changed'
+            variant='bordered'
+            description='Used to sign in. It cannot be changed here.'
+            classNames={{
+              ...FIELD_CLASS_NAMES,
+              inputWrapper: 'h-10 border-divider bg-content1',
+              input: 'text-[14px] text-default-500'
+            }}
           />
 
-          {msg.text && (
-            <p className={`text-[11.5px] font-medium ${msg.type === 'error' ? 'text-danger' : 'text-success'}`}>
-              {msg.text}
-            </p>
-          )}
+          <Message message={msg} />
         </div>
-        <div className='border-t border-default-200/70 bg-content2/50 px-6 py-3 text-right dark:border-white/10'>
+        <div className='flex justify-end border-t border-divider px-5 py-4'>
           <Button
             color='primary'
-            size='sm'
-            radius='md'
-            className='h-8 px-4 text-[11.5px] font-bold'
+            className='h-10 font-medium'
             isLoading={loading}
+            isDisabled={!isProfileDirty}
             onPress={handleUpdateProfile}>
-            Save Changes
+            Save changes
           </Button>
         </div>
-      </div>
+      </section>
 
-      {/* Security */}
-      <div className='dashboard-panel'>
-        <div className='dashboard-header'>
-          <h3 className='text-[13px] font-bold text-foreground'>Security</h3>
-          <p className='mt-0.5 text-[11.5px] text-default-500'>Manage your password</p>
-        </div>
-        <div className='p-6'>
-          {!showPasswordForm ? (
-            <Button
-              variant='bordered'
-              size='sm'
-              radius='md'
-              className='h-8 px-4 text-[11.5px] font-bold'
-              startContent={<Icon icon='lucide:lock' className='h-3.5 w-3.5' />}
-              onPress={() => setShowPasswordForm(true)}>
-              Change Password
-            </Button>
+      {/* Password */}
+      <section className='border border-divider bg-content1'>
+        <PanelHeader title='Password' description='Use at least 8 characters.' />
+        <div className='p-5'>
+          {user?.isSystemAdmin ? (
+            <p className='text-sm text-default-500'>
+              The admin sign-in comes from <code className='font-mono'>ADMIN_EMAIL</code> and{' '}
+              <code className='font-mono'>ADMIN_PASSWORD</code> in <code className='font-mono'>.env</code> and is reset
+              to those values on every start. Change them there, then run{' '}
+              <code className='font-mono'>docker compose up -d</code>.
+            </p>
+          ) : !showPasswordForm ? (
+            <div className='flex flex-col items-start gap-3'>
+              <Message message={passwordMsg} />
+              <Button
+                variant='bordered'
+                className='h-10 border-default-300 font-medium'
+                startContent={<Icon icon='lucide:lock' className='h-4 w-4' />}
+                onPress={() => setShowPasswordForm(true)}>
+                Change password
+              </Button>
+            </div>
           ) : (
-            <div className='space-y-4'>
+            <div className='flex flex-col gap-6'>
               <Input
-                label='Current Password'
+                label='Current password'
+                labelPlacement='outside'
+                placeholder='Current password'
                 type='password'
+                autoComplete='current-password'
                 value={currentPassword}
                 onValueChange={setCurrentPassword}
                 variant='bordered'
-                size='sm'
+                classNames={FIELD_CLASS_NAMES}
               />
-              <Input
-                label='New Password'
-                type='password'
-                value={newPassword}
-                onValueChange={setNewPassword}
-                variant='bordered'
-                size='sm'
-              />
-              <Input
-                label='Confirm New Password'
-                type='password'
-                value={confirmPassword}
-                onValueChange={setConfirmPassword}
-                variant='bordered'
-                size='sm'
-              />
-              {passwordMsg.text && (
-                <p className={`text-[11.5px] font-medium ${passwordMsg.type === 'error' ? 'text-danger' : 'text-success'}`}>
-                  {passwordMsg.text}
-                </p>
-              )}
-              <div className='flex gap-2'>
+              <div className='grid gap-6 md:grid-cols-2'>
+                <Input
+                  label='New password'
+                  labelPlacement='outside'
+                  placeholder='New password'
+                  type='password'
+                  autoComplete='new-password'
+                  value={newPassword}
+                  onValueChange={setNewPassword}
+                  variant='bordered'
+                  classNames={FIELD_CLASS_NAMES}
+                />
+                <Input
+                  label='Confirm new password'
+                  labelPlacement='outside'
+                  placeholder='Repeat new password'
+                  type='password'
+                  autoComplete='new-password'
+                  value={confirmPassword}
+                  onValueChange={setConfirmPassword}
+                  variant='bordered'
+                  classNames={FIELD_CLASS_NAMES}
+                />
+              </div>
+              <Message message={passwordMsg} />
+              <div className='flex flex-wrap gap-2'>
                 <Button
-                  color='primary'
-                  size='sm'
-                  radius='md'
-                  className='h-8 px-4 text-[11.5px] font-bold'
+                  variant='bordered'
+                  className='h-10 border-default-300 font-medium'
                   isLoading={passwordLoading}
                   onPress={handleChangePassword}>
-                  Update Password
+                  Update password
                 </Button>
-                <Button
-                  variant='light'
-                  size='sm'
-                  radius='md'
-                  className='h-8 px-4 text-[11.5px] font-bold'
-                  onPress={() => setShowPasswordForm(false)}>
+                <Button variant='light' className='h-10 font-medium' onPress={() => setShowPasswordForm(false)}>
                   Cancel
                 </Button>
               </div>
             </div>
           )}
         </div>
-      </div>
+      </section>
+
+      {/* Session */}
+      <section className='border border-divider bg-content1'>
+        <PanelHeader title='Session' />
+        <div className='flex flex-col items-start justify-between gap-4 p-5 md:flex-row md:items-center'>
+          <p className='text-[14px] text-default-500'>Sign out of Qorstack Report on this device.</p>
+          <Button
+            color='danger'
+            variant='bordered'
+            className='h-10 shrink-0 font-medium'
+            startContent={<Icon icon='lucide:log-out' className='h-4 w-4' />}
+            onPress={() => logout()}>
+            Log out
+          </Button>
+        </div>
+      </section>
     </div>
   )
 }

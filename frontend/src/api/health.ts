@@ -12,7 +12,7 @@ export const checkServerHealth = async (): Promise<void> => {
     await api.instance.get('/health')
   } catch (axiosError) {
     try {
-      const baseURL = api.instance.defaults.baseURL || process.env.NEXT_PUBLIC_SERVICE || ''
+      const baseURL = api.instance.defaults.baseURL || '/api'
       const healthUrl = baseURL.endsWith('/') ? `${baseURL}health` : `${baseURL}/health`
 
       await fetch(healthUrl)

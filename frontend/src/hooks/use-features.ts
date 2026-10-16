@@ -31,12 +31,14 @@ export const useFeatures = (): UseFeaturesResult => {
         const fallback: FeatureFlags = {
           pdfPasswordProtection: false,
           pdfWatermark: false,
-          livePreview: false,
+          livePreview: true,
           downloadAsZip: false,
           projectMembers: false,
           maxTemplateVersions: 1,
           autoDetectVariables: true,
-          customTemplateKey: true
+          customTemplateKey: true,
+          asyncRender: false,
+          projectTransfer: false
         }
         cache = fallback
         setFeatures(fallback)

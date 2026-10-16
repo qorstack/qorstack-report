@@ -1,14 +1,14 @@
 # Qorstack Report
 
-> Self-hosted document API. Upload a Word/Excel template, POST JSON, get a PDF/DOCX/XLSX back. MIT core; optional Pro license for PDF password & watermark. Runs entirely on your infrastructure via Docker.
+> Self-hosted document API. Upload a Word/Excel template, POST JSON, get a PDF/DOCX/XLSX back. MIT core; optional Pro license for PDF password & watermark, async renders + webhooks, ZIP output, project export/import and 10 template versions. Runs entirely on your infrastructure via Docker.
 
 It is template-based document generation: stored templates + JSON merge (variables, tables, images, QR/barcode) + API-key auth + result storage + generation history. It uses Gotenberg internally for the DOCX→PDF step, but unlike raw Gotenberg it manages templates, auth, storage, and history — use Qorstack when you merge JSON into stored templates and keep records; use Gotenberg directly only for stateless one-off file→PDF conversion.
 
 ## Quickstart
 
-- Deploy: copy `selfhost/docker-compose.yml` + `.env.example`, then `cp .env.example .env && docker compose up -d`. Web UI at http://localhost:3000 (admin/admin), API at http://localhost:8080.
-- Smoke test: `bash selfhost/verify.sh` (or `make verify`).
-- Generate: `POST http://localhost:8080/render/word/template` with header `X-API-Key: <key>` and body `{ "templateKey": "...", "fileType": "pdf", "replace": { ... } }`. Returns `{ jobId, downloadUrl, status }`.
+- Deploy: copy `selfhost/docker-compose.yml` + `.env.example`, then `cp .env.example .env && docker compose up -d` (or `bash init.sh` instead of `cp` to generate random secrets — it prints the admin password). Web UI at http://localhost:8080 (admin/admin with the plain copy); the API is on the same port under /api (http://localhost:8080/api, reference at /api/docs). One image, `qorstack/report` (compose service `app`); it is the only container that publishes a port (`APP_PORT`, default 8080) — PostgreSQL, storage and Gotenberg stay on the Docker network. Port 8080 taken? Set `APP_PORT` and `PUBLIC_URL` in `.env`. Every variable is explained in `selfhost/.env.example`.
+- Smoke test: `bash verify.sh` in `selfhost/` (reads `APP_PORT` from `.env`; `APP_URL=...` overrides), or `make verify` from the repo root. Logs: `docker compose logs app`.
+- Generate: `POST http://localhost:8080/api/render/word/template` with header `X-API-Key: <key>` and body `{ "templateKey": "...", "fileType": "pdf", "replace": [ { "key": "customer_name", "value": "ACME Co." } ] }`. `replace`, `image`, `qrcode`, `barcode` are keyed arrays (each item has a `key`); a table lists its column names once and rows as value arrays: `"table": [{ "columns": ["item", "qty"], "rows": [["Widget", 2]] }]`. Optional `templateVersion` renders an older stored version. `POST /render/excel/template` returns .xlsx only. The v1 forms (object maps, `{ key, value }` cells, single-string sort/verticalMerge/collapse) return 400. Returns `{ jobId, downloadUrl, status }`. Pro: `"async": true` returns 202 `{ jobId, status: "pending", statusUrl }` — poll `GET /render/jobs/{jobId}` (fresh `downloadUrl` once `success`) or add `"webhookUrl"` (signed `X-Qorstack-Signature: sha256=…` when `WEBHOOK_SIGNING_SECRET` is set). Async jobs are stored in PostgreSQL: they survive restarts, work with several backend instances and retry temporary errors; more than `RENDER_MAX_PENDING_JOBS_PER_USER` (100) unfinished jobs → 429.
 
 ## Docs
 
@@ -23,4 +23,6 @@ It is template-based document generation: stored templates + JSON merge (variabl
 
 - Auth header is `X-API-Key`; `/render/*` returns 401 without a valid key.
 - Default admin user and `change-me-*` secrets are localhost-only — rotate before exposing.
-- Pin versions with `REPORT_API_TAG` / `REPORT_WEB_TAG` in `.env` (default `latest`).
+- Storage is one bucket, `STORAGE_BUCKET` (default `qorstack-report`), on any S3 server: bundled RustFS (default, starts with plain `docker compose up -d`), bundled MinIO (`COMPOSE_FILE=docker-compose.yml:docker-compose.minio.yml`) or external S3 (`COMPOSE_FILE=docker-compose.yml:docker-compose.external-s3.yml` + `STORAGE_*`). Folders `template/`, `generated-report/`, `fonts/`. v1 `MINIO_*` names still work. Download links are `{PUBLIC_URL}/api/files/{token}` served by the app, so storage needs no public address. Upgrading from v1 (`templates`/`reports`/`fonts` MinIO buckets): run `bash selfhost/migrate-storage.sh keep-minio` or `to-rustfs` once before starting v2. Render requests in v2 accept keyed arrays only (`[{ "key", "value" }]`).
+- Pin the version with `REPORT_TAG` in `.env` (default `latest`). Apply `.env` changes with `docker compose up -d` (`restart` does not re-read them).
+- Pro: move a project between deployments with `GET /projects/{id}/export` (ZIP: manifest + latest template versions, test data, images, fonts) and `POST /projects/{id}/import?dryRun=true|false` (multipart `file`): new keys are created, newer versions added, equal/older skipped. See backend/documents/12_PROJECT-TRANSFER.md.

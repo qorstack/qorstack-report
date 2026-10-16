@@ -67,3 +67,5 @@ tools/LicenseGenerator/license-*.json
 # Tools build artifacts
 tools/LicenseGenerator/bin/
 tools/LicenseGenerator/obj/
+
+.sage-local.json

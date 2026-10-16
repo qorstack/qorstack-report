@@ -17,6 +17,7 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
     private readonly IDocxProcessingService _docxService;
     private readonly IGotenbergService _gotenbergService;
     private readonly IPdfPostProcessingService _pdfPostProcessingService;
+    private readonly ISandboxAssetService _assetService;
     private readonly IUser _user;
     private readonly ILogger<ExportPdfCommandHandler> _logger;
     private readonly string _templateBucket;
@@ -29,6 +30,7 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
         IDocxProcessingService docxService,
         IGotenbergService gotenbergService,
         IPdfPostProcessingService pdfPostProcessingService,
+        ISandboxAssetService assetService,
         IUser user,
         ILogger<ExportPdfCommandHandler> logger,
         IConfiguration configuration)
@@ -38,17 +40,18 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
         _docxService = docxService;
         _gotenbergService = gotenbergService;
         _pdfPostProcessingService = pdfPostProcessingService;
+        _assetService = assetService;
         _user = user;
         _logger = logger;
-        _templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
-        _reportBucket = configuration["Minio:ReportBucket"] ?? "reports";
+        _templateBucket = StorageAreas.Templates;
+        _reportBucket = StorageAreas.Reports;
         _urlExpirySeconds = int.Parse(configuration["QorstackReport:TempFileExpiryMinutes"] ?? "60") * 60;
     }
 
     public async Task<RenderResult> Handle(ExportPdfCommand request, CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        var jobId = Guid.NewGuid();
+        var jobId = request.JobId ?? Guid.NewGuid();
 
         var hasExistingTransaction = _context.Database.CurrentTransaction != null;
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? tx = null;
@@ -68,15 +71,25 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
                 throw new KeyNotFoundException($"User {request.UserId} not found.");
 
             var template = await _context.Templates
-                .Include(t => t.TemplateVersions.Where(tv => tv.Status == "active"))
+                .Include(t => t.TemplateVersions.Where(tv => request.TemplateVersion == null ? tv.Status == "active" : tv.Version == request.TemplateVersion))
+                .Include(t => t.Project)
                 .FirstOrDefaultAsync(t => t.TemplateKey == request.TemplateKey && t.UserId == request.UserId, cancellationToken);
 
             if (template == null)
                 throw new KeyNotFoundException($"Template {request.TemplateKey} not found.");
 
-            var activeVersion = template.TemplateVersions.FirstOrDefault(tv => tv.Status == "active");
+            // "activeVersion" is the version being rendered: the requested one, or the current (active) one.
+            var activeVersion = request.TemplateVersion == null
+                ? template.TemplateVersions.FirstOrDefault(tv => tv.Status == "active")
+                : template.TemplateVersions.FirstOrDefault(tv => tv.Version == request.TemplateVersion);
             if (activeVersion == null)
+            {
+                if (request.TemplateVersion != null)
+                    throw new KeyNotFoundException($"Template '{request.TemplateKey}' has no version {request.TemplateVersion}.");
                 throw new InvalidOperationException("No active template version found");
+            }
+
+            bool logEnabled = template.Project?.LogEnabled ?? true;
 
 #nullable disable
             DocumentProcessingData dataToSerialize = request.Data ?? new DocumentProcessingData();
@@ -85,32 +98,53 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
                 : JsonSerializer.Serialize(SanitizeBase64ForLogging(dataToSerialize));
 #nullable restore
 
-            var reportJob = new ReportJob
-            {
-                Id = jobId,
-                UserId = request.UserId,
-                SourceType = "template",
-                TemplateVersionId = activeVersion.Id,
-                Status = ReportJobStatus.Processing.ToString().ToLowerInvariant(),
-                RequestData = serializedData,
-                CreatedBy = _user!.Id ?? "unknown",
-                CreatedDatetime = DateTime.UtcNow,
-                UpdatedBy = _user!.Id ?? "unknown",
-                UpdatedDatetime = DateTime.UtcNow
-            };
+            // Image URLs that point at our own MinIO (presigned, from the builder) → minio: paths, read from
+            // storage instead of over HTTP (the URL fetcher refuses internal hosts). Then allow only this
+            // template's own builder assets — never files of other templates, projects or tenants.
+            _assetService.ConvertPresignedUrlsToMinioPaths(request.Data ??= new DocumentProcessingData());
+            _assetService.EnsureOwnStoragePaths(request.Data, template.Id);
 
-            _context.ReportJobs.Add(reportJob);
-            await _context.SaveChangesAsync(cancellationToken);
+            ReportJob? reportJob = null;
+            if (request.JobId != null)
+            {
+                // Async render: the job row was created (pending) when the request was queued and is always kept.
+                reportJob = await _context.ReportJobs.FirstOrDefaultAsync(j => j.Id == jobId, cancellationToken)
+                    ?? throw new KeyNotFoundException($"Report job {jobId} not found.");
+                reportJob.Status = ReportJobStatus.Processing.ToString().ToLowerInvariant();
+                reportJob.TemplateVersionId = activeVersion.Id;
+                reportJob.RequestData = serializedData;
+                reportJob.StartedAt = DateTime.UtcNow;
+                reportJob.UpdatedDatetime = DateTime.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            else if (logEnabled)
+            {
+                reportJob = new ReportJob
+                {
+                    Id = jobId,
+                    UserId = request.UserId,
+                    SourceType = "template",
+                    TemplateVersionId = activeVersion.Id,
+                    Status = ReportJobStatus.Processing.ToString().ToLowerInvariant(),
+                    RequestData = serializedData,
+                    CreatedBy = _user!.Id ?? "unknown",
+                    CreatedDatetime = DateTime.UtcNow,
+                    UpdatedBy = _user!.Id ?? "unknown",
+                    UpdatedDatetime = DateTime.UtcNow
+                };
+                _context.ReportJobs.Add(reportJob);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
 
             using var templateStream = await _storageService.DownloadFileAsync(_templateBucket, activeVersion.FilePath);
 
+            var fileType = request.FileType.ToLowerInvariant();
             var docxStream = await _docxService.ProcessTemplateAsync(
-                templateStream, request.Data ?? new DocumentProcessingData(), cancellationToken);
+                templateStream, request.Data ?? new DocumentProcessingData(), optimizeForPdf: fileType != "docx", cancellationToken);
 
             byte[] outputBytes;
             string contentType;
             string fileExtension;
-            var fileType = request.FileType.ToLowerInvariant();
 
             if (fileType == "docx")
             {
@@ -143,18 +177,22 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
 
             stopwatch.Stop();
 
-            reportJob.Status = ReportJobStatus.Success.ToString().ToLowerInvariant();
-            reportJob.FinishedAt = DateTime.UtcNow;
-            reportJob.DurationMs = stopwatch.ElapsedMilliseconds;
-            reportJob.FileSizeBytes = outputBytes.Length;
-            await _context.SaveChangesAsync(cancellationToken);
-
-            _logger.LogInformation("Completed PDF export job {JobId} in {Duration}ms. Size: {Size} bytes",
-                jobId, stopwatch.ElapsedMilliseconds, reportJob.FileSizeBytes);
-
             var outputPath = request.IsSandbox
                 ? $"sandbox/{request.UserId}/{template.Id}/v{activeVersion.Version}{fileExtension}"
-                : $"temp-download/{request.UserId}/{jobId}{fileExtension}";
+                : $"report-logs/{request.UserId}/{jobId}{fileExtension}";
+
+            if (reportJob != null)
+            {
+                reportJob.Status = ReportJobStatus.Success.ToString().ToLowerInvariant();
+                reportJob.FinishedAt = DateTime.UtcNow;
+                reportJob.DurationMs = stopwatch.ElapsedMilliseconds;
+                reportJob.FileSizeBytes = outputBytes.Length;
+                reportJob.OutputFilePath = outputPath;
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            _logger.LogInformation("Completed PDF export job {JobId} in {Duration}ms. Size: {Size} bytes",
+                jobId, stopwatch.ElapsedMilliseconds, outputBytes.Length);
 
             using var outputStream = new MemoryStream(outputBytes);
             await _storageService.UploadFileAsync(_reportBucket, outputPath, outputStream, contentType);

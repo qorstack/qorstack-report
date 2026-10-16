@@ -109,9 +109,9 @@ export const DemoStepApi = ({ onComplete }: { onComplete?: () => void }) => {
                   <span className='h-2 w-2 rounded-full bg-amber-400/60' />
                   <span className='h-2 w-2 rounded-full bg-green-500/60' />
                 </div>
-                <span className='font-mono text-[9px] text-default-400'>~/qorstack — bash</span>
+                <span className='font-mono text-[9px] text-[#8C8882]'>~/qorstack — bash</span>
                 {sent && (
-                  <span className='ml-auto inline-flex items-center gap-1 rounded bg-success/15 px-1.5 py-0.5 font-label text-[8.5px] font-bold uppercase tracking-wider text-success'>
+                  <span className='ml-auto inline-flex items-center gap-1 rounded bg-[#3DDC84]/15 px-1.5 py-0.5 font-label text-[8.5px] font-bold uppercase tracking-wider text-[#3DDC84]'>
                     <Icon icon='lucide:check' className='h-2.5 w-2.5' />
                     200 OK · 0.82s
                   </span>
@@ -213,7 +213,7 @@ export const DemoStepApi = ({ onComplete }: { onComplete?: () => void }) => {
                   </div>
                   <p className='text-[9px] text-default-500'>142 KB · rendered in 0.82s</p>
                   <p className='mt-0.5 truncate font-mono text-[8.5px] text-default-400'>
-                    localhost:9000/reports/8af2.../invoice.pdf
+                    localhost:8080/api/files/eyJhIjoi...
                   </p>
                 </div>
                 <button className='inline-flex shrink-0 items-center gap-1 rounded bg-foreground px-2 py-1 font-label text-[9px] font-bold uppercase tracking-wider text-background'>

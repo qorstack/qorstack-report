@@ -22,6 +22,9 @@ CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 var builder = WebApplication.CreateBuilder(args);
 
+// Same flat variable names as the deploy .env (DB_HOST, STORAGE_ENDPOINT, JWT_KEY …); in Development the repo-root .env is read.
+QorstackReportService.Web.Infrastructure.FlatEnvConfiguration.AddFlatEnvironment(builder);
+
 // Add services to the container.
 //builder.Services.AddKeyVaultIfConfigured(builder.Configuration);
 
@@ -104,12 +107,14 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.UseStaticFiles();
+// Web UI (frontend static export in wwwroot) + API on one origin.
+app.UseWebUiStaticFiles();
 app.UseAntiforgery();
 
-app.MapOpenApi();
-app.MapScalarApiReference(options =>
+app.MapOpenApi("/api/openapi/{documentName}.json");
+app.MapScalarApiReference("/api/docs", options =>
 {
+    options.WithOpenApiRoutePattern("/api/openapi/{documentName}.json");
     options.AddApiKeyAuthentication("ApiKey", scheme =>
     {
         scheme.WithName("X-API-Key");
@@ -121,15 +126,11 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller}/{action=Index}/{id?}");
 
-app.MapFallbackToFile("index.html");
-
 app.UseExceptionHandler(options => { });
-
-app.Map("/", () => Results.Redirect("/scalar/v1"));
 
 app.MapEndpoints();
 
-app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+var healthOptions = new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
 {
     ResponseWriter = async (context, report) =>
     {
@@ -147,9 +148,13 @@ app.MapHealthChecks("/health", new Microsoft.AspNetCore.Diagnostics.HealthChecks
         };
         await System.Text.Json.JsonSerializer.SerializeAsync(context.Response.Body, response);
     }
-})
-.AllowAnonymous()
-.RequireCors("AllowDevelopmentOrigins");
+};
+app.MapHealthChecks("/api/health", healthOptions).AllowAnonymous().RequireCors("AllowDevelopmentOrigins");
+// Unprefixed alias for container health checks.
+app.MapHealthChecks("/health", healthOptions).AllowAnonymous();
+
+// Last: JSON 404 for unknown /api paths, then the web UI for everything else.
+app.MapWebUiFallback();
 
 app.Run();
 

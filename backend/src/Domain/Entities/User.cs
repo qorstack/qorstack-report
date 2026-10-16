@@ -34,6 +34,11 @@ public partial class User : BaseAuditableEntity
     /// </summary>
     public string? Status { get; set; }
 
+    /// <summary>
+    /// The single admin account synced from Admin__Email / Admin__Password on every startup.
+    /// </summary>
+    public bool IsSystemAdmin { get; set; }
+
     public virtual ICollection<AnalyticsDailyStat> AnalyticsDailyStats { get; set; } = new List<AnalyticsDailyStat>();
 
     public virtual ICollection<AnalyticsHourlyStat> AnalyticsHourlyStats { get; set; } = new List<AnalyticsHourlyStat>();

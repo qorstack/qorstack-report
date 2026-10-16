@@ -19,7 +19,7 @@ namespace QorstackReportService.Web.Endpoints;
 /// </summary>
 public class Users : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         // Note: In production, these endpoints should be protected by admin authentication
         // For now, they are open for initial setup purposes

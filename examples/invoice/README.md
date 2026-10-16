@@ -14,11 +14,11 @@ The smallest end-to-end demo of Qorstack Report: a Word template with
 ## The idea
 
 ```
-invoice.docx                 data.json                         invoice.pdf
-─────────────                ──────────                        ───────────
-Invoice No: {{invoice_no}}   { "invoice_no": "INV-2026-001",   Invoice No: INV-2026-001
-Bill To: {{customer_name}}     "customer_name": "ACME Co.",  →  Bill To: ACME Co., Ltd.
-Amount Due: {{amount}}          "amount": "45,000 THB" }         Amount Due: 45,000 THB
+invoice.docx                 data.json ("replace")                                invoice.pdf
+─────────────                ─────────────────────                                ───────────
+Invoice No: {{invoice_no}}   { "key": "invoice_no", "value": "INV-2026-001" }      Invoice No: INV-2026-001
+Bill To: {{customer_name}}   { "key": "customer_name", "value": "ACME Co., Ltd." } →  Bill To: ACME Co., Ltd.
+Amount Due: {{amount}}       { "key": "amount", "value": "45,000 THB" }            Amount Due: 45,000 THB
 ```
 
 You design the document once in Word; your app just sends JSON.
@@ -39,19 +39,19 @@ You'll get `invoice.pdf` in this folder, with the placeholders filled in.
 ### Or render with a raw `curl`
 
 ```bash
-curl -X POST http://localhost:8080/render/word/template \
+curl -X POST http://localhost:8080/api/render/word/template \
   -H "X-API-Key: <your-key>" \
   -H "Content-Type: application/json" \
   -d '{
     "templateKey": "<template-key>",
     "fileType": "pdf",
-    "replace": {
-      "invoice_no": "INV-2026-001",
-      "date": "2026-06-05",
-      "customer_name": "ACME Co., Ltd.",
-      "description": "Website development — June 2026",
-      "amount": "45,000 THB"
-    }
+    "replace": [
+      { "key": "invoice_no", "value": "INV-2026-001" },
+      { "key": "date", "value": "2026-06-05" },
+      { "key": "customer_name", "value": "ACME Co., Ltd." },
+      { "key": "description", "value": "Website development — June 2026" },
+      { "key": "amount", "value": "45,000 THB" }
+    ]
   }'
 # → { "jobId": "...", "downloadUrl": "...", "status": "completed" }
 ```

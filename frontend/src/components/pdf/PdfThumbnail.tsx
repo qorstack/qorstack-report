@@ -6,7 +6,7 @@ import PdfPreviewDrawer from '@/components/pdf/PdfPreviewDrawer'
 
 // Use local worker file from public folder
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 }
 
 interface PdfThumbnailProps {
@@ -31,7 +31,7 @@ export const PdfThumbnail = ({ url, templateKey, templateType, templateName }: P
 
     // Ensure worker is set
     if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
     }
 
     // Increment render ID to cancel any previous render
@@ -70,8 +70,10 @@ export const PdfThumbnail = ({ url, templateKey, templateType, templateName }: P
         // Load PDF document with caching disabled to avoid CORS issues
         loadingTask = pdfjsLib.getDocument({
           url: url,
-          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+          cMapUrl: '/pdfjs/cmaps/',
           cMapPacked: true,
+          standardFontDataUrl: '/pdfjs/standard_fonts/',
+          isEvalSupported: false,
           disableAutoFetch: false,
           disableStream: false
         })
@@ -195,14 +197,14 @@ export const PdfThumbnail = ({ url, templateKey, templateType, templateName }: P
         {/* Loading state */}
         {isLoading && (
           <div className='absolute inset-0 z-10 flex items-center justify-center bg-content2'>
-            <Spinner size='sm' color='primary' />
+            <Spinner size='sm' color='default' />
           </div>
         )}
 
         {/* Error state */}
         {error && (
           <div className='absolute inset-0 flex items-center justify-center bg-content2'>
-            <span className='text-[8px] text-danger'>{error}</span>
+            <span className='text-[11px] text-danger'>{error}</span>
           </div>
         )}
 
@@ -215,7 +217,7 @@ export const PdfThumbnail = ({ url, templateKey, templateType, templateName }: P
         {/* Expand Button */}
         <div className='absolute inset-0 z-10 flex items-center justify-center bg-black/0 transition-colors duration-200 group-hover:bg-black/10'>
           <div className='opacity-0 transition-opacity duration-200 group-hover:opacity-100'>
-            <Icon icon='lucide:maximize-2' className='h-4 w-4 text-white drop-shadow-md' />
+            <Icon icon='lucide:maximize-2' className='h-4 w-4 text-foreground drop-shadow-md' />
           </div>
         </div>
       </div>

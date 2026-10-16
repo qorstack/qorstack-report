@@ -1,40 +1,47 @@
 'use client'
 
 import React from 'react'
-import { Button, Card, CardBody } from '@heroui/react'
+import { Button } from '@heroui/react'
 import { useRouter } from 'next/navigation'
 import Icon from '@/components/icon'
+import { Logo } from '@/components/brand/Logo'
 
 export default function SessionExpiredPage() {
   const router = useRouter()
 
   const handleLogin = () => {
-    router.push('/')
+    router.push('/login')
   }
 
   return (
-    <div className='flex min-h-screen flex-col items-center justify-center bg-content2 p-4'>
-      <Card className='w-full max-w-md overflow-visible rounded-xl border-none shadow-xl'>
-        <div className='absolute -top-10 left-1/2 flex h-20 w-20 -translate-x-1/2 items-center justify-center rounded-full bg-content1 p-2 shadow-lg'>
-          <div className='flex h-full w-full items-center justify-center rounded-full bg-warning-50 text-warning'>
-            <Icon icon='lucide:clock' className='h-8 w-8' />
-          </div>
+    <main className='flex min-h-screen flex-col items-center justify-center bg-background px-4 py-10'>
+      <div className='mb-10'>
+        <Logo />
+      </div>
+
+      <div className='crop w-full max-w-md border border-divider bg-content1 p-8 text-center'>
+        <span className='crop-cm' />
+        <div className='mx-auto mb-6 flex h-12 w-12 items-center justify-center border border-warning text-warning'>
+          <Icon icon='lucide:clock' aria-hidden='true' className='h-6 w-6' />
         </div>
-        <CardBody className='flex flex-col items-center gap-6 p-8 pt-12 text-center'>
-          <div className='space-y-2'>
-            <h1 className='text-2xl font-bold text-foreground'>Session Expired</h1>
-            <p className='text-default-500'>
-              Your security is important to us. For your protection, we have expired your session due to inactivity.
-            </p>
-          </div>
+        <p className='press-label mb-3'>Signed out</p>
+        <h1 className='press-display text-[clamp(2rem,1.6rem+1.6vw,2.5rem)] text-foreground'>
+          Session <span className='text-primary'>expired</span>
+        </h1>
+        <p className='mx-auto mt-4 max-w-sm text-[15px] leading-relaxed text-default-500'>
+          You were signed out after a period of inactivity. Sign in again to continue. Changes that were not saved
+          before this happened may need to be entered again.
+        </p>
 
-          <Button onPress={handleLogin} color='primary' className='w-full font-medium' size='lg'>
-            Log In Again
-          </Button>
+        <Button
+          onPress={handleLogin}
+          color='primary'
+          size='lg'
+          className='mt-8 w-full font-bold uppercase tracking-[0.04em]'>
+          Sign in again
+        </Button>
 
-          <p className='text-xs text-default-400'>You will be redirected to the login page.</p>
-        </CardBody>
-      </Card>
-    </div>
+      </div>
+    </main>
   )
 }

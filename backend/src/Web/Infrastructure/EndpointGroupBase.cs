@@ -2,5 +2,6 @@ namespace QorstackReportService.Web.Infrastructure;
 
 public abstract class EndpointGroupBase
 {
-    public abstract void Map(WebApplication app);
+    /// <summary>Maps the group's endpoints. <paramref name="app"/> is the <c>/api</c> route group.</summary>
+    public abstract void Map(IEndpointRouteBuilder app);
 }

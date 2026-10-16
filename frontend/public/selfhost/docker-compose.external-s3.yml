@@ -1,0 +1,7 @@
+# Override: no bundled storage server — use an external S3 (AWS S3, Cloudflare R2, your own MinIO/RustFS).
+# Enable it in .env:   COMPOSE_FILE=docker-compose.yml:docker-compose.external-s3.yml
+# then point STORAGE_ENDPOINT / STORAGE_USE_SSL / STORAGE_REGION / STORAGE_ACCESS_KEY /
+# STORAGE_SECRET_KEY / STORAGE_BUCKET at it. The bucket is created on first start if the keys allow it.
+services:
+  rustfs:
+    profiles: ["disabled"]

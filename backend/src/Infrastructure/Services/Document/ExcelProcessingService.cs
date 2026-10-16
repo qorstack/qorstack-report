@@ -1607,8 +1607,7 @@ public class ExcelProcessingService : IExcelProcessingService
             }
             else if (src.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             {
-                var client = _httpClientFactory.CreateClient();
-                return await client.GetByteArrayAsync(src, cancellationToken);
+                return await RemoteImageFetcher.DownloadAsync(_httpClientFactory, src, cancellationToken);
             }
             else
             {

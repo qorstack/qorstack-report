@@ -18,6 +18,8 @@ export interface TocItem {
   id: string
   label: string
   indent?: boolean
+  /** Sub-items: the id of the section they belong to (shown while that section is active). */
+  section?: string
 }
 
 interface DocLayoutProps {
@@ -41,37 +43,39 @@ const DocLayout = ({ sidebarGroups, tocItems, activeSection, onNavigate, childre
         {/* Left Sidebar */}
         <aside
           className={`${
-            mobileMenuOpen ? 'absolute inset-x-0 top-12 z-40 block bg-background shadow-xl' : 'hidden'
-          } w-full shrink-0 overflow-y-auto border-r border-default-200 md:sticky md:top-12 md:block md:h-[calc(100vh-3rem)] md:w-60 lg:w-64`}>
-          <nav className='space-y-5 p-4 pb-12 pt-5'>
+            mobileMenuOpen ? 'absolute inset-x-0 top-[68px] z-40 block bg-content1' : 'hidden'
+          } w-full shrink-0 overflow-y-auto border-r border-divider bg-background md:sticky md:top-[68px] md:block md:h-[calc(100vh-68px)] md:w-60 lg:w-64`}>
+          <nav aria-label='Documentation' className='space-y-6 pb-12 pt-6'>
             {sidebarGroups.map(group => (
               <div key={group.title}>
-                <h3 className='mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-default-400'>
-                  {group.icon && <Icon icon={group.icon} className='text-xs' />}
+                <h3 className='mb-2 flex items-center gap-1.5 px-4 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-default-500'>
+                  {group.icon && <Icon icon={group.icon} className='h-3.5 w-3.5' />}
                   {group.title}
                 </h3>
-                <ul className='space-y-0.5'>
+                <ul>
                   {group.items.map(item => (
                     <li key={item.id}>
                       <button
+                        type='button'
+                        aria-current={activeSection === item.id ? 'true' : undefined}
                         onClick={() => {
                           onNavigate(item.id)
                           setMobileMenuOpen(false)
                         }}
-                        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-[13px] font-medium transition-colors ${
+                        className={`relative flex w-full items-center gap-2 py-1.5 pl-4 pr-3 text-left text-[14px] font-medium transition-colors before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary before:transition-opacity ${
                           activeSection === item.id
-                            ? 'bg-primary/5 text-primary'
-                            : 'text-default-600 hover:bg-content2 hover:text-foreground'
+                            ? 'bg-content2 text-foreground before:opacity-100'
+                            : 'text-default-500 before:opacity-0 hover:bg-content1 hover:text-foreground'
                         }`}>
                         {item.icon && (
                           <Icon
                             icon={item.icon}
-                            className={`shrink-0 text-sm ${activeSection === item.id ? 'text-primary' : 'text-default-400'}`}
+                            className={`h-4 w-4 shrink-0 ${activeSection === item.id ? 'text-primary' : 'text-default-500'}`}
                           />
                         )}
                         <span className='flex-1'>{item.label}</span>
                         {item.badge && (
-                          <span className='rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-primary'>
+                          <span className='border border-primary px-1.5 py-0.5 font-mono text-[11px] font-bold uppercase leading-none tracking-[0.1em] text-primary'>
                             {item.badge}
                           </span>
                         )}
@@ -85,36 +89,40 @@ const DocLayout = ({ sidebarGroups, tocItems, activeSection, onNavigate, childre
         </aside>
 
         {/* Main Content */}
-        <main className='min-w-0 flex-1 px-4 py-8 sm:px-8 lg:px-12 xl:px-16'>
-          {children}
+        <main className='min-w-0 flex-1 px-4 py-10 sm:px-8 lg:px-12 xl:px-16'>
+          <div className='mx-auto max-w-[52rem]'>{children}</div>
         </main>
 
-        {/* Right TOC Sidebar */}
+        {/* Right TOC Sidebar — only the current section's sub-headings (the left menu already lists sections) */}
         <aside className='hidden w-56 shrink-0 xl:block'>
-          <div className='sticky top-12 h-[calc(100vh-3rem)] overflow-y-auto py-8 pl-6'>
-            <div className='border-l border-default-200'>
-              <h4 className='mb-3 pl-4 text-[11px] font-bold uppercase tracking-wider text-default-400'>On this page</h4>
+          <div className='sticky top-[68px] h-[calc(100vh-68px)] overflow-y-auto py-8 pl-6'>
+            <nav aria-label='On this page' className='border-l border-divider'>
+              <h4 className='mb-3 pl-4 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-default-500'>
+                On this page
+              </h4>
               <ul className='space-y-0.5'>
-                {tocItems.map((item) => (
+                {tocItems.filter(item => (item.section ?? item.id) === activeSection).map(item => (
                   <li key={`${item.id}-${item.label}`} className='relative'>
                     {activeSection === item.id && (
-                      <div className='absolute -left-[1px] top-0 h-full w-0.5 rounded-full bg-primary' />
+                      <div aria-hidden='true' className='absolute -left-[1px] top-0 h-full w-0.5 bg-primary' />
                     )}
                     <button
+                      type='button'
+                      aria-current={activeSection === item.id ? 'true' : undefined}
                       onClick={() => onNavigate(item.id)}
                       className={`block w-full py-1 text-left text-[13px] transition-colors ${
                         item.indent ? 'pl-7' : 'pl-4'
                       } ${
                         activeSection === item.id
-                          ? 'font-semibold text-primary'
-                          : 'text-default-400 hover:text-foreground'
+                          ? 'font-semibold text-foreground'
+                          : 'text-default-500 hover:text-foreground'
                       }`}>
                       {item.label}
                     </button>
                   </li>
                 ))}
               </ul>
-            </div>
+            </nav>
           </div>
         </aside>
       </div>

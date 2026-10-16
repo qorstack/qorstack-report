@@ -27,7 +27,15 @@ export interface ApiKeyDto {
   updatedDatetime?: any
 }
 
+/** Marker name with a text value (replace / generateTotals / numberFormat) */
+export interface KeyValueRequest {
+  key?: string
+  value?: string
+}
+/** One table cell value: string, number, boolean or null */
+export type TableCellValue = null | string | number | boolean
 export interface BarcodeDataRequest {
+  key?: string
   text?: string
   format?: string
   /**
@@ -245,34 +253,44 @@ export interface ExampleProductDto {
 }
 
 export interface ExcelFromTemplateRequest {
+  /** Pro: queue the render and return 202 with a job id. Poll GET /render/jobs/{jobId} or set webhookUrl. */
+  async?: boolean
+  /** With async: true, receives a POST when the job finishes. */
+  webhookUrl?: string | null
   templateKey?: string
+  /**
+   * Render this stored version of the template. Omit for the current version.
+   * @format int32
+   * @min 1
+   */
+  templateVersion?: null | number
   fileName?: null | string
-  fileType?: string
-  table?: null | any[]
-  replace?: null | object
-  image?: null | object
-  qrcode?: null | object
-  barcode?: null | object
-  pdfPassword?: null | PdfPasswordRequest
-  watermark?: null | PdfWatermarkRequest
+  table?: null | ExcelTableDataRequest[]
+  replace?: null | KeyValueRequest[]
+  image?: null | ImageDataRequest[]
+  qrcode?: null | QrCodeDataRequest[]
+  barcode?: null | BarcodeDataRequest[]
   zipOutput?: boolean
 }
 
 export interface ExcelTableDataRequest {
+  /** Column marker names ({{row:name}}), listed once, in the order of the row values. Unique. */
+  columns: string[]
+  /** Rows; each row is an array of cell values in the order of columns, e.g. [["A", 2]] */
+  rows: TableCellValue[][]
   autoFilter?: boolean
   freezeHeader?: boolean
   autoFitColumns?: boolean
   asExcelTable?: boolean
   excelTableStyle?: null | string
   outline?: boolean
-  generateTotals?: null | object
-  numberFormat?: null | object
+  generateTotals?: null | KeyValueRequest[]
+  numberFormat?: null | KeyValueRequest[]
   conditionalFormat?: null | any[]
   splitToSheets?: null | SplitToSheetsConfigRequest
-  rows?: object[]
-  sort?: null | any[]
-  verticalMerge?: null | any[]
-  collapse?: null | any[]
+  sort?: null | SortDefinition[]
+  verticalMerge?: null | string[]
+  collapse?: null | string[]
 }
 
 export interface ExportExcelUrlResponse {
@@ -309,6 +327,14 @@ export interface ExportPdfUrlResponse {
   isZipped?: boolean
 }
 
+export interface ExportPdfAsyncResponse {
+  /** @format uuid */
+  jobId: string
+  /** pending → processing → success | failed */
+  status: string
+  statusUrl?: string | null
+}
+
 export interface FeatureFlagsResponse {
   pdfPasswordProtection: boolean
   pdfWatermark: boolean
@@ -322,6 +348,7 @@ export interface FeatureFlagsResponse {
   customTemplateKey: boolean
   downloadAsZip: boolean
   autoDetectVariables: boolean
+  asyncRender: boolean
 }
 
 export interface FontDetailDto {
@@ -350,6 +377,48 @@ export interface FontDetailDto {
   ownershipId?: null | string
   licenseNote?: null | string
   downloadUrl?: null | string
+}
+
+export interface FontStatusDto {
+  /** @format uuid */
+  id: string
+  family: string
+  /** @format int32 */
+  weight: number
+  /** "normal" or "italic". */
+  style: string
+  /** "ready" | "syncing" | "error". */
+  status: 'ready' | 'syncing' | 'error'
+  message?: string | null
+}
+
+/** Import plan (dryRun=true) or result of POST /projects/{id}/import. */
+export interface ProjectImportResult {
+  dryRun: boolean
+  applied: boolean
+  sourceProject?: string | null
+  /** @format date-time */
+  exportedAt?: string | null
+  templates: ImportTemplateItem[]
+  fonts: ImportFontItem[]
+  warnings: string[]
+}
+
+export interface ImportTemplateItem {
+  key: string
+  name: string
+  action: 'create' | 'update' | 'skip'
+  /** @format int32 */
+  fromVersion?: number | null
+  /** @format int32 */
+  toVersion: number
+  reason?: string | null
+}
+
+export interface ImportFontItem {
+  name: string
+  action: 'create' | 'update' | 'skip'
+  reason?: string | null
 }
 
 export interface FontSummaryDto {
@@ -438,6 +507,7 @@ export interface HourlyUsageDto {
 export type IFormFile = File
 
 export interface ImageDataRequest {
+  key?: string
   src?: string
   /**
    * @format int32
@@ -449,7 +519,8 @@ export interface ImageDataRequest {
    * @pattern ^-?(?:0|[1-9]\d*)$
    */
   height?: null | number | string
-  fit?: null | string
+  /** How the image fills its box: cover, contain (default) or fill */
+  fit?: null | 'cover' | 'contain' | 'fill'
 }
 
 export type JsonDocument = any
@@ -588,14 +659,25 @@ export interface PaginatedListOfUserDto {
 }
 
 export interface PdfFromTemplateRequest {
+  /** Pro: queue the render and return 202 with a job id. Poll GET /render/jobs/{jobId} or set webhookUrl. */
+  async?: boolean
+  /** With async: true, receives a POST when the job finishes. */
+  webhookUrl?: string | null
   templateKey?: string
+  /**
+   * Render this stored version of the template. Omit for the current version.
+   * @format int32
+   * @min 1
+   */
+  templateVersion?: null | number
   fileName?: null | string
-  fileType?: string
-  table?: null | any[]
-  replace?: null | object
-  image?: null | object
-  qrcode?: null | object
-  barcode?: null | object
+  /** Output format: pdf (default) or docx */
+  fileType?: 'pdf' | 'docx'
+  table?: null | WordTableDataRequest[]
+  replace?: null | KeyValueRequest[]
+  image?: null | ImageDataRequest[]
+  qrcode?: null | QrCodeDataRequest[]
+  barcode?: null | BarcodeDataRequest[]
   pdfPassword?: null | PdfPasswordRequest
   watermark?: null | PdfWatermarkRequest
   zipOutput?: boolean
@@ -658,6 +740,7 @@ export interface ProfileDto {
   firstName: null | string
   lastName: null | string
   profileImageUrl: null | string
+  isSystemAdmin: boolean
 }
 
 export interface ProjectApiKeyDto {
@@ -675,6 +758,7 @@ export interface ProjectDto {
 }
 
 export interface QrCodeDataRequest {
+  key?: string
   text?: string
   /**
    * @format int32
@@ -744,7 +828,7 @@ export interface ResetUserPasswordRequest {
 
 export interface SortDefinition {
   field?: string
-  direction?: string
+  direction?: 'asc' | 'desc'
 }
 
 export interface SplitToSheetsConfigRequest {
@@ -974,11 +1058,14 @@ export interface WeeklyUsageDto {
 }
 
 export interface WordTableDataRequest {
+  /** Column marker names ({{row:name}}), listed once, in the order of the row values. Unique. */
+  columns: string[]
+  /** Rows; each row is an array of cell values in the order of columns, e.g. [["A", 2]] */
+  rows: TableCellValue[][]
   repeatHeader?: boolean
-  rows?: object[]
-  sort?: null | any[]
-  verticalMerge?: null | any[]
-  collapse?: null | any[]
+  sort?: null | SortDefinition[]
+  verticalMerge?: null | string[]
+  collapse?: null | string[]
 }
 
 import type { AxiosInstance, AxiosRequestConfig, HeadersDefaults, ResponseType } from 'axios'
@@ -1775,6 +1862,24 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
       }),
 
     /**
+     * @description For each uploaded font: "ready" (the renderer can use it), "syncing" (stored, still being copied to the renderer) or "error" (missing from storage).
+     *
+     * @tags Fonts
+     * @name FontsStatusList
+     * @summary Sync status of uploaded fonts
+     * @request GET:/fonts/status
+     * @secure
+     */
+    fontsStatusList: (params: RequestParams = {}) =>
+      this.request<FontStatusDto[], ProblemDetails>({
+        path: `/fonts/status`,
+        method: 'GET',
+        secure: true,
+        format: 'json',
+        ...params
+      }),
+
+    /**
      * No description
      *
      * @tags Fonts
@@ -1912,6 +2017,45 @@ export class Api<SecurityDataType extends unknown> extends HttpClient<SecurityDa
         body: data,
         secure: true,
         type: ContentType.Json,
+        format: 'json',
+        ...params
+      }),
+
+    /**
+     * @description Latest active version of every template, its saved test data and builder images, and uploaded fonts.
+     *
+     * @tags Projects
+     * @name ExportList
+     * @summary Export the project as a ZIP (Pro)
+     * @request GET:/projects/{id}/export
+     * @secure
+     */
+    exportList: (id: string, params: RequestParams = {}) =>
+      this.request<Blob, ProblemDetails>({
+        path: `/projects/${id}/export`,
+        method: 'GET',
+        secure: true,
+        format: 'blob',
+        ...params
+      }),
+
+    /**
+     * @description dryRun=true returns the plan without changing anything.
+     *
+     * @tags Projects
+     * @name ImportCreate
+     * @summary Import a project ZIP (Pro)
+     * @request POST:/projects/{id}/import
+     * @secure
+     */
+    importCreate: (id: string, data: { file: File }, query?: { dryRun?: boolean }, params: RequestParams = {}) =>
+      this.request<ProjectImportResult, ProblemDetails>({
+        path: `/projects/${id}/import`,
+        method: 'POST',
+        query: query,
+        body: data,
+        secure: true,
+        type: ContentType.FormData,
         format: 'json',
         ...params
       })

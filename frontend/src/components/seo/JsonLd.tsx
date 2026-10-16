@@ -9,7 +9,7 @@ export function OrganizationJsonLd() {
     url: BRAND_URL,
     logo: `${BRAND_URL}/icons/logo.png`,
     description:
-      'Stop wasting days coding PDFs. Design, test, and generate beautiful reports in seconds with Qorstack Report.',
+      'Open-core document API: design reports in Word or Excel, send JSON, get a PDF, DOCX or XLSX back.',
     sameAs: [`https://twitter.com/${BRAND_TWITTER}`]
   }
 
@@ -28,10 +28,10 @@ export function WebApplicationJsonLd() {
       '@type': 'Offer',
       price: '0',
       priceCurrency: 'USD',
-      description: 'Free tier available'
+      description: 'Free, open-source core'
     },
     description:
-      'The Developer-First PDF Reporting Engine. Design, test, and generate beautiful reports in seconds.'
+      'Turn Word and Excel templates into PDF, DOCX and XLSX with one API call. Self-hosted, MIT core.'
   }
 
   return <script type='application/ld+json' dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />

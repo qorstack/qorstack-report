@@ -24,6 +24,8 @@ public static class WebApplicationExtensions
             .WithTags(groupName);
     }
 
+    public const string ApiPrefix = "/api";
+
     public static WebApplication MapEndpoints(this WebApplication app)
     {
         var endpointGroupType = typeof(EndpointGroupBase);
@@ -33,11 +35,13 @@ public static class WebApplicationExtensions
         var endpointGroupTypes = assembly.GetExportedTypes()
             .Where(t => t.IsSubclassOf(endpointGroupType));
 
+        // Every API endpoint lives under /api; the web UI owns every other path.
+        var api = app.MapGroup(ApiPrefix);
         foreach (var type in endpointGroupTypes)
         {
             if (Activator.CreateInstance(type) is EndpointGroupBase instance)
             {
-                instance.Map(app);
+                instance.Map(api);
             }
         }
 

@@ -9,6 +9,8 @@ export type FeatureFlags = {
   maxTemplateVersions: number
   autoDetectVariables: boolean
   customTemplateKey: boolean
+  asyncRender?: boolean
+  projectTransfer?: boolean
 }
 
 export const fetchFeatureFlags = async (): Promise<FeatureFlags> => {

@@ -47,7 +47,7 @@ public class UploadTemplateCommandHandler : IRequestHandler<UploadTemplateComman
         _featureFlags = featureFlags;
         _user = user;
         _logger = logger;
-        _templateBucket = configuration["Minio:TemplateBucket"] ?? "templates";
+        _templateBucket = StorageAreas.Templates;
         _gotenbergService = gotenbergService;
         _keyGenerator = keyGenerator;
     }
@@ -182,7 +182,7 @@ public class UploadTemplateCommandHandler : IRequestHandler<UploadTemplateComman
                 // Only sync when markers were actually found; if empty, start with null payload.
                 finalSandboxPayload = markers.Count > 0
                     ? PayloadHelper.SyncPayloadWithMarkers(request.SandboxPayload, markers, true)
-                    : request.SandboxPayload;
+                    : KeyedPayloadNormalizer.Normalize(request.SandboxPayload);
 
                 var template = new Template
                 {

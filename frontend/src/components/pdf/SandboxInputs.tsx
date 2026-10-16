@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import {
-  Button,
   Input,
   Checkbox,
   Select,
@@ -19,35 +18,29 @@ import {
 import Icon from '@/components/icon'
 import { BrandChip } from '@/components/ui/BrandChip'
 import {
+  AddButton,
+  MonoLabel,
+  detailPanel,
+  fieldClasses,
+  rowFieldClasses,
+  rowIconButton,
+  rowRemoveButton,
+  rowSelectClasses,
+  selectClasses,
+  settingsCard
+} from '@/components/template-editor/field-styles'
+import type { BuilderSortDefinition as SortDefinition } from '@/types/pdf-sandbox'
+import { ReadOnlyFieldName } from '@/components/template-editor/editor-mode'
+import {
   ImageDataRequest,
   QrCodeDataRequest,
   BarcodeDataRequest,
-  SortDefinition,
   PdfWatermarkRequest,
   PdfPasswordRequest,
   FontSummaryDto
 } from '@/api/generated/main-service/apiGenerated'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  rectSortingStrategy,
-  horizontalListSortingStrategy,
-  useSortable
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { classNames } from '@react-pdf-viewer/core'
 
-// --- Types for UI State (Array-based for DnD) ---
+// --- Types for UI State ---
 export interface ReplaceItem {
   id: string
   key: string // Display key (e.g. {{name}})
@@ -154,76 +147,29 @@ const handleNumChange = (val: string, setter: (n: number) => void) => {
   }
 }
 
-// --- Sortable Item Context & Components ---
-export const SortableItemContext = React.createContext<{
-  attributes: any
-  listeners: any
-  isDragging: boolean
-} | null>(null)
-
-const DragHandle = ({ className }: { className?: string }) => {
-  const context = React.useContext(SortableItemContext)
-  if (!context) return null
-  const { attributes, listeners } = context
-  return (
-    <div
-      {...attributes}
-      {...listeners}
-      className={cn('cursor-grab text-default-400 hover:text-default-600 active:cursor-grabbing', className)}>
-      <Icon icon='lucide:grip-vertical' className='h-4 w-4' />
-    </div>
-  )
-}
-
-// --- Sortable Item Wrapper ---
-interface SortableItemProps {
+// --- Field rows (read-only structure: fields come from the template file) ---
+interface FieldRowProps {
   id: string
   children: React.ReactNode
   className?: string
 }
 
-const SortableItem = ({ id, children, className }: SortableItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+/** Row wrapper with a stable DOM id so validation errors can scroll to it. */
+const FieldRow = ({ id, children, className }: FieldRowProps) => (
+  <div id={`row-${id}`} className={className}>
+    {children}
+  </div>
+)
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 999 : 'auto',
-    position: 'relative' as const,
-    touchAction: 'none'
+const focusField = (...ids: string[]) => {
+  for (const id of ids) {
+    const el = document.getElementById(id)
+    if (el instanceof HTMLElement) {
+      el.focus()
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
   }
-
-  return (
-    <div ref={setNodeRef} style={style} className={cn(className, isDragging && 'ring-2 ring-primary ring-opacity-50')}>
-      <SortableItemContext.Provider value={{ attributes, listeners, isDragging }}>
-        {children}
-      </SortableItemContext.Provider>
-    </div>
-  )
-}
-
-// --- Horizontal Sortable Item (Table Headers) ---
-const SortableHeaderItem = ({ id, children, className }: SortableItemProps) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1
-  }
-  return (
-    <th ref={setNodeRef} style={style} className={cn(className, 'group relative min-w-[120px]')}>
-      <div className='flex items-center justify-between gap-1'>
-        <div
-          {...attributes}
-          {...listeners}
-          className='cursor-grab text-default-400 hover:text-default-600 active:cursor-grabbing'>
-          <Icon icon='lucide:grip-vertical' className='h-3 w-3' />
-        </div>
-        {children}
-      </div>
-    </th>
-  )
 }
 
 // --- Replaces Section ---
@@ -232,218 +178,173 @@ interface ReplacementsSectionProps {
   onChange: (items: ReplaceItem[]) => void
   errors?: Record<string, string>
   onClearError?: (id: string) => void
+  /** "Word" or "Excel" — used in the empty state. */
+  fileLabel?: string
 }
 
-export const ReplacementsSection: React.FC<ReplacementsSectionProps> = ({ items, onChange, errors, onClearError }) => {
+export const ReplacementsSection: React.FC<ReplacementsSectionProps> = ({
+  items,
+  onChange,
+  errors,
+  onClearError,
+  fileLabel = 'Word'
+}) => {
   const [showEmptyOnly, setShowEmptyOnly] = useState(false)
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
 
   const jumpToNextEmpty = () => {
     const nextEmpty = items.find(i => !i.value || i.value === 'null')
-    if (nextEmpty) {
-      const el = document.getElementById(`input-${nextEmpty.id}`)
-      if (el instanceof HTMLElement) {
-        el.focus()
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
-    }
+    if (nextEmpty) focusField(`value-${nextEmpty.id}`)
   }
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id)
-      const newIndex = items.findIndex(i => i.id === over.id)
-      onChange(arrayMove(items, oldIndex, newIndex))
-    }
+  const updateValue = (id: string, value: string) => {
+    onChange(items.map(item => (item.id === id ? { ...item, value } : item)))
   }
 
-  const updateItem = (id: string, field: 'key' | 'value', val: string) => {
-    onChange(items.map(item => (item.id === id ? { ...item, [field]: val } : item)))
+  if (items.length === 0) {
+    return (
+      <StepsEmptyState
+        icon='lucide:type'
+        title='No text fields in this file'
+        marker='{{customer}}'
+        what='text field'
+        fileLabel={fileLabel}
+      />
+    )
   }
+
+  const emptyCount = items.filter(i => !i.value || i.value === 'null').length
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
-        {items.length > 0 ? (
-          <>
-            {/* Summary — total · interactive filter/jump */}
-            {(() => {
-              const emptyCount = items.filter(i => !i.value || i.value === 'null').length
-              const filledCount = items.length - emptyCount
-              const pct = Math.round((filledCount / items.length) * 100)
-              return (
-                <div className='mb-2.5 flex items-center justify-between gap-2 px-1'>
-                  <div className='flex items-center gap-2 text-[11px] font-semibold'>
-                    <span className='text-default-600'>
-                      {filledCount}/{items.length} filled
-                    </span>
-                    <span className='text-default-400/40'>·</span>
-                    {emptyCount > 0 ? (
-                      <button
-                        type='button'
-                        onClick={() => setShowEmptyOnly(v => !v)}
-                        className={cn(
-                          'flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-200',
-                          showEmptyOnly
-                            ? 'builder-attention-chip'
-                            : 'builder-attention-text hover:bg-[var(--builder-attention-chip-bg)]'
-                        )}
-                        title={showEmptyOnly ? 'Show all' : 'Filter empty only'}>
-                        <span className='builder-attention-dot h-1.5 w-1.5 rounded-full' />
-                        {emptyCount} empty
-                        {showEmptyOnly && <Icon icon='lucide:x' className='h-3 w-3' />}
-                      </button>
-                    ) : (
-                      <span className='flex items-center gap-1 text-primary'>
-                        <Icon icon='lucide:check' className='h-3 w-3' />
-                        All filled
-                      </span>
-                    )}
-                  </div>
-                  {emptyCount > 0 && (
-                    <button
-                      type='button'
-                      onClick={jumpToNextEmpty}
-                      className='flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold text-default-500 transition-colors duration-200 hover:bg-content2 hover:text-foreground'
-                      title='Focus next empty variable'>
-                      Next empty
-                      <Icon icon='lucide:arrow-down' className='h-3 w-3' />
-                    </button>
-                  )}
-                </div>
-              )
-            })()}
-            <div className='flex flex-col gap-0.5'>
-              {items
-                .filter(item => !showEmptyOnly || !item.value || item.value === 'null')
-                .map(item => {
-                  const hasValue = !!item.value && item.value !== 'null'
-                  const rawKey = item.key.replace(/[{}]/g, '').trim() || 'variable'
-                  const tokenPlaceholder = `{{${rawKey}}}`
-                  return (
-                    <SortableItem
-                      key={item.id}
-                      id={item.id}
-                      className={cn(
-                        'group flex items-center gap-1.5 rounded-lg border-l-[3px] px-1.5 py-1 transition-colors duration-200',
-                        // Filled = complete (brand-tint). Empty = neutral gray (clearly distinct).
-                        hasValue
-                          ? 'builder-complete-row hover:bg-content2/60'
-                          : 'builder-empty-row border-l-transparent'
-                      )}>
-                      <DragHandle className='shrink-0 text-default-400/70 transition-colors duration-200 hover:text-default-700' />
-
-                      <Input
-                        value={item.key}
-                        id={`input-${item.id}`}
-                        isInvalid={!!errors?.[item.id]}
-                        errorMessage={errors?.[item.id]}
-                        variant='flat'
-                        placeholder='{{mapping_key}}'
-                        size='sm'
-                        classNames={{
-                          inputWrapper:
-                            'builder-field border h-8 min-h-0 px-2.5 rounded-md transition-all duration-200',
-                          input: 'var-token-text placeholder:text-default-500/40'
-                        }}
-                        onValueChange={v => {
-                          updateItem(item.id, 'key', v)
-                          onClearError?.(item.id)
-                        }}
-                        onBlur={() => updateItem(item.id, 'key', formatKey(item.key, 'replace'))}
-                        onKeyDown={handleEnterKey}
-                        className='w-[180px] shrink-0'
-                      />
-
-                      <Input
-                        value={item.value === 'null' ? '' : item.value ?? ''}
-                        placeholder={hasValue ? tokenPlaceholder : 'Type value...'}
-                        onValueChange={v => {
-                          updateItem(item.id, 'value', v)
-                          onClearError?.(item.id)
-                        }}
-                        variant='flat'
-                        size='sm'
-                        classNames={{
-                          inputWrapper:
-                            'builder-field border h-8 min-h-0 px-2.5 rounded-md transition-all duration-200',
-                          input: cn(
-                            'text-[12px]',
-                            hasValue
-                              ? 'text-token-filled font-semibold'
-                              : 'text-default-700 placeholder:text-default-400 placeholder:italic'
-                          )
-                        }}
-                        onKeyDown={handleEnterKey}
-                        className='flex-1'
-                      />
-
-                      <button
-                        data-skip-enter='true'
-                        onClick={() => onChange(items.filter(x => x.id !== item.id))}
-                        title='Remove'
-                        className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-300/45 opacity-70 transition-all duration-200 hover:bg-danger/10 hover:text-danger-500 hover:opacity-100'>
-                        <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-                      </button>
-                    </SortableItem>
-                  )
-                })}
-            </div>
-          </>
-        ) : (
-          <div className='flex flex-col items-center justify-center py-12 text-center'>
-            <div className='mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-content2'>
-              <Icon icon='lucide:type' className='h-5 w-5 text-default-500' />
-            </div>
-            <p className='text-[13px] font-medium text-foreground'>No variables added yet</p>
-            <p className='mt-0.5 text-[11.5px] text-default-600'>Add variables to replace text in your PDF.</p>
-          </div>
-        )}
-      </SortableContext>
-    </DndContext>
+    <>
+      <SummaryBar
+        left={`${items.length - emptyCount}/${items.length} filled`}
+        missing={emptyCount}
+        missingLabel='empty'
+        doneLabel='All filled'
+        showMissingOnly={showEmptyOnly}
+        onToggleMissingOnly={() => setShowEmptyOnly(v => !v)}
+        onJumpNext={jumpToNextEmpty}
+      />
+      <div className='flex flex-col'>
+        {items
+          .filter(item => !showEmptyOnly || !item.value || item.value === 'null')
+          .map(item => {
+            const hasValue = !!item.value && item.value !== 'null'
+            const rawKey = item.key.replace(/[{}]/g, '').trim() || 'variable'
+            return (
+              <FieldRow
+                key={item.id}
+                id={item.id}
+                className='flex items-center gap-2 border-b border-divider py-1.5 last:border-b-0'>
+                <StatusDot filled={hasValue} />
+                <ReadOnlyFieldName
+                  value={item.key}
+                  error={errors?.[item.id]}
+                  className='w-[38%] min-w-[110px] max-w-[260px] shrink-0'
+                />
+                <Input
+                  value={item.value === 'null' ? '' : item.value ?? ''}
+                  id={`value-${item.id}`}
+                  aria-label={`Value for {{${rawKey}}}`}
+                  placeholder='Type a value'
+                  onValueChange={v => {
+                    updateValue(item.id, v)
+                    onClearError?.(item.id)
+                  }}
+                  variant='bordered'
+                  radius='none'
+                  size='md'
+                  classNames={rowFieldClasses}
+                  onKeyDown={handleEnterKey}
+                  className='min-w-0 flex-1'
+                />
+              </FieldRow>
+            )
+          })}
+      </div>
+    </>
   )
 }
 
-// --- Shared row styling tokens (matches ReplacementsSection) ---
-// Shell = left border only. Amber bg tint lives on the HEADER strip, not the whole shell,
-// so expanded bodies don't drown in yellow.
-const rowShell = (configured: boolean) =>
-  cn(
-    'group flex flex-col rounded-lg border-l-[3px] transition-colors duration-200',
-    // Configured = complete-row (brand tint). Unconfigured = neutral gray.
-    configured ? 'builder-complete-row' : 'builder-empty-row border-l-transparent'
-  )
-const rowHeaderStrip = (configured: boolean) =>
-  cn(
-    'flex items-center gap-1.5 rounded-lg px-1.5 py-1.5 transition-colors duration-200',
-    configured ? 'hover:bg-content2/60' : 'hover:bg-content2/40'
-  )
-const rowInputWrapper = 'builder-field border h-8 min-h-0 px-2.5 rounded-md transition-all duration-200'
-const rowKeyInput = 'var-token-text placeholder:text-default-500/40'
-const rowDeleteBtn =
-  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-300/45 opacity-70 transition-all duration-200 hover:bg-danger/10 hover:text-danger-500 hover:opacity-100'
-const rowIconBtn =
-  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-400/70 transition-colors duration-200 hover:bg-content2 hover:text-foreground'
+// --- Shared row styling tokens (Press) ---
+// Shell = plain row separated by one hairline; configured state is shown by a StatusDot.
+const rowShell = (_configured: boolean) => 'group flex flex-col border-b border-divider transition-colors duration-150'
+
+/** Small filled/empty indicator: success dot when set, hollow neutral dot when empty. */
+export const StatusDot: React.FC<{ filled: boolean; className?: string }> = ({ filled, className }) => (
+  <span
+    aria-hidden
+    title={filled ? 'Filled' : 'Empty'}
+    className={cn(
+      'h-1.5 w-1.5 shrink-0 rounded-full',
+      filled ? 'bg-success' : 'border border-default-400 bg-transparent',
+      className
+    )}
+  />
+)
+const rowHeaderStrip = (_configured: boolean) => 'flex items-center gap-2 py-1.5 pl-1.5 pr-1.5'
+const rowDeleteBtn = rowRemoveButton
+const rowIconBtn = rowIconButton
 const rowSummaryChip =
-  'hidden sm:flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-content2/30 px-2 py-1 text-[10.5px] font-medium text-default-500'
+  'hidden sm:flex shrink-0 items-center gap-1.5 whitespace-nowrap px-1 py-1 text-[12px] text-default-500'
+const attentionChip = 'flex shrink-0 items-center gap-1 whitespace-nowrap px-1 py-1 text-[12px] text-default-400'
 
-// Compact detail inputs (used inside expanded state)
-const detailInputClasses = {
-  inputWrapper: 'builder-field border h-9 min-h-0 rounded-md transition-all duration-200',
-  input: 'text-[12.5px] text-foreground font-medium',
-  label: 'text-[11px] font-semibold text-default-600'
-}
-const detailSelectClasses = {
-  trigger: 'builder-field border h-9 min-h-0 rounded-md transition-all duration-200',
-  value: 'text-[12.5px] text-foreground font-medium',
-  label: 'text-[11px] font-semibold text-default-600'
-}
+// Detail inputs (used inside expanded state)
+const detailInputClasses = fieldClasses
+const detailSelectClasses = selectClasses
 
-// --- Section summary bar (shared — total / configured / missing + jump) ---
+// --- Summary bar (shared — filled / missing + filter + jump) ---
+export const SummaryBar: React.FC<{
+  left: string
+  missing: number
+  missingLabel: string
+  doneLabel: string
+  showMissingOnly: boolean
+  onToggleMissingOnly: () => void
+  onJumpNext?: () => void
+}> = ({ left, missing, missingLabel, doneLabel, showMissingOnly, onToggleMissingOnly, onJumpNext }) => (
+  <div className='mb-3 flex flex-wrap items-center justify-between gap-2'>
+    <div className='flex items-center gap-2 text-[13px]'>
+      <span className='text-default-500'>{left}</span>
+      <span aria-hidden className='text-default-400'>
+        ·
+      </span>
+      {missing > 0 ? (
+        <button
+          type='button'
+          onClick={onToggleMissingOnly}
+          aria-pressed={showMissingOnly}
+          className={cn(
+            'flex items-center gap-1.5 border px-1.5 py-0.5 transition-colors duration-150',
+            showMissingOnly
+              ? 'border-default-300 text-foreground'
+              : 'border-transparent text-default-500 hover:border-default-300 hover:text-foreground'
+          )}
+          title={showMissingOnly ? 'Show all' : `Show ${missingLabel} only`}>
+          <StatusDot filled={false} />
+          {missing} {missingLabel}
+          {showMissingOnly && <Icon icon='lucide:x' className='h-3 w-3' />}
+        </button>
+      ) : (
+        <span className='flex items-center gap-1.5 text-default-500'>
+          <StatusDot filled />
+          {doneLabel}
+        </span>
+      )}
+    </div>
+    {missing > 0 && onJumpNext && (
+      <button
+        type='button'
+        onClick={onJumpNext}
+        className='flex items-center gap-1 px-1 py-0.5 text-[13px] text-default-500 transition-colors duration-150 hover:text-foreground'
+        title={`Go to next ${missingLabel}`}>
+        Next {missingLabel}
+        <Icon icon='lucide:arrow-down' className='h-3.5 w-3.5' />
+      </button>
+    )}
+  </div>
+)
+
 interface SectionSummaryProps {
   total: number
   missing: number
@@ -459,50 +360,17 @@ const SectionSummary: React.FC<SectionSummaryProps> = ({
   onJumpNext,
   showMissingOnly,
   onToggleMissingOnly
-}) => {
-  const configured = total - missing
-  return (
-    <div className='mb-2.5 flex items-center justify-between gap-2 px-1'>
-      <div className='flex items-center gap-2 text-[11px] font-semibold'>
-        <span className='text-default-600'>
-          {configured}/{total} configured
-        </span>
-        <span className='text-default-400/40'>·</span>
-        {missing > 0 ? (
-          <button
-            type='button'
-            onClick={onToggleMissingOnly}
-            className={cn(
-              'flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-200',
-              showMissingOnly
-                ? 'builder-attention-chip'
-                : 'builder-attention-text hover:bg-[var(--builder-attention-chip-bg)]'
-            )}
-            title={showMissingOnly ? 'Show all' : `Filter ${missingLabel} only`}>
-            <span className='builder-attention-dot h-1.5 w-1.5 rounded-full' />
-            {missing} {missingLabel}
-            {showMissingOnly && <Icon icon='lucide:x' className='h-3 w-3' />}
-          </button>
-        ) : (
-          <span className='flex items-center gap-1 text-primary'>
-            <Icon icon='lucide:check' className='h-3 w-3' />
-            All configured
-          </span>
-        )}
-      </div>
-      {missing > 0 && onJumpNext && (
-        <button
-          type='button'
-          onClick={onJumpNext}
-          className='flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold text-default-500 transition-colors duration-200 hover:bg-content2 hover:text-foreground'
-          title={`Focus next ${missingLabel}`}>
-          Next {missingLabel}
-          <Icon icon='lucide:arrow-down' className='h-3 w-3' />
-        </button>
-      )}
-    </div>
-  )
-}
+}) => (
+  <SummaryBar
+    left={`${total - missing}/${total} ready`}
+    missing={missing}
+    missingLabel={missingLabel}
+    doneLabel='All ready'
+    showMissingOnly={showMissingOnly}
+    onToggleMissingOnly={onToggleMissingOnly}
+    onJumpNext={onJumpNext}
+  />
+)
 
 // --- Expand chevron button (shared) ---
 export const ExpandToggle = ({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) => (
@@ -510,13 +378,15 @@ export const ExpandToggle = ({ expanded, onToggle }: { expanded: boolean; onTogg
     type='button'
     data-skip-enter='true'
     onClick={onToggle}
-    title={expanded ? 'Collapse' : 'Expand'}
-    className={rowIconBtn}>
-    <Icon icon={expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'} className='h-3.5 w-3.5' />
+    title={expanded ? 'Hide details' : 'Show details'}
+    aria-label={expanded ? 'Hide details' : 'Show details'}
+    aria-expanded={expanded}
+    className={cn(rowIconBtn, expanded && 'border-foreground text-foreground')}>
+    <Icon icon={expanded ? 'lucide:chevron-up' : 'lucide:chevron-down'} className='h-4 w-4' />
   </button>
 )
 
-// --- Shared CheckboxCard — clear filled-vs-empty state for dark/light modes ---
+// --- Shared CheckboxCard ---
 export const CheckboxCard: React.FC<{
   checked: boolean
   onChange: (v: boolean) => void
@@ -526,34 +396,114 @@ export const CheckboxCard: React.FC<{
 }> = ({ checked, onChange, icon, label, className }) => (
   <label
     className={cn(
-      'flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 shadow-[inset_0_0_0_1px_var(--hairline)] transition-colors dark:shadow-[inset_0_0_0_1px_var(--hairline-soft)]',
-      checked ? 'bg-primary-50/60 dark:bg-primary-100/10' : 'bg-content1 hover:bg-content2',
+      'flex cursor-pointer items-center gap-2.5 border px-3 py-2.5 transition-colors duration-150',
+      checked ? 'border-default-500 bg-content2' : 'border-divider hover:border-default-300',
       className
     )}>
-    <Checkbox color='primary' isSelected={checked} onValueChange={onChange} size='sm' />
-    {icon && (
-      <Icon
-        icon={icon}
-        className={cn('h-3.5 w-3.5 shrink-0', checked ? 'text-primary' : 'text-default-500')}
-      />
-    )}
-    <span className='text-xs font-semibold text-foreground'>{label}</span>
+    <Checkbox color='default' radius='none' isSelected={checked} onValueChange={onChange} size='sm' />
+    {icon && <Icon icon={icon} className={cn('h-4 w-4 shrink-0', checked ? 'text-foreground' : 'text-default-500')} />}
+    <span className='text-[13px] font-medium text-foreground'>{label}</span>
   </label>
 )
 
 // --- Empty state (shared) ---
 export const EmptyState: React.FC<{ icon: string; title: string; hint?: string }> = ({ icon, title, hint }) => (
-  <div className='flex flex-col items-center justify-center py-12 text-center'>
-    <div className='mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-content2'>
-      <Icon icon={icon} className='h-5 w-5 text-default-500' />
+  <div className='mx-1.5 my-2 flex flex-col items-center justify-center px-6 py-10 text-center'>
+    <Icon icon={icon} className='mb-3 h-6 w-6 text-default-500' />
+    <p className='text-[15px] font-semibold text-foreground'>{title}</p>
+    {hint && <p className='mt-1.5 max-w-xs text-[13px] text-default-500'>{hint}</p>}
+  </div>
+)
+
+export { AddButton, MonoLabel }
+
+// --- Fit picker (plain words + a tiny visual of each mode) ---
+type ImageFit = 'cover' | 'contain' | 'fill'
+const FIT_OPTIONS: readonly { id: ImageFit; label: string; hint: string }[] = [
+  { id: 'contain', label: 'Fit inside', hint: 'Whole image visible, keeps proportions' },
+  { id: 'cover', label: 'Fill & crop', hint: 'Fills the box, edges may be cut off' },
+  { id: 'fill', label: 'Stretch', hint: 'Fills the box exactly, may distort' }
+]
+
+/** A round picture in a wide box: fits inside, gets cropped, or gets stretched into an oval. */
+const FitGlyph: React.FC<{ fit: ImageFit }> = ({ fit }) => (
+  <span aria-hidden className='relative flex h-6 w-9 shrink-0 items-center justify-center overflow-hidden border border-default-400'>
+    <span
+      className={cn(
+        'block shrink-0 rounded-full bg-default-500',
+        fit === 'contain' && 'h-[18px] w-[18px]',
+        fit === 'cover' && 'h-9 w-9',
+        fit === 'fill' && 'h-full w-full'
+      )}
+    />
+  </span>
+)
+
+const FitPicker: React.FC<{ value: ImageFit; onChange: (fit: ImageFit) => void; error?: string }> = ({
+  value,
+  onChange,
+  error
+}) => (
+  <div className='flex flex-col gap-1.5'>
+    <span className='text-[12px] font-medium text-default-600'>How the image fills its box</span>
+    <div role='radiogroup' aria-label='Image fit' className='grid grid-cols-1 gap-1.5 sm:grid-cols-3'>
+      {FIT_OPTIONS.map(o => {
+        const selected = o.id === value
+        return (
+          <button
+            key={o.id}
+            type='button'
+            role='radio'
+            aria-checked={selected}
+            onClick={() => onChange(o.id)}
+            className={cn(
+              'flex items-center gap-2.5 border px-2.5 py-2 text-left transition-colors duration-150',
+              selected ? 'border-foreground bg-content2' : 'border-divider hover:border-default-400'
+            )}>
+            <FitGlyph fit={o.id} />
+            <span className='flex min-w-0 flex-col'>
+              <span className='text-[13px] font-medium text-foreground'>{o.label}</span>
+              <span className='text-[12px] leading-snug text-default-500'>{o.hint}</span>
+            </span>
+          </button>
+        )
+      })}
     </div>
-    <p className='text-[13px] font-medium text-foreground'>{title}</p>
-    {hint && <p className='mt-0.5 text-[11.5px] text-default-600'>{hint}</p>}
+    {error && <span className='text-[12px] text-danger'>{error}</span>}
+  </div>
+)
+
+/** Empty state for marker-based fields: fields come only from markers in the template file. */
+const StepsEmptyState: React.FC<{ icon: string; title: string; marker: string; what: string; fileLabel?: string }> = ({
+  icon,
+  title,
+  marker,
+  what,
+  fileLabel = 'Word'
+}) => (
+  <div className='mx-1.5 my-2 flex flex-col items-center px-6 py-8 text-center'>
+    <Icon icon={icon} className='mb-3 h-6 w-6 text-default-500' />
+    <p className='text-[15px] font-semibold text-foreground'>{title}</p>
+    <ol className='mt-3 flex max-w-sm flex-col gap-2 text-left text-[13px] text-default-500'>
+      <li className='flex gap-2'>
+        <span className='font-mono text-default-400'>1</span>
+        <span>
+          In your {fileLabel} file, type <code className='bg-content2 px-1 font-mono text-foreground'>{marker}</code> where
+          the {what} should appear.
+        </span>
+      </li>
+      <li className='flex gap-2'>
+        <span className='font-mono text-default-400'>2</span>
+        <span>Use Replace file. The {what} then shows up here so you can fill in a test value.</span>
+      </li>
+    </ol>
   </div>
 )
 
 // --- Images Section ---
 interface ImagesSectionProps {
+  /** "Word" or "Excel" — used in the empty state. */
+  fileLabel?: string
   items: ImageItem[]
   onChange: (items: ImageItem[]) => void
   errors?: Record<string, string>
@@ -569,18 +519,12 @@ interface ImageRowProps {
 }
 
 const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onClearError }) => {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const hasSrc = !!item.data.src
   const configured = hasSrc
 
-  const updateItem = (updates: Partial<ImageItem['data']> | { key: string }) => {
-    onChange(
-      items.map(i => {
-        if (i.id !== item.id) return i
-        if ('key' in updates) return { ...i, key: updates.key as string }
-        return { ...i, data: { ...i.data, ...updates } }
-      })
-    )
+  const updateItem = (updates: Partial<ImageItem['data']>) => {
+    onChange(items.map(i => (i.id === item.id ? { ...i, data: { ...i.data, ...updates } } : i)))
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -593,65 +537,28 @@ const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onCl
     reader.readAsDataURL(file)
   }
 
-  const dimensionSummary = `${item.data.width || 'auto'}×${item.data.height || 'auto'} · ${item.data.fit || 'cover'}`
-
   return (
-    <SortableItem id={item.id} className={rowShell(configured)}>
-      {/* Collapsed row header — only here carries the amber/neutral bg */}
+    <FieldRow id={item.id} className={rowShell(configured)}>
+      {/* Header: name + status only. Size / fit live in the options row below. */}
       <div className={rowHeaderStrip(configured)}>
-        <DragHandle className='shrink-0 text-default-400/70 transition-colors duration-200 hover:text-default-700' />
-        <Input
-          value={item.key}
-          id={`input-${item.id}`}
-          isInvalid={!!errors?.[item.id]}
-          errorMessage={errors?.[item.id]}
-          variant='flat'
-          placeholder='{{image:variable}}'
-          size='sm'
-          classNames={{ inputWrapper: rowInputWrapper, input: rowKeyInput }}
-          onValueChange={v => {
-            updateItem({ key: v })
-            onClearError?.(item.id)
-          }}
-          onBlur={() => updateItem({ key: formatKey(item.key, 'image') })}
-          onKeyDown={handleEnterKey}
-          className='w-[200px] shrink-0'
-        />
-        <div className='flex flex-1 items-center justify-end gap-2'>
-          <div className='hidden items-center gap-1.5 sm:flex'>
-            {/* Status chip — only visible when missing (left border conveys configured state) */}
-            {!hasSrc && (
-              <span
-                className='builder-attention-chip flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium'
-                title='No source set'>
-                <Icon icon='lucide:image-off' className='h-3 w-3' />
-                no source
-              </span>
-            )}
-            {/* Dimensions chip — informational */}
-            <span className={rowSummaryChip}>
-              <Icon icon='lucide:ruler' className='h-3 w-3' />
-              {dimensionSummary}
+        <StatusDot filled={configured} />
+        <ReadOnlyFieldName value={item.key} error={errors?.[item.id]} className='min-w-0 flex-1' />
+        <div className='flex shrink-0 items-center gap-1'>
+          {!hasSrc && (
+            <span className={attentionChip} title='No image chosen yet'>
+              <Icon icon='lucide:image-off' className='h-3 w-3' />
+              No image
             </span>
-          </div>
-          <div className='flex items-center gap-0.5'>
-            <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
-            <button
-              data-skip-enter='true'
-              onClick={() => onChange(items.filter(x => x.id !== item.id))}
-              title='Remove'
-              className={rowDeleteBtn}>
-              <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-            </button>
-          </div>
+          )}
+          <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
         </div>
       </div>
 
       {/* Expanded detail form — neutral bg (no amber bleed) */}
       {expanded && (
-        <div className='builder-detail-panel mb-1.5 ml-[22px] mr-1.5 mt-0.5 flex flex-col gap-3 rounded-md p-3'>
+        <div className={detailPanel}>
           {/* Preview thumbnail */}
-          <div className='relative flex h-24 w-full items-center justify-center overflow-hidden rounded-md border border-dashed border-default-300/50 bg-content1/70 transition-colors hover:bg-content2/70'>
+          <div className='relative flex h-28 w-full items-center justify-center overflow-hidden border border-dashed border-default-300 bg-content2 transition-colors hover:border-default-500'>
             {item.data.src ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
@@ -663,10 +570,11 @@ const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onCl
             ) : (
               <div className='flex flex-col items-center gap-1 text-default-500'>
                 <Icon icon='lucide:upload' className='h-5 w-5' />
-                <span className='text-[11px] font-medium'>Upload image</span>
+                <span className='text-[13px]'>Upload image</span>
               </div>
             )}
             <label className='absolute inset-0 cursor-pointer'>
+              <span className='sr-only'>Upload image</span>
               <input type='file' className='hidden' accept='image/*' onChange={handleFileUpload} />
             </label>
           </div>
@@ -685,22 +593,23 @@ const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onCl
               onClearError?.(`${item.id}-src`)
             }}
             size='sm'
-            variant='flat'
+            variant='bordered'
             classNames={detailInputClasses}
             onKeyDown={handleEnterKey}
             startContent={<Icon icon='lucide:link' className='h-3.5 w-3.5 shrink-0 text-default-400' />}
             endContent={
-              <label className='cursor-pointer text-default-400 hover:text-primary'>
+              <label className='cursor-pointer text-default-500 hover:text-foreground' title='Choose a file'>
+                <span className='sr-only'>Choose an image file</span>
                 <Icon icon='lucide:folder-open' className='h-4 w-4' />
                 <input type='file' className='hidden' accept='image/*' onChange={handleFileUpload} />
               </label>
             }
           />
 
-          <div className='grid grid-cols-3 gap-2'>
+          <div className='grid grid-cols-2 gap-2'>
             <Input
               type='number'
-              label='Width'
+              label='Width (px)'
               labelPlacement='outside'
               placeholder='Auto'
               value={item.data.width === 0 ? '' : item.data.width?.toString() || ''}
@@ -709,13 +618,13 @@ const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onCl
                 onClearError?.(`${item.id}-width`)
               }}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               onKeyDown={handleEnterKey}
             />
             <Input
               type='number'
-              label='Height'
+              label='Height (px)'
               labelPlacement='outside'
               placeholder='Auto'
               value={item.data.height === 0 ? '' : item.data.height?.toString() || ''}
@@ -724,47 +633,27 @@ const ImageRow: React.FC<ImageRowProps> = ({ item, items, onChange, errors, onCl
                 onClearError?.(`${item.id}-height`)
               }}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               onKeyDown={handleEnterKey}
             />
-            <Select
-              label='Fit'
-              labelPlacement='outside'
-              selectedKeys={[item.data.fit || 'cover']}
-              onChange={e => {
-                updateItem({ fit: e.target.value })
-                onClearError?.(`${item.id}-fit`)
-              }}
-              size='sm'
-              variant='flat'
-              classNames={detailSelectClasses}>
-              {['cover', 'contain', 'fill'].map(k => (
-                <SelectItem key={k}>{k}</SelectItem>
-              ))}
-            </Select>
           </div>
+          <FitPicker
+            value={(item.data.fit as ImageFit) || 'cover'}
+            error={errors?.[`${item.id}-fit`]}
+            onChange={fit => {
+              updateItem({ fit })
+              onClearError?.(`${item.id}-fit`)
+            }}
+          />
         </div>
       )}
-    </SortableItem>
+    </FieldRow>
   )
 }
 
-export const ImagesSection: React.FC<ImagesSectionProps> = ({ items, onChange, errors, onClearError }) => {
+export const ImagesSection: React.FC<ImagesSectionProps> = ({ items, onChange, errors, onClearError, fileLabel }) => {
   const [showMissingOnly, setShowMissingOnly] = useState(false)
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id)
-      const newIndex = items.findIndex(i => i.id === over.id)
-      onChange(arrayMove(items, oldIndex, newIndex))
-    }
-  }
 
   const jumpNext = () => {
     const next = items.find(i => !i.data.src)
@@ -781,8 +670,7 @@ export const ImagesSection: React.FC<ImagesSectionProps> = ({ items, onChange, e
   const visible = showMissingOnly ? items.filter(i => !i.data.src) : items
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
+    <>
         {items.length > 0 ? (
           <>
             <SectionSummary
@@ -793,7 +681,7 @@ export const ImagesSection: React.FC<ImagesSectionProps> = ({ items, onChange, e
               showMissingOnly={showMissingOnly}
               onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
             />
-            <div className='flex flex-col gap-0.5'>
+            <div className='flex flex-col gap-2'>
               {visible.map(item => (
                 <ImageRow
                   key={item.id}
@@ -807,14 +695,20 @@ export const ImagesSection: React.FC<ImagesSectionProps> = ({ items, onChange, e
             </div>
           </>
         ) : (
-          <EmptyState icon='lucide:image' title='No images added yet' hint='Add images to embed in your PDF.' />
+          <StepsEmptyState
+            icon='lucide:image'
+            title='No images in this file'
+            marker='{{image:logo}}'
+            what='image' fileLabel={fileLabel}
+          />
         )}
-      </SortableContext>
-    </DndContext>
+      </>
   )
 }
 // --- QR Codes Section ---
 interface QrCodesSectionProps {
+  /** "Word" or "Excel" — used in the empty state. */
+  fileLabel?: string
   items: QrCodeItem[]
   onChange: (items: QrCodeItem[]) => void
   errors?: Record<string, string>
@@ -830,73 +724,32 @@ interface QrRowProps {
 }
 
 const QrRow: React.FC<QrRowProps> = ({ item, items, onChange, errors, onClearError }) => {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const configured = !!item.data.text
 
   const updateData = (patch: Partial<QrCodeDataRequest>) => {
     onChange(items.map(i => (i.id === item.id ? { ...i, data: { ...i.data, ...patch } } : i)))
   }
-  const updateKey = (v: string) => {
-    onChange(items.map(i => (i.id === item.id ? { ...i, key: v } : i)))
-  }
-
-  const sizeSummary = `${item.data.size || 200}px · ${item.data.color || '#000000'}`
 
   return (
-    <SortableItem id={item.id} className={rowShell(configured)}>
-      {/* Collapsed row header */}
+    <FieldRow id={item.id} className={rowShell(configured)}>
       <div className={rowHeaderStrip(configured)}>
-        <DragHandle className='shrink-0 text-default-400/70 transition-colors duration-200 hover:text-default-700' />
-        <Input
-          value={item.key}
-          id={`input-${item.id}`}
-          isInvalid={!!errors?.[item.id]}
-          errorMessage={errors?.[item.id]}
-          variant='flat'
-          placeholder='{{qrcode:variable}}'
-          size='sm'
-          classNames={{ inputWrapper: rowInputWrapper, input: rowKeyInput }}
-          onValueChange={v => {
-            updateKey(v)
-            onClearError?.(item.id)
-          }}
-          onBlur={() => updateKey(formatKey(item.key, 'qrcode'))}
-          onKeyDown={handleEnterKey}
-          className='w-[200px] shrink-0'
-        />
-        <div className='flex flex-1 items-center justify-end gap-2'>
-          <div className='hidden items-center gap-1.5 sm:flex'>
-            {/* Status chip — only visible when missing */}
-            {!configured && (
-              <span
-                className='builder-attention-chip flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium'
-                title='No value set'>
-                <Icon icon='lucide:circle-dashed' className='h-3 w-3' />
-                no value
-              </span>
-            )}
-            {/* Size + color chip — informational */}
-            <span className={rowSummaryChip}>
-              <Icon icon='lucide:qr-code' className='h-3 w-3' />
-              {sizeSummary}
+        <StatusDot filled={configured} />
+        <ReadOnlyFieldName value={item.key} error={errors?.[item.id]} className='min-w-0 flex-1' />
+        <div className='flex shrink-0 items-center gap-1'>
+          {!configured && (
+            <span className={attentionChip} title='No value set'>
+              <Icon icon='lucide:circle-dashed' className='h-3 w-3' />
+              No value
             </span>
-          </div>
-          <div className='flex items-center gap-0.5'>
-            <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
-            <button
-              data-skip-enter='true'
-              onClick={() => onChange(items.filter(x => x.id !== item.id))}
-              title='Remove'
-              className={rowDeleteBtn}>
-              <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-            </button>
-          </div>
+          )}
+          <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
         </div>
       </div>
 
       {/* Expanded detail form */}
       {expanded && (
-        <div className='builder-detail-panel mb-1.5 ml-[22px] mr-1.5 mt-0.5 flex flex-col gap-3 rounded-md p-3'>
+        <div className={detailPanel}>
           <Input
             label='Value'
             labelPlacement='outside'
@@ -910,7 +763,7 @@ const QrRow: React.FC<QrRowProps> = ({ item, items, onChange, errors, onClearErr
               onClearError?.(`${item.id}-text`)
             }}
             size='sm'
-            variant='flat'
+            variant='bordered'
             classNames={detailInputClasses}
             onKeyDown={handleEnterKey}
           />
@@ -927,7 +780,7 @@ const QrRow: React.FC<QrRowProps> = ({ item, items, onChange, errors, onClearErr
                 onClearError?.(`${item.id}-size`)
               }}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               description='Rendered as square (1:1)'
               onKeyDown={handleEnterKey}
@@ -942,33 +795,20 @@ const QrRow: React.FC<QrRowProps> = ({ item, items, onChange, errors, onClearErr
                 onClearError?.(`${item.id}-color`)
               }}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               onKeyDown={handleEnterKey}
             />
           </div>
         </div>
       )}
-    </SortableItem>
+    </FieldRow>
   )
 }
 
-export const QrCodesSection: React.FC<QrCodesSectionProps> = ({ items, onChange, errors, onClearError }) => {
+export const QrCodesSection: React.FC<QrCodesSectionProps> = ({ items, onChange, errors, onClearError, fileLabel }) => {
   const [showMissingOnly, setShowMissingOnly] = useState(false)
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      onChange(
-        arrayMove(
-          items,
-          items.findIndex(i => i.id === active.id),
-          items.findIndex(i => i.id === over.id)
-        )
-      )
-    }
-  }
 
   const jumpNext = () => {
     const next = items.find(i => !i.data.text)
@@ -985,8 +825,7 @@ export const QrCodesSection: React.FC<QrCodesSectionProps> = ({ items, onChange,
   const visible = showMissingOnly ? items.filter(i => !i.data.text) : items
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
+    <>
         {items.length > 0 ? (
           <>
             <SectionSummary
@@ -997,7 +836,7 @@ export const QrCodesSection: React.FC<QrCodesSectionProps> = ({ items, onChange,
               showMissingOnly={showMissingOnly}
               onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
             />
-            <div className='flex flex-col gap-0.5'>
+            <div className='flex flex-col gap-2'>
               {visible.map(item => (
                 <QrRow
                   key={item.id}
@@ -1011,15 +850,16 @@ export const QrCodesSection: React.FC<QrCodesSectionProps> = ({ items, onChange,
             </div>
           </>
         ) : (
-          <EmptyState icon='lucide:qr-code' title='No QR codes added yet' hint='Add a QR code to generate from text.' />
+          <StepsEmptyState icon='lucide:qr-code' title='No QR codes in this file' marker='{{qrcode:link}}' what='QR code' fileLabel={fileLabel} />
         )}
-      </SortableContext>
-    </DndContext>
+      </>
   )
 }
 
 // --- Barcodes Section ---
 interface BarcodesSectionProps {
+  /** "Word" or "Excel" — used in the empty state. */
+  fileLabel?: string
   items: BarcodeItem[]
   onChange: (items: BarcodeItem[]) => void
   errors?: Record<string, string>
@@ -1035,73 +875,32 @@ interface BarcodeRowProps {
 }
 
 const BarcodeRow: React.FC<BarcodeRowProps> = ({ item, items, onChange, errors, onClearError }) => {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const configured = !!item.data.text
 
   const updateData = (patch: Partial<BarcodeDataRequest>) => {
     onChange(items.map(i => (i.id === item.id ? { ...i, data: { ...i.data, ...patch } } : i)))
   }
-  const updateKey = (v: string) => {
-    onChange(items.map(i => (i.id === item.id ? { ...i, key: v } : i)))
-  }
-
-  const formatSummary = `${item.data.format || 'Code128'} · ${item.data.width || 200}×${item.data.height || 50}`
 
   return (
-    <SortableItem id={item.id} className={rowShell(configured)}>
-      {/* Collapsed row header */}
+    <FieldRow id={item.id} className={rowShell(configured)}>
       <div className={rowHeaderStrip(configured)}>
-        <DragHandle className='shrink-0 text-default-400/70 transition-colors duration-200 hover:text-default-700' />
-        <Input
-          value={item.key}
-          id={`input-${item.id}`}
-          isInvalid={!!errors?.[item.id]}
-          errorMessage={errors?.[item.id]}
-          variant='flat'
-          placeholder='{{barcode:variable}}'
-          size='sm'
-          classNames={{ inputWrapper: rowInputWrapper, input: rowKeyInput }}
-          onValueChange={v => {
-            updateKey(v)
-            onClearError?.(item.id)
-          }}
-          onBlur={() => updateKey(formatKey(item.key, 'barcode'))}
-          onKeyDown={handleEnterKey}
-          className='w-[200px] shrink-0'
-        />
-        <div className='flex flex-1 items-center justify-end gap-2'>
-          <div className='hidden items-center gap-1.5 sm:flex'>
-            {/* Status chip — only visible when missing */}
-            {!configured && (
-              <span
-                className='builder-attention-chip flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium'
-                title='No value set'>
-                <Icon icon='lucide:circle-dashed' className='h-3 w-3' />
-                no value
-              </span>
-            )}
-            {/* Format + dimensions chip — informational */}
-            <span className={rowSummaryChip}>
-              <Icon icon='lucide:barcode' className='h-3 w-3' />
-              {formatSummary}
+        <StatusDot filled={configured} />
+        <ReadOnlyFieldName value={item.key} error={errors?.[item.id]} className='min-w-0 flex-1' />
+        <div className='flex shrink-0 items-center gap-1'>
+          {!configured && (
+            <span className={attentionChip} title='No value set'>
+              <Icon icon='lucide:circle-dashed' className='h-3 w-3' />
+              No value
             </span>
-          </div>
-          <div className='flex items-center gap-0.5'>
-            <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
-            <button
-              data-skip-enter='true'
-              onClick={() => onChange(items.filter(x => x.id !== item.id))}
-              title='Remove'
-              className={rowDeleteBtn}>
-              <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-            </button>
-          </div>
+          )}
+          <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
         </div>
       </div>
 
       {/* Expanded detail form */}
       {expanded && (
-        <div className='builder-detail-panel mb-1.5 ml-[22px] mr-1.5 mt-0.5 flex flex-col gap-3 rounded-md p-3'>
+        <div className={detailPanel}>
           <Input
             label='Value'
             labelPlacement='outside'
@@ -1115,7 +914,7 @@ const BarcodeRow: React.FC<BarcodeRowProps> = ({ item, items, onChange, errors, 
               onClearError?.(`${item.id}-text`)
             }}
             size='sm'
-            variant='flat'
+            variant='bordered'
             classNames={detailInputClasses}
             onKeyDown={handleEnterKey}
           />
@@ -1130,7 +929,7 @@ const BarcodeRow: React.FC<BarcodeRowProps> = ({ item, items, onChange, errors, 
                 onClearError?.(`${item.id}-format`)
               }}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailSelectClasses}>
               {['Code128', 'EAN13'].map(k => (
                 <SelectItem key={k}>{k}</SelectItem>
@@ -1138,6 +937,7 @@ const BarcodeRow: React.FC<BarcodeRowProps> = ({ item, items, onChange, errors, 
             </Select>
             <div className='flex items-end pb-1.5'>
               <Checkbox
+                color='default'
                 size='sm'
                 isSelected={item.data.includeText}
                 classNames={{ label: 'text-[12px] text-default-600' }}
@@ -1152,51 +952,39 @@ const BarcodeRow: React.FC<BarcodeRowProps> = ({ item, items, onChange, errors, 
 
           <div className='grid grid-cols-2 gap-2'>
             <Input
-              label='Width'
+              label='Width (px)'
               labelPlacement='outside'
               placeholder='200'
               type='number'
               value={item.data.width === 0 ? '' : item.data.width?.toString() || ''}
               onValueChange={v => handleNumChange(v, val => updateData({ width: val }))}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               onKeyDown={handleEnterKey}
             />
             <Input
-              label='Height'
+              label='Height (px)'
               labelPlacement='outside'
               placeholder='50'
               type='number'
               value={item.data.height === 0 ? '' : item.data.height?.toString() || ''}
               onValueChange={v => handleNumChange(v, val => updateData({ height: val }))}
               size='sm'
-              variant='flat'
+              variant='bordered'
               classNames={detailInputClasses}
               onKeyDown={handleEnterKey}
             />
           </div>
         </div>
       )}
-    </SortableItem>
+    </FieldRow>
   )
 }
 
-export const BarcodesSection: React.FC<BarcodesSectionProps> = ({ items, onChange, errors, onClearError }) => {
+export const BarcodesSection: React.FC<BarcodesSectionProps> = ({ items, onChange, errors, onClearError, fileLabel }) => {
   const [showMissingOnly, setShowMissingOnly] = useState(false)
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id)
-      onChange(
-        arrayMove(
-          items,
-          items.findIndex(i => i.id === active.id),
-          items.findIndex(i => i.id === over.id)
-        )
-      )
-  }
 
   const jumpNext = () => {
     const next = items.find(i => !i.data.text)
@@ -1213,8 +1001,7 @@ export const BarcodesSection: React.FC<BarcodesSectionProps> = ({ items, onChang
   const visible = showMissingOnly ? items.filter(i => !i.data.text) : items
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
+    <>
         {items.length > 0 ? (
           <>
             <SectionSummary
@@ -1225,7 +1012,7 @@ export const BarcodesSection: React.FC<BarcodesSectionProps> = ({ items, onChang
               showMissingOnly={showMissingOnly}
               onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
             />
-            <div className='flex flex-col gap-0.5'>
+            <div className='flex flex-col gap-2'>
               {visible.map(item => (
                 <BarcodeRow
                   key={item.id}
@@ -1239,10 +1026,9 @@ export const BarcodesSection: React.FC<BarcodesSectionProps> = ({ items, onChang
             </div>
           </>
         ) : (
-          <EmptyState icon='lucide:barcode' title='No barcodes added yet' hint='Add Code128 / EAN13 barcodes.' />
+          <StepsEmptyState icon='lucide:barcode' title='No barcodes in this file' marker='{{barcode:sku}}' what='barcode' fileLabel={fileLabel} />
         )}
-      </SortableContext>
-    </DndContext>
+      </>
   )
 }
 
@@ -1288,32 +1074,35 @@ const MarkersModal = ({ tableName }: { tableName: string }) => {
       <button
         type='button'
         onClick={() => setOpen(true)}
-        title='Word template markers'
-        className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-400/70 transition-colors duration-200 hover:bg-content2 hover:text-foreground'>
-        <Icon icon='lucide:braces' className='h-3.5 w-3.5' />
+        title='Table markers you can use in Word'
+        aria-label='Table markers you can use in Word'
+        className={rowIconBtn}>
+        <Icon icon='lucide:braces' className='h-4 w-4' />
       </button>
-      <Modal isOpen={open} onOpenChange={setOpen} size='2xl'>
-        <ModalContent>
+      <Modal isOpen={open} onOpenChange={setOpen} size='2xl' radius='none'>
+        <ModalContent className='border border-divider bg-content1'>
           {() => (
             <>
-              <ModalHeader className='text-sm font-semibold'>Word Template Markers — {tableName}</ModalHeader>
+              <ModalHeader className='flex flex-col gap-1'>
+                <MonoLabel>{tableName}</MonoLabel>
+                <span className='text-[16px] font-semibold'>Table markers</span>
+              </ModalHeader>
               <ModalBody className='pb-6'>
-                <div className='grid grid-cols-3 gap-3'>
+                <p className='text-[13px] text-default-500'>
+                  Type these markers in your Word table. They are filled in when the document is generated.
+                </p>
+                <div className='grid grid-cols-1 border-l border-t border-divider sm:grid-cols-3'>
                   {MARKERS.map(group => (
-                    <div key={group.label} className='flex flex-col gap-1.5'>
-                      <span className='text-[10px] font-bold uppercase tracking-wider text-default-400'>
-                        {group.label}
-                      </span>
-                      <div className='flex flex-col gap-2 rounded border border-default-200 bg-content2 p-2.5'>
-                        {group.items.map(m => (
-                          <div key={m.code} className='flex flex-col gap-0.5'>
-                            <code className='rounded border border-default-200 bg-content1 px-1.5 py-0.5 font-mono text-[10px] font-medium text-foreground'>
-                              {m.code}
-                            </code>
-                            <span className='text-[10px] text-default-500'>{m.desc}</span>
-                          </div>
-                        ))}
-                      </div>
+                    <div key={group.label} className='flex flex-col gap-3 border-b border-r border-divider p-3'>
+                      <MonoLabel>{group.label}</MonoLabel>
+                      {group.items.map(m => (
+                        <div key={m.code} className='flex flex-col gap-1'>
+                          <code className='w-fit bg-content2 px-1.5 py-0.5 font-mono text-[12px] text-foreground'>
+                            {m.code}
+                          </code>
+                          <span className='text-[12px] text-default-500'>{m.desc}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -1326,84 +1115,13 @@ const MarkersModal = ({ tableName }: { tableName: string }) => {
   )
 }
 
-// Editable column header — user clicks "Add Column", new col appears with default name,
-// then they rename inline in the table header. Uses local draft state so typing doesn't
-// wipe row data on every keystroke.
-export const ColumnHeader: React.FC<{
-  col: string
-  itemId: string
-  columns: string[]
-  onRename: (oldCol: string, newCol: string) => void
-  onDelete: (col: string) => void
-  autoFocus?: boolean
-}> = ({ col, itemId, columns, onRename, onDelete, autoFocus }) => {
+/** Column name from the template's {{row:name}} marker — read-only. */
+export const ColumnHeader: React.FC<{ col: string }> = ({ col }) => {
   const clean = col.replace(/^\{\{row:/, '').replace(/\}\}$/, '')
-  const isDefault = /^column_\d+$/.test(clean)
-  const [draft, setDraft] = useState(isDefault ? '' : clean)
-  const inputRef = React.useRef<HTMLInputElement>(null)
-
-  // Keep draft synced when the source col changes (e.g. after reorder)
-  React.useEffect(() => {
-    setDraft(isDefault ? '' : clean)
-  }, [clean, isDefault])
-
-  React.useEffect(() => {
-    if (autoFocus && inputRef.current) {
-      inputRef.current.focus()
-    }
-  }, [autoFocus])
-
-  const commit = () => {
-    const trimmed = draft.trim()
-    if (!trimmed) {
-      setDraft(isDefault ? '' : clean)
-      return
-    }
-    if (trimmed === clean) {
-      setDraft(clean)
-      return
-    }
-    let formatted = formatKey(trimmed, 'table')
-    // Avoid collisions with other columns
-    const others = columns.filter(c => c !== col)
-    if (others.includes(formatted)) {
-      formatted = formatted.replace('}}', `_${Math.floor(Math.random() * 1000)}}`)
-    }
-    onRename(col, formatted)
-  }
-
   return (
-    <div className='flex w-full items-center gap-1'>
-      <div className='flex min-w-0 flex-1 items-center rounded bg-content2/60 px-1 ring-1 ring-default-200/40 transition-all focus-within:bg-content1 focus-within:ring-2 focus-within:ring-primary/35'>
-        <span className='shrink-0 select-none font-mono text-[11px] font-semibold text-default-400/80'>{'{{row:'}</span>
-        <input
-          ref={inputRef}
-          id={`col-input-${itemId}-${col}`}
-          className='var-token-text min-w-0 flex-1 bg-transparent px-0.5 outline-none'
-          value={draft}
-          placeholder={clean}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              commit()
-              ;(e.target as HTMLInputElement).blur()
-            } else if (e.key === 'Escape') {
-              setDraft(clean)
-              ;(e.target as HTMLInputElement).blur()
-            }
-          }}
-        />
-        <span className='shrink-0 select-none font-mono text-[11px] font-semibold text-default-400/80'>{'}}'}</span>
-      </div>
-      <button
-        onClick={() => onDelete(col)}
-        title='Remove column'
-        className='shrink-0 rounded p-0.5 text-default-300 transition-colors hover:bg-danger/10 hover:text-danger'>
-        <Icon icon='lucide:x' className='h-3 w-3' />
-      </button>
-    </div>
+    <span className='block min-w-0 break-all px-1 py-1 font-mono text-[12px] font-medium text-foreground' title={clean}>
+      {clean}
+    </span>
   )
 }
 
@@ -1412,60 +1130,19 @@ export const ColumnHeader: React.FC<{
 const TableEditorBody = ({
   item,
   onUpdate,
-  tableName
+  tableName,
+  fullscreen = false,
+  rowErrors
 }: {
   item: TableItem
   onUpdate: (i: TableItem) => void
   tableName: string
+  /** In the expanded view the grid uses the full height of the dialog. */
+  fullscreen?: boolean
+  /** Row index → message, from API validation errors. */
+  rowErrors?: Record<number, string>
 }) => {
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
-  const [advancedKeys, setAdvancedKeys] = useState<Selection>(new Set((item.sort?.length || 0) > 0 ? ['advanced'] : []))
-  // Track last-added column so we auto-focus its header input for rename
-  const [lastAddedCol, setLastAddedCol] = useState<string | null>(null)
-
-  const handleAddCol = () => {
-    // Generate next available default name: column_1, column_2, ...
-    let n = item.columns.length + 1
-    let formatted = formatKey(`column_${n}`, 'table')
-    while (item.columns.includes(formatted)) {
-      n++
-      formatted = formatKey(`column_${n}`, 'table')
-    }
-    onUpdate({ ...item, columns: [...item.columns, formatted] })
-    setLastAddedCol(formatted)
-  }
-
-  const handleDeleteCol = (colName: string) => {
-    // Also strip the data from existing rows for consistency
-    const newRows = item.rows.map(row => {
-      if (!(colName in row)) return row
-      const { [colName]: _removed, ...rest } = row
-      return rest
-    })
-    onUpdate({ ...item, columns: item.columns.filter(c => c !== colName), rows: newRows })
-  }
-
-  const handleRenameCol = (oldCol: string, newCol: string) => {
-    if (oldCol === newCol) return
-    const newColumns = item.columns.map(c => (c === oldCol ? newCol : c))
-    const newRows = item.rows.map(row => {
-      if (!(oldCol in row)) return row
-      const { [oldCol]: val, ...rest } = row
-      return { ...rest, [newCol]: val }
-    })
-    onUpdate({ ...item, columns: newColumns, rows: newRows })
-    // Keep auto-focus on the renamed column so user can keep tabbing
-    setLastAddedCol(newCol)
-  }
-
-  const handleColDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = item.columns.indexOf(active.id as string)
-      const newIndex = item.columns.indexOf(over.id as string)
-      onUpdate({ ...item, columns: arrayMove(item.columns, oldIndex, newIndex) })
-    }
-  }
+  const [advancedKeys, setAdvancedKeys] = useState<Selection>(new Set())
 
   const addRow = () => onUpdate({ ...item, rows: [...item.rows, {}] })
   const updateRow = (idx: number, col: string, val: string) => {
@@ -1479,107 +1156,98 @@ const TableEditorBody = ({
 
   return (
     <div className='flex w-full flex-col gap-3'>
-      {/* Quick Add Column — one-click adds default-named column, user renames at the table header */}
       <div className='flex items-center justify-between gap-2'>
-        <span className='text-[10.5px] font-semibold uppercase tracking-widest text-default-500/70'>
-          Columns · {item.columns.length}
-        </span>
-        <div className='flex items-center gap-1'>
-          <MarkersModal tableName={tableName} />
-          <Button
-            size='sm'
-            variant='flat'
-            radius='md'
-            onPress={handleAddCol}
-            className='h-7 gap-1 bg-content2 px-2.5 text-[11px] font-semibold text-default-700 hover:bg-content3'
-            startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-            Add Column
-          </Button>
-        </div>
+        <MonoLabel>
+          {item.columns.length} {item.columns.length === 1 ? 'column' : 'columns'} · {item.rows.length}{' '}
+          {item.rows.length === 1 ? 'row' : 'rows'}
+        </MonoLabel>
+        <MarkersModal tableName={tableName} />
       </div>
+      {item.columns.length === 0 && (
+        <p className='text-[13px] text-default-500'>
+          This table has no columns. Put <code className='font-mono text-foreground'>{'{{row:name}}'}</code> markers in a
+          table row of your file, then use Replace file.
+        </p>
+      )}
 
       {/* Table Grid */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColDragEnd}>
-        <SortableContext items={item.columns} strategy={horizontalListSortingStrategy}>
-          <div className='overflow-x-auto rounded-lg border border-default-200/70 bg-content1'>
-            <div className='max-h-48 overflow-y-auto'>
-              <table className='w-full text-left text-sm'>
-                <thead className='sticky top-0 z-10 border-b border-default-200 bg-content2/80 font-medium text-default-600'>
-                  <tr>
-                    {item.columns.map(col => (
-                      <SortableHeaderItem key={col} id={col} className='min-w-[120px] border-l p-1.5'>
-                        <ColumnHeader
-                          col={col}
-                          itemId={item.id}
-                          columns={item.columns}
-                          onRename={handleRenameCol}
-                          onDelete={handleDeleteCol}
-                          autoFocus={lastAddedCol === col}
+      <div
+        className={cn(
+          'overflow-auto border border-divider bg-content1',
+          fullscreen ? 'max-h-[calc(100vh-240px)]' : 'max-h-80'
+        )}>
+        <div>
+          <table className='w-full text-left text-sm'>
+            <thead className='sticky top-0 z-10 border-b border-divider bg-content2'>
+              <tr>
+                {item.columns.map(col => (
+                  <th key={col} className='min-w-[140px] border-l border-divider p-1.5 first:border-l-0'>
+                    <ColumnHeader col={col} />
+                  </th>
+                ))}
+                <th className='w-11 border-l border-divider p-2'>
+                  <span className='sr-only'>Row actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {item.rows.map((row, rIdx) => (
+                <tr
+                  key={rIdx}
+                  id={`table-${item.id}-row-${rIdx}`}
+                  title={rowErrors?.[rIdx]}
+                  className={cn(
+                    'border-b border-divider hover:bg-content2',
+                    rowErrors?.[rIdx] && 'bg-danger/10 outline outline-1 -outline-offset-1 outline-danger'
+                  )}>
+                  {item.columns.map(col => {
+                    const cleanCol = col.replace(/^\{\{row:/, '').replace(/\}\}$/, '')
+                    return (
+                      <td key={col} className='min-w-[120px] border-l border-divider p-0 first:border-l-0'>
+                        <input
+                          aria-label={`Row ${rIdx + 1} ${cleanCol}`}
+                          className='h-9 w-full bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-default-400 focus:bg-content2 focus:shadow-[inset_0_0_0_1px_hsl(var(--heroui-default-500))]'
+                          value={row[col] ?? ''}
+                          placeholder={cleanCol}
+                          onChange={e => updateRow(rIdx, col, e.target.value)}
+                          onKeyDown={handleEnterKey}
                         />
-                      </SortableHeaderItem>
-                    ))}
-                    <th className='w-10 border-l p-2' />
-                  </tr>
-                </thead>
-                <tbody>
-                  {item.rows.map((row, rIdx) => (
-                    <tr key={rIdx} className='border-b border-default-200/70 hover:bg-content2/70'>
-                      {item.columns.map(col => {
-                        const cleanCol = col.replace(/^\{\{row:/, '').replace(/\}\}$/, '')
-                        return (
-                          <td key={col} className='min-w-[100px] border-l p-1'>
-                            <input
-                              className='w-full rounded bg-transparent px-2 py-1 text-[12px] text-foreground outline-none transition-colors placeholder:italic placeholder:text-default-400/50 focus:bg-content2/70'
-                              value={row[col] ?? ''}
-                              placeholder={cleanCol}
-                              onChange={e => updateRow(rIdx, col, e.target.value)}
-                              onKeyDown={handleEnterKey}
-                            />
-                          </td>
-                        )
-                      })}
-                      <td className='w-10 border-l p-1 text-center'>
-                        <Button
-                          isIconOnly
-                          size='sm'
-                          color='danger'
-                          variant='flat'
-                          radius='sm'
-                          className='h-6 w-6 min-w-0'
-                          data-skip-enter='true'
-                          onPress={() => deleteRow(rIdx)}>
-                          <Icon icon='lucide:trash-2' className='h-3 w-3' />
-                        </Button>
                       </td>
-                    </tr>
-                  ))}
-                  {item.rows.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={item.columns.length + 1}
-                        className='py-5 text-center text-xs italic text-default-400'>
-                        No data rows yet
-                      </td>
-                    </tr>
-                  )}
-                  <tr className='border-t border-default-200'>
-                    <td colSpan={item.columns.length + 1} className='p-1'>
-                      <Button
-                        size='sm'
-                        variant='flat'
-                        onPress={addRow}
-                        className='w-full bg-content1 text-xs text-default-500 hover:bg-content2'>
-                        <Icon icon='lucide:plus' className='h-3.5 w-3.5' />
-                        Add Row
-                      </Button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </SortableContext>
-      </DndContext>
+                    )
+                  })}
+                  <td className='w-11 border-l border-divider p-0 text-center'>
+                    <button
+                      type='button'
+                      data-skip-enter='true'
+                      title='Remove row'
+                      aria-label={`Remove row ${rIdx + 1}`}
+                      onClick={() => deleteRow(rIdx)}
+                      className='flex h-9 w-full items-center justify-center text-default-500 transition-colors hover:text-danger'>
+                      <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {item.rows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={item.columns.length + 1}
+                    className='py-5 text-center text-[13px] text-default-500'>
+                    No rows yet
+                  </td>
+                </tr>
+              )}
+              <tr>
+                <td colSpan={item.columns.length + 1} className='p-1.5'>
+                  <AddButton onPress={addRow} fullWidth>
+                    Add row
+                  </AddButton>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Repeat Header */}
       <CheckboxCard
@@ -1600,53 +1268,50 @@ const TableEditorBody = ({
           key='advanced'
           aria-label='Advanced Settings'
           title={
-            <div className='flex items-center gap-2 text-xs font-semibold text-default-700'>
-              <Icon icon='lucide:settings-2' className='h-3.5 w-3.5 text-primary' />
-              Advanced Table Settings
+            <div className='flex items-center gap-2 text-[13px] font-medium text-default-500'>
+              <Icon icon='lucide:settings-2' className='h-4 w-4' />
+              More table options
             </div>
           }
           className='px-0'
-          classNames={{ title: 'text-xs', content: 'pt-2 pb-2' }}>
-          <div className='builder-detail-panel flex flex-col gap-4 rounded-lg p-3'>
+          classNames={{ trigger: 'py-2', content: 'pt-1 pb-2' }}>
+          <div className='flex flex-col gap-4 pt-1'>
             {/* Sort */}
             <div className='flex flex-col gap-2'>
               <div className='flex items-center justify-between'>
                 <div className='flex items-center gap-1.5'>
-                  <Icon icon='lucide:arrow-up-down' className='h-3.5 w-3.5 text-primary' />
-                  <span className='text-xs font-semibold text-default-700'>Sort</span>
+                  <Icon icon='lucide:arrow-up-down' className='h-4 w-4 text-default-500' />
+                  <MonoLabel>Sort rows</MonoLabel>
                 </div>
-                <Button
-                  size='sm'
-                  variant='flat'
+                <AddButton
                   onPress={() =>
                     onUpdate({
                       ...item,
-                      sort: [
-                        ...(item.sort?.length ? item.sort : [{ field: '', direction: '' }]),
-                        { field: '', direction: '' }
-                      ]
+                      sort: [...(item.sort ?? []), { field: '', direction: '' }]
                     })
-                  }
-                  className='h-6 min-w-0 bg-content2 px-2 text-xs font-semibold text-default-700 hover:bg-content3'>
-                  + Add
-                </Button>
+                  }>
+                  Add sort
+                </AddButton>
               </div>
               <div className='flex flex-col gap-2'>
-                {(item.sort?.length ? item.sort : [{ field: '', direction: '' }]).map((rule, idx) => (
+                {!item.sort?.length && (
+                  <p className='text-[13px] text-default-500'>Rows keep the order you enter them.</p>
+                )}
+                {(item.sort ?? []).map((rule, idx) => (
                   <div key={idx} className='flex items-center gap-2'>
                     <Select
                       aria-label='Sort Column'
-                      placeholder='Column...'
+                      placeholder='Column'
                       selectedKeys={rule.field ? [rule.field] : []}
                       onChange={e => {
-                        const s = [...(item.sort?.length ? item.sort : [{ field: '', direction: '' }])]
+                        const s = [...(item.sort ?? [])]
                         s[idx] = { ...s[idx], field: e.target.value }
                         onUpdate({ ...item, sort: s })
                       }}
                       size='sm'
-                      variant='flat'
+                      variant='bordered'
                       className='flex-1'
-                      classNames={{ trigger: rowInputWrapper }}>
+                      classNames={rowSelectClasses}>
                       {item.columns.map(col => {
                         const clean = col.replace('{{row:', '').replace('}}', '')
                         return (
@@ -1661,14 +1326,14 @@ const TableEditorBody = ({
                       placeholder='Order'
                       selectedKeys={rule.direction ? [rule.direction] : []}
                       onChange={e => {
-                        const s = [...(item.sort?.length ? item.sort : [{ field: '', direction: '' }])]
+                        const s = [...(item.sort ?? [])]
                         s[idx] = { ...s[idx], direction: e.target.value }
                         onUpdate({ ...item, sort: s })
                       }}
                       size='sm'
-                      variant='flat'
+                      variant='bordered'
                       className='w-32'
-                      classNames={{ trigger: rowInputWrapper }}>
+                      classNames={rowSelectClasses}>
                       <SelectItem key='asc' textValue='Ascending'>
                         Ascending
                       </SelectItem>
@@ -1676,52 +1341,45 @@ const TableEditorBody = ({
                         Descending
                       </SelectItem>
                     </Select>
-                    {(item.sort?.length ?? 0) > 1 && (
-                      <Button
-                        isIconOnly
-                        size='sm'
-                        color='danger'
-                        variant='flat'
-                        onPress={() => {
-                          const s = [...item.sort!]
-                          s.splice(idx, 1)
-                          onUpdate({ ...item, sort: s })
-                        }}
-                        className='h-8 w-8 min-w-0'>
-                        <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-                      </Button>
-                    )}
+                    <button
+                      type='button'
+                      title='Remove sort'
+                      aria-label='Remove sort'
+                      onClick={() => onUpdate({ ...item, sort: (item.sort ?? []).filter((_, i) => i !== idx) })}
+                      className={rowDeleteBtn}>
+                      <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
+                    </button>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Vertical Merge & Collapse */}
-            <div className='flex flex-col gap-2 border-t border-default-100 pt-3'>
+            <div className='flex flex-col gap-3 border-t border-divider pt-4'>
               <div className='flex items-center gap-1.5'>
-                <Icon icon='lucide:network' className='h-3.5 w-3.5 text-primary' />
-                <span className='text-xs font-semibold text-default-700'>Vertical Merge & Collapse</span>
+                <Icon icon='lucide:network' className='h-4 w-4 text-default-500' />
+                <MonoLabel>Merge & group</MonoLabel>
               </div>
-              <div className='grid grid-cols-2 gap-2'>
+              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <Select
-                  label='Vertical Merge'
-                  placeholder='Select columns...'
+                  label='Merge same values'
+                  placeholder='Choose columns'
                   selectionMode='multiple'
                   selectedKeys={new Set(item.verticalMerge || [])}
                   onSelectionChange={keys => onUpdate({ ...item, verticalMerge: Array.from(keys) as string[] })}
                   size='sm'
-                  variant='flat'
+                  variant='bordered'
                   isMultiline
                   renderValue={vals => (
                     <div className='flex flex-wrap gap-1 py-0.5'>
                       {vals.map(v => (
-                        <BrandChip key={v.key} tone='primary' size='xs'>
+                        <BrandChip key={v.key} tone='neutral' size='xs'>
                           {v.textValue}
                         </BrandChip>
                       ))}
                     </div>
                   )}
-                  classNames={{ trigger: rowInputWrapper }}>
+                  classNames={rowSelectClasses}>
                   {item.columns.map(col => {
                     const clean = col.replace('{{row:', '').replace('}}', '')
                     return (
@@ -1732,24 +1390,24 @@ const TableEditorBody = ({
                   })}
                 </Select>
                 <Select
-                  label='Data Collapsing'
-                  placeholder='Select columns...'
+                  label='Group rows by'
+                  placeholder='Choose columns'
                   selectionMode='multiple'
                   selectedKeys={new Set(item.collapse || [])}
                   onSelectionChange={keys => onUpdate({ ...item, collapse: Array.from(keys) as string[] })}
                   size='sm'
-                  variant='flat'
+                  variant='bordered'
                   isMultiline
                   renderValue={vals => (
                     <div className='flex flex-wrap gap-1 py-0.5'>
                       {vals.map(v => (
-                        <BrandChip key={v.key} tone='primary' size='xs'>
+                        <BrandChip key={v.key} tone='neutral' size='xs'>
                           {v.textValue}
                         </BrandChip>
                       ))}
                     </div>
                   )}
-                  classNames={{ trigger: rowInputWrapper }}>
+                  classNames={rowSelectClasses}>
                   {item.columns.map(col => {
                     const clean = col.replace('{{row:', '').replace('}}', '')
                     return (
@@ -1773,120 +1431,147 @@ interface TableRowProps {
   index: number
   items: TableItem[]
   onChange: (items: TableItem[]) => void
+  errors?: Record<string, string>
 }
 
-const TableRow: React.FC<TableRowProps> = ({ item, index, items, onChange }) => {
-  const [expanded, setExpanded] = useState(false)
-  const configured = item.columns.length > 0 && item.rows.length > 0
+/** Structure = the table has columns. Test data = it has rows and no empty cells. */
+export const tableReadiness = (t: { columns: string[]; rows: Record<string, string>[] }) => {
+  const cells = t.rows.length * t.columns.length
+  const emptyCells = t.rows.reduce(
+    (n, row) => n + t.columns.filter(c => !row[c] || row[c] === 'null').length,
+    0
+  )
+  return {
+    structureOk: t.columns.length > 0,
+    dataFilled: t.columns.length > 0 && t.rows.length > 0 && emptyCells === 0,
+    emptyCells,
+    cells
+  }
+}
+
+/** Row index → message for this table, from errors keyed `${tableId}-row-${n}`. */
+const rowErrorsFor = (tableId: string, errors?: Record<string, string>) => {
+  const out: Record<number, string> = {}
+  if (!errors) return out
+  const prefix = `${tableId}-row-`
+  Object.entries(errors).forEach(([k, v]) => {
+    if (k.startsWith(prefix)) out[Number(k.slice(prefix.length))] = v
+  })
+  return out
+}
+
+const TableRow: React.FC<TableRowProps> = ({ item, index, items, onChange, errors }) => {
+  const [expanded, setExpanded] = useState(true)
+  const [fullscreen, setFullscreen] = useState(false)
+  const readiness = tableReadiness(item)
   const tableName = `Table ${index + 1}`
+  const rowErrors = rowErrorsFor(item.id, errors)
+  const tableError = errors?.[item.id]
 
   const onUpdate = (u: TableItem) => onChange(items.map(x => (x.id === item.id ? u : x)))
-  const onDelete = () => onChange(items.filter(x => x.id !== item.id))
 
   const colCount = item.columns.length
   const rowCount = item.rows.length
+  const columnNames = item.columns.map(c => c.replace(/^\{\{row:/, '').replace(/\}\}$/, '')).join(', ')
 
-  // Table "key" is synthesized (tables aren't named by user yet). Show as {{table:N}} for
-  // visual parity with Variables/Images/QR/Barcodes mapping-key inputs.
-  const tableKey = `{{table:${index + 1}}}`
+  const dataLabel =
+    rowCount === 0
+      ? 'No test rows'
+      : readiness.emptyCells > 0
+        ? `${readiness.emptyCells} empty ${readiness.emptyCells === 1 ? 'cell' : 'cells'}`
+        : 'Test data filled'
 
   return (
-    <SortableItem id={item.id} className={rowShell(configured)}>
-      {/* Collapsed row header */}
-      <div className={rowHeaderStrip(configured)}>
-        <DragHandle className='shrink-0 text-default-400/70 transition-colors duration-200 hover:text-default-700' />
-        {/* Read-only key display — input-styled for pattern parity, not editable (yet) */}
-        <div
-          className='builder-field var-token-text flex h-8 w-[200px] shrink-0 cursor-default items-center rounded-md border px-2.5'
-          title={tableName}>
-          <span className='truncate'>{tableKey}</span>
-        </div>
-        <div className='flex flex-1 items-center justify-end gap-2'>
-          {/* Separate col/row counters — each in its own chip so empty state is visible per metric */}
-          <div className='hidden items-center gap-1.5 sm:flex'>
-            <span
-              className={cn(
-                'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium',
-                colCount > 0 ? 'bg-content2/30 text-default-500' : 'builder-attention-chip'
-              )}
-              title={colCount === 0 ? 'Needs at least one column' : undefined}>
-              <Icon icon='lucide:columns-3' className='h-3 w-3' />
-              {colCount} {colCount === 1 ? 'col' : 'cols'}
-            </span>
-            <span
-              className={cn(
-                'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium',
-                rowCount > 0 ? 'bg-content2/30 text-default-500' : 'builder-attention-chip'
-              )}
-              title={rowCount === 0 ? 'Needs at least one row' : undefined}>
-              <Icon icon='lucide:rows-3' className='h-3 w-3' />
-              {rowCount} {rowCount === 1 ? 'row' : 'rows'}
-            </span>
-          </div>
-          <div className='flex items-center gap-0.5'>
-            <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
-            <button data-skip-enter='true' onClick={onDelete} title='Remove' className={rowDeleteBtn}>
-              <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-            </button>
-          </div>
+    <FieldRow id={item.id} className={rowShell(readiness.dataFilled)}>
+      <div className={rowHeaderStrip(readiness.dataFilled)}>
+        <StatusDot filled={readiness.dataFilled} />
+        <span className='min-w-0 flex-1 truncate text-[13px] text-foreground' title={columnNames || tableName}>
+          <span className='font-medium'>{tableName}</span>
+          {columnNames && <span className='ml-2 font-mono text-[12px] text-default-500'>{columnNames}</span>}
+        </span>
+        <div className='flex shrink-0 items-center gap-1'>
+          <span className={readiness.structureOk ? rowSummaryChip.replace('hidden sm:flex', 'flex') : attentionChip}>
+            <Icon icon='lucide:columns-3' className='h-3 w-3' />
+            {readiness.structureOk ? `${colCount} ${colCount === 1 ? 'column' : 'columns'}` : 'No columns'}
+          </span>
+          <span className={readiness.dataFilled ? rowSummaryChip.replace('hidden sm:flex', 'flex') : attentionChip}>
+            <Icon icon='lucide:rows-3' className='h-3 w-3' />
+            {dataLabel}
+          </span>
+          <button
+            type='button'
+            data-skip-enter='true'
+            onClick={() => setFullscreen(true)}
+            title='Open the table in a large view'
+            aria-label={`Expand ${tableName}`}
+            className={rowIconBtn}>
+            <Icon icon='lucide:maximize-2' className='h-4 w-4' />
+          </button>
+          <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
         </div>
       </div>
+      {tableError && <p className='px-2 pb-2 text-[12px] text-danger'>{tableError}</p>}
 
-      {/* Expanded body — neutral bg (no amber bleed) */}
-      {expanded && (
-        <div className='builder-detail-panel mb-1.5 ml-[22px] mr-1.5 mt-0.5 rounded-md p-3'>
-          <TableEditorBody item={item} onUpdate={onUpdate} tableName={tableName} />
+      {expanded && !fullscreen && (
+        <div className='border-t border-divider p-4'>
+          <TableEditorBody item={item} onUpdate={onUpdate} tableName={tableName} rowErrors={rowErrors} />
         </div>
       )}
-    </SortableItem>
+
+      <Modal isOpen={fullscreen} onOpenChange={setFullscreen} size='full' radius='none' scrollBehavior='inside'>
+        <ModalContent className='border border-divider bg-content1'>
+          {() => (
+            <>
+              <ModalHeader className='flex items-center gap-3 border-b border-divider'>
+                <span className='text-[14px] font-medium text-foreground'>{tableName}</span>
+                <span className='text-[13px] font-normal text-default-500'>{dataLabel}</span>
+              </ModalHeader>
+              <ModalBody className='py-4'>
+                <TableEditorBody item={item} onUpdate={onUpdate} tableName={tableName} fullscreen rowErrors={rowErrors} />
+              </ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
+    </FieldRow>
   )
 }
 
-export const TablesSection: React.FC<TablesSectionProps> = ({ items, onChange }) => {
+export const TablesSection: React.FC<TablesSectionProps> = ({ items, onChange, errors }) => {
   const [showMissingOnly, setShowMissingOnly] = useState(false)
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id)
-      const newIndex = items.findIndex(i => i.id === over.id)
-      onChange(arrayMove(items, oldIndex, newIndex))
-    }
-  }
-
-  const isMissing = (t: TableItem) => t.columns.length === 0 || t.rows.length === 0
+  const isMissing = (t: TableItem) => !tableReadiness(t).dataFilled
   const missing = items.filter(isMissing).length
+  const noStructure = items.filter(t => !tableReadiness(t).structureOk).length
   const visible = showMissingOnly ? items.filter(isMissing) : items
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
-        {items.length > 0 ? (
-          <>
-            <SectionSummary
-              total={items.length}
-              missing={missing}
-              missingLabel='incomplete'
-              showMissingOnly={showMissingOnly}
-              onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
-            />
-            <div className='flex flex-col gap-0.5'>
-              {visible.map(item => {
-                const idx = items.findIndex(x => x.id === item.id)
-                return <TableRow key={item.id} item={item} index={idx} items={items} onChange={onChange} />
-              })}
-            </div>
-          </>
-        ) : (
-          <EmptyState
-            icon='lucide:table'
-            title='No tables added yet'
-            hint='Add a data table to populate from structured data.'
+    <>
+      {items.length > 0 ? (
+        <>
+          <SummaryBar
+            left={
+              noStructure > 0
+                ? `${items.length - noStructure}/${items.length} with columns`
+                : `${items.length - missing}/${items.length} with test data`
+            }
+            missing={missing}
+            missingLabel='need test data'
+            doneLabel='All tables have test data'
+            showMissingOnly={showMissingOnly}
+            onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
           />
-        )}
-      </SortableContext>
-    </DndContext>
+          <div className='flex flex-col gap-2'>
+            {visible.map(item => {
+              const idx = items.findIndex(x => x.id === item.id)
+              return <TableRow key={item.id} item={item} index={idx} items={items} onChange={onChange} errors={errors} />
+            })}
+          </div>
+        </>
+      ) : (
+        <StepsEmptyState icon='lucide:table' title='No tables in this file' marker='{{row:item}}' what='table' />
+      )}
+    </>
   )
 }
 
@@ -2075,21 +1760,21 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
   }
 
   return (
-    <div className='flex flex-col gap-2'>
+    <div className='flex flex-col gap-3'>
       {/* Output File Name */}
-      <div className='flex flex-col gap-3 rounded-2xl border border-content3 bg-content1 p-4 shadow-sm'>
+      <div className={settingsCard}>
         <div className='flex items-center gap-2'>
-          <Icon icon='lucide:file-output' className='h-4 w-4 text-default-500' />
-          <span className='text-sm font-semibold text-foreground'>Output File Name</span>
+          <Icon icon='lucide:file-output' className='h-4 w-4 text-default-500' aria-hidden />
+          <span className='text-[14px] font-semibold text-foreground'>File name</span>
         </div>
         <Input
           aria-label='Output file name'
           placeholder='My_Generated_Report'
-          description='Name used when the generated file is downloaded (extension is added automatically).'
+          description='Used when the file is downloaded. The extension is added for you.'
           value={fileName ?? ''}
           onValueChange={v => onChange({ fileName: v })}
           variant='bordered'
-          radius='sm'
+          classNames={fieldClasses}
           size='sm'
         />
       </div>
@@ -2097,13 +1782,15 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
       {showPdfOptions && (
         <>
           {/* Password Section */}
-          <div className='flex flex-col gap-4 rounded-2xl border border-content3 bg-content1 p-4 shadow-sm'>
+          <div className={settingsCard}>
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-2'>
                 <Icon icon='lucide:lock' className='h-4 w-4 text-default-500' />
-                <span className='text-sm font-semibold text-foreground'>PDF Password Protection</span>
+                <span className='text-[14px] font-semibold text-foreground'>Password-protect PDF</span>
               </div>
               <Switch
+                color='default'
+                aria-label='Password-protect PDF'
                 size='sm'
                 isSelected={passwordEnabled}
                 onValueChange={v => {
@@ -2117,48 +1804,51 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
               <div className='flex flex-col gap-4'>
                 <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                   <Input
-                    label='User Password'
+                    label='Open password'
                     description='Required to open the file'
                     placeholder='Optional'
                     value={pdfPassword?.userPassword || ''}
                     onChange={e => updatePassword({ userPassword: e.target.value || undefined })}
                     labelPlacement='outside'
                     variant='bordered'
-                    radius='sm'
+                    classNames={fieldClasses}
                     type='text'
                   />
                   <Input
-                    label='Owner Password'
+                    label='Permissions password'
                     description='Required to change restrictions'
                     placeholder='Optional'
                     value={pdfPassword?.ownerPassword || ''}
                     onChange={e => updatePassword({ ownerPassword: e.target.value || undefined })}
                     labelPlacement='outside'
                     variant='bordered'
-                    radius='sm'
+                    classNames={fieldClasses}
                     type='text'
                   />
                 </div>
                 <div className='flex flex-col gap-2'>
-                  <span className='text-xs font-semibold text-default-600'>Restrictions</span>
+                  <MonoLabel>Restrictions</MonoLabel>
                   <div className='flex flex-wrap gap-4'>
                     <Checkbox
+                      color='default'
                       isSelected={pdfPassword?.restrictPrinting ?? false}
                       onValueChange={v => updatePassword({ restrictPrinting: v })}
                       size='sm'>
-                      <span className='text-sm text-default-700'>Restrict Printing</span>
+                      <span className='text-[14px] text-foreground'>Restrict Printing</span>
                     </Checkbox>
                     <Checkbox
+                      color='default'
                       isSelected={pdfPassword?.restrictCopying ?? false}
                       onValueChange={v => updatePassword({ restrictCopying: v })}
                       size='sm'>
-                      <span className='text-sm text-default-700'>Restrict Copying</span>
+                      <span className='text-[14px] text-foreground'>Restrict Copying</span>
                     </Checkbox>
                     <Checkbox
+                      color='default'
                       isSelected={pdfPassword?.restrictModifying ?? false}
                       onValueChange={v => updatePassword({ restrictModifying: v })}
                       size='sm'>
-                      <span className='text-sm text-default-700'>Restrict Modifying</span>
+                      <span className='text-[14px] text-foreground'>Restrict Modifying</span>
                     </Checkbox>
                   </div>
                 </div>
@@ -2167,13 +1857,15 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
           </div>
 
           {/* Watermark Section */}
-          <div className='flex flex-col gap-4 rounded-2xl border border-content3 bg-content1 p-4 shadow-sm'>
+          <div className={settingsCard}>
             <div className='flex items-center justify-between'>
               <div className='flex items-center gap-2'>
                 <Icon icon='lucide:droplets' className='h-4 w-4 text-default-500' />
-                <span className='text-sm font-semibold text-foreground'>Watermark</span>
+                <span className='text-[14px] font-semibold text-foreground'>Watermark</span>
               </div>
               <Switch
+                color='default'
+                aria-label='Add watermark'
                 size='sm'
                 isSelected={watermarkEnabled}
                 onValueChange={v => {
@@ -2208,18 +1900,18 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                 {hasFontData ? (
                   <>
                     <Input
-                      label='Watermark Text'
+                      label='Text'
                       placeholder='e.g. CONFIDENTIAL'
                       value={watermark?.text || ''}
                       onChange={e => updateWatermark({ text: e.target.value })}
                       labelPlacement='outside'
                       variant='bordered'
-                      radius='sm'
+                      classNames={fieldClasses}
                       size='sm'
                     />
                     <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                       <Select
-                        label='Font Family'
+                        label='Font'
                         selectedKeys={currentFamily ? [currentFamily] : []}
                         onChange={e => {
                           const family = e.target.value
@@ -2236,13 +1928,13 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                         labelPlacement='outside'
                         variant='bordered'
                         size='sm'
-                        classNames={{ trigger: 'shadow-none' }}>
+                        classNames={selectClasses}>
                         {fontFamilies.map(f => (
                           <SelectItem key={f}>{f}</SelectItem>
                         ))}
                       </Select>
                       <Select
-                        label='Font Variant'
+                        label='Style'
                         selectedKeys={(() => {
                           const w = Number(watermark?.fontWeight ?? 400)
                           const i = watermark?.fontItalic ? 1 : 0
@@ -2263,7 +1955,7 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                         labelPlacement='outside'
                         variant='bordered'
                         size='sm'
-                        classNames={{ trigger: 'shadow-none' }}
+                        classNames={selectClasses}
                         renderValue={items => {
                           const sel = items[0]
                           if (!sel) return null
@@ -2287,22 +1979,23 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                 ) : (
                   <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                     <Input
-                      label='Watermark Text'
+                      label='Text'
                       placeholder='e.g. CONFIDENTIAL'
                       value={watermark?.text || ''}
                       onChange={e => updateWatermark({ text: e.target.value })}
                       labelPlacement='outside'
                       variant='bordered'
-                      radius='sm'
+                      classNames={fieldClasses}
                       size='sm'
                     />
                     <Select
-                      label='Font Family'
+                      label='Font'
                       selectedKeys={watermark?.fontFamily ? [watermark.fontFamily] : [fontFamilies[0] ?? 'Arial']}
                       onChange={e => updateWatermark({ fontFamily: e.target.value })}
                       labelPlacement='outside'
                       variant='bordered'
-                      size='sm'>
+                      size='sm'
+                      classNames={selectClasses}>
                       {fontFamilies.map(f => (
                         <SelectItem key={f}>{f}</SelectItem>
                       ))}
@@ -2313,14 +2006,14 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                 {/* Font Size + Color */}
                 <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                   <Input
-                    label='Font Size'
+                    label='Size'
                     type='number'
                     placeholder='48'
                     value={watermark?.fontSize?.toString() || ''}
                     onChange={e => updateWatermark({ fontSize: e.target.value ? Number(e.target.value) : undefined })}
                     labelPlacement='outside'
                     variant='bordered'
-                    radius='sm'
+                    classNames={fieldClasses}
                     size='sm'
                   />
                   <Input
@@ -2330,7 +2023,7 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                     onChange={e => updateWatermark({ color: e.target.value })}
                     labelPlacement='outside'
                     variant='bordered'
-                    radius='sm'
+                    classNames={fieldClasses}
                     size='sm'
                   />
                 </div>
@@ -2338,7 +2031,7 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                 {/* Opacity & Rotation */}
                 <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                   <div className='flex flex-col gap-1'>
-                    <span className='text-xs font-medium text-default-600'>
+                    <span className='text-[13px] font-medium text-default-500'>
                       Opacity: {Math.round((Number(watermark?.opacity) || 0.3) * 100)}%
                     </span>
                     <Slider
@@ -2348,18 +2041,18 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                       value={Number(watermark?.opacity) || 0.3}
                       onChange={v => updateWatermark({ opacity: v as number })}
                       size='sm'
-                      color='primary'
+                      color='foreground'
                     />
                   </div>
                   <Input
-                    label='Rotation (degrees)'
+                    label='Rotation (°)'
                     type='number'
                     placeholder='-45'
                     value={watermark?.rotation?.toString() || ''}
                     onChange={e => updateWatermark({ rotation: e.target.value ? Number(e.target.value) : undefined })}
                     labelPlacement='outside'
                     variant='bordered'
-                    radius='sm'
+                    classNames={fieldClasses}
                     size='sm'
                   />
                 </div>
@@ -2367,23 +2060,25 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                 {/* Position */}
                 <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
                   <Select
-                    label='Position X'
+                    label='Horizontal'
                     selectedKeys={watermark?.positionX ? [watermark.positionX] : ['center']}
                     onChange={e => updateWatermark({ positionX: e.target.value })}
                     labelPlacement='outside'
                     variant='bordered'
-                    size='sm'>
+                    size='sm'
+                    classNames={selectClasses}>
                     {POSITION_X_OPTIONS.map(p => (
                       <SelectItem key={p}>{p}</SelectItem>
                     ))}
                   </Select>
                   <Select
-                    label='Position Y'
+                    label='Vertical'
                     selectedKeys={watermark?.positionY ? [watermark.positionY] : ['middle']}
                     onChange={e => updateWatermark({ positionY: e.target.value })}
                     labelPlacement='outside'
                     variant='bordered'
-                    size='sm'>
+                    size='sm'
+                    classNames={selectClasses}>
                     {POSITION_Y_OPTIONS.map(p => (
                       <SelectItem key={p}>{p}</SelectItem>
                     ))}
@@ -2392,9 +2087,9 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
 
                 {/* Pages */}
                 <Input
-                  label='Apply to Pages (optional)'
-                  description='Comma-separated page numbers, e.g. 1,2,3'
-                  placeholder='Leave empty to apply to all pages'
+                  label='Pages (optional)'
+                  description='Page numbers separated by commas, e.g. 1, 2, 3'
+                  placeholder='All pages'
                   value={pagesRaw}
                   onChange={e => {
                     setPagesRaw(e.target.value)
@@ -2406,7 +2101,7 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
                   }}
                   labelPlacement='outside'
                   variant='bordered'
-                  radius='sm'
+                  classNames={fieldClasses}
                   size='sm'
                 />
               </div>
@@ -2416,15 +2111,17 @@ export const FileSettingsSection: React.FC<FileSettingsSectionProps> = ({
       )}
 
       {/* ZIP Output */}
-      <div className='flex flex-col gap-3'>
-        <div className='flex items-center justify-between'>
+      <div className={settingsCard}>
+        <div className='flex items-center justify-between gap-4'>
           <div>
-            <p className='text-sm font-semibold text-foreground'>Download as ZIP</p>
-            <p className='text-xs text-default-500'>
-              Wrap the output file in a <code className='font-mono'>.zip</code> archive before download.
+            <p className='text-[14px] font-semibold text-foreground'>Download as ZIP</p>
+            <p className='mt-0.5 text-[13px] text-default-500'>
+              Put the generated file inside a <code className='font-mono'>.zip</code> archive.
             </p>
           </div>
           <Switch
+                color='default'
+                aria-label='Download as ZIP'
             isSelected={!!zipOutput}
             onValueChange={v => {
               if (v && requireFeature && !requireFeature('downloadAsZip')) return

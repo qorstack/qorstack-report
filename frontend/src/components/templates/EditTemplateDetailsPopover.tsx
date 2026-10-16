@@ -1,8 +1,9 @@
 'use client'
 
 import React from 'react'
-import { Button, Input, Popover, PopoverContent, PopoverTrigger } from '@heroui/react'
+import { Button, Input, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader } from '@heroui/react'
 import Icon from '@/components/icon'
+import { fieldClasses } from '@/components/template-editor/field-styles'
 
 type Props = {
   isOpen: boolean
@@ -18,8 +19,8 @@ type Props = {
 }
 
 /**
- * Edit Template Details popover — rename and regenerate template key.
- * Triggered by a pencil icon next to the template title.
+ * Rename dialog — edit the template name and key.
+ * Opened from the "More" menu in the template header (kept under its old name for compatibility).
  */
 export const EditTemplateDetailsPopover: React.FC<Props> = ({
   isOpen,
@@ -33,49 +34,74 @@ export const EditTemplateDetailsPopover: React.FC<Props> = ({
   isGeneratingKey,
   isSaving
 }) => (
-  <Popover isOpen={isOpen} onOpenChange={onOpenChange} placement='bottom-start' showArrow offset={10}>
-    <PopoverTrigger>
-      <Button
-        isIconOnly
-        size='sm'
-        variant='light'
-        radius='md'
-        className='text-default-400 hover:bg-content3 hover:text-default-600'>
-        <Icon icon='lucide:pencil' className='h-3.5 w-3.5' />
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent className='w-80 p-4'>
-      <div className='w-full space-y-4'>
-        <h4 className='font-medium text-foreground'>Edit Template Details</h4>
-        <Input label='Template Name' variant='bordered' value={name} onValueChange={onNameChange} />
-        <Input
-          label='Template Key'
-          variant='bordered'
-          placeholder='Optional'
-          value={templateKey}
-          onValueChange={onKeyChange}
-          endContent={
+  <Modal isOpen={isOpen} onOpenChange={onOpenChange} size='md' radius='none'>
+    <ModalContent className='border border-divider bg-content1'>
+      {onClose => (
+        <form
+          onSubmit={e => {
+            e.preventDefault()
+            onSave()
+          }}>
+          <ModalHeader className='flex flex-col gap-1'>
+            <span className='text-[12px] font-normal text-default-500'>
+              Template
+            </span>
+            <span className='text-[16px] font-semibold'>Rename</span>
+          </ModalHeader>
+          <ModalBody className='gap-6'>
+            <Input
+              label='Name'
+              labelPlacement='outside'
+              variant='bordered'
+              classNames={fieldClasses}
+              value={name}
+              onValueChange={onNameChange}
+              autoFocus
+            />
+            <Input
+              label='Template key'
+              labelPlacement='outside'
+              variant='bordered'
+              placeholder='Optional'
+              description='Used as "templateKey" in API calls. Changing it breaks code that uses the old key.'
+              classNames={{ ...fieldClasses, input: `${fieldClasses.input} font-mono` }}
+              value={templateKey}
+              onValueChange={onKeyChange}
+              endContent={
+                <Button
+                  isIconOnly
+                  size='sm'
+                  radius='none'
+                  variant='light'
+                  className='text-default-500 hover:text-foreground'
+                  onPress={onGenerateKey}
+                  isLoading={isGeneratingKey}
+                  title='Generate a new key'
+                  aria-label='Generate a new key'>
+                  {!isGeneratingKey && <Icon icon='lucide:refresh-cw' className='h-4 w-4' />}
+                </Button>
+              }
+            />
+          </ModalBody>
+          <ModalFooter>
             <Button
-              isIconOnly
-              size='sm'
-              variant='flat'
-              className='bg-content3 text-default-600 hover:bg-default-200'
-              onPress={onGenerateKey}
-              isLoading={isGeneratingKey}
-              title='Generate Key'>
-              {!isGeneratingKey && <Icon icon='lucide:sparkles' className='h-4 w-4' />}
+              variant='bordered'
+              radius='none'
+              className='border-1 border-default-300 font-medium'
+              onPress={onClose}>
+              Cancel
             </Button>
-          }
-        />
-        <div className='flex justify-end gap-2'>
-          <Button size='sm' variant='light' onPress={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button size='sm' color='primary' onPress={onSave} isLoading={isSaving}>
-            Save Changes
-          </Button>
-        </div>
-      </div>
-    </PopoverContent>
-  </Popover>
+            <Button
+              type='submit'
+              color='primary'
+              radius='none'
+              className='font-semibold'
+              isLoading={isSaving}>
+              Save
+            </Button>
+          </ModalFooter>
+        </form>
+      )}
+    </ModalContent>
+  </Modal>
 )

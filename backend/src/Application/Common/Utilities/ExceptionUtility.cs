@@ -18,6 +18,7 @@ public static class ExceptionUtility
     public static bool IsKnownException(Exception ex)
     {
         return ex is QorstackReportService.Application.Common.Exceptions.ValidationException
+            or StorageUnavailableException
             or ArgumentException
             or FormatException
             or InvalidDataException
@@ -48,7 +49,8 @@ public static class ExceptionUtility
             or EncryptionException
             or DataValidationException
             or RequiredDataMissingException
-            or ProFeatureRequiredException;
+            or ProFeatureRequiredException
+            or RenderQueueFullException;
     }
 
     /// <summary>
@@ -60,6 +62,7 @@ public static class ExceptionUtility
     public static bool IsInfrastructureException(Exception ex)
     {
         if (ex == null) return false;
+        if (ex is StorageUnavailableException) return false; // already a clear, user-facing message
 
         var exceptionType = ex.GetType();
         var exceptionNamespace = exceptionType.Namespace ?? string.Empty;

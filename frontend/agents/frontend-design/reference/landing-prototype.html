@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qorstack Report — Templates in. PDFs out.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Anuphan:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" defer></script>
+<style>
+:root{
+  --bg:#070707; --bg-1:#0C0C0C; --bg-2:#111111; --card:#131313;
+  --ink:#F4F1EC; --muted:#A09C96; --faint:#6E6A65;
+  --line:#232221; --line-2:#33312F;
+  --red:#F2271C; --red-hi:#FF4234; --red-deep:#A8130C; --red-soft:rgba(242,39,28,.12);
+  --paper:#F7F5F0; --paper-ink:#141414; --paper-line:#E2DED6;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --sans:'Archivo','Anuphan',system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;font-variation-settings:'wdth' 100;-webkit-font-smoothing:antialiased}
+::selection{background:var(--red);color:#fff}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 28px}
+.mono{font-family:var(--mono)}
+.h-display{font-family:var(--sans);font-weight:850;font-variation-settings:'wdth' 72;text-transform:uppercase;letter-spacing:-.01em;line-height:.86}
+.red{color:var(--red)}
+.label{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+
+/* crop marks — print motif on boxed elements */
+.crop{position:relative}
+.crop::before,.crop::after,.crop>.cm::before,.crop>.cm::after{content:'';position:absolute;width:12px;height:12px;border-color:var(--red);border-style:solid;pointer-events:none}
+.crop::before{top:-6px;left:-6px;border-width:1px 0 0 1px}
+.crop::after{top:-6px;right:-6px;border-width:1px 1px 0 0}
+.crop>.cm::before{bottom:-6px;left:-6px;border-width:0 0 1px 1px}
+.crop>.cm::after{bottom:-6px;right:-6px;border-width:0 1px 1px 0}
+
+/* buttons — square */
+.btn{height:52px;padding:0 24px;display:inline-flex;align-items:center;gap:12px;border:1px solid transparent;border-radius:0;font-weight:700;font-size:15px;letter-spacing:.04em;text-transform:uppercase;font-variation-settings:'wdth' 90;cursor:pointer;transition:background .18s, color .18s, border-color .18s, transform .18s;white-space:nowrap}
+.btn svg{transition:transform .2s}
+.btn:hover svg{transform:translateX(3px)}
+.btn-red{background:var(--red);color:#fff}
+.btn-red:hover{background:var(--red-hi)}
+.btn-line{border-color:var(--line-2);background:transparent}
+.btn-line:hover{border-color:var(--ink)}
+.btn-sm{height:40px;padding:0 16px;font-size:13px}
+
+/* nav */
+.nav{position:sticky;top:0;z-index:60;background:rgba(7,7,7,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav .wrap{height:68px;display:flex;align-items:center;gap:40px}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-word{display:flex;flex-direction:column;line-height:1}
+.brand-word b{font-size:17px;font-weight:800;letter-spacing:.01em;font-variation-settings:'wdth' 88}
+.brand-word span{font-family:var(--mono);font-size:10px;letter-spacing:.32em;color:var(--muted);margin-top:4px}
+.nav-links{display:flex;gap:30px;font-size:14px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-variation-settings:'wdth' 92}
+.nav-links a{position:relative;padding:6px 0}
+.nav-links a::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--red);transform:scaleX(0);transform-origin:left;transition:transform .25s}
+.nav-links a:hover{color:var(--ink)}
+.nav-links a:hover::after{transform:scaleX(1)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.gh{height:40px;display:inline-flex;border:1px solid var(--line-2);font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;transition:border-color .2s}
+.gh:hover{border-color:var(--ink)}
+.gh>span{display:inline-flex;align-items:center;gap:8px;padding:0 13px}
+.gh .count{border-left:1px solid var(--line-2);font-family:var(--mono);letter-spacing:0;background:var(--bg-2)}
+.gh .count svg{color:var(--red)}
+@media (max-width:900px){.nav-links{display:none}}
+@media (max-width:560px){.gh{display:none}}
+
+/* hero */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.hero-bg{position:absolute;inset:0;pointer-events:none}
+.hero-bg .grid{position:absolute;inset:0;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:64px 64px;mask-image:linear-gradient(180deg,#000 40%,transparent 95%);opacity:.7}
+.hero-bg .scan{position:absolute;left:0;right:0;height:120px;background:linear-gradient(180deg,transparent,rgba(242,39,28,.09) 70%,rgba(242,39,28,.55) 99%,transparent);animation:scan 7s cubic-bezier(.6,0,.4,1) infinite;top:-140px}
+@keyframes scan{0%{top:-140px}70%,100%{top:110%}}
+.hero-bg .coords{position:absolute;top:84px;right:28px;font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.1em;text-align:right;line-height:1.7}
+.hero .wrap{position:relative;padding-top:84px;padding-bottom:96px}
+.hero-top{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+.hero-top .tag{background:var(--red);color:#fff;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.16em;padding:5px 9px}
+.hero h1{margin:0;font-size:clamp(64px,11.6vw,176px)}
+.hero h1 .row{display:block;overflow:hidden}
+.hero h1 .row>span{display:inline-block;transform:translateY(105%);animation:rise .9s cubic-bezier(.2,.8,.2,1) forwards}
+.hero h1 .row:nth-child(2)>span{animation-delay:.12s}
+@keyframes rise{to{transform:none}}
+.hero h1 .pdf{background:var(--red);color:#fff;padding:0 .12em;margin-left:-.04em;display:inline-block}
+.hero-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:56px;margin-top:48px;align-items:start}
+@media (max-width:1080px){.hero-grid{grid-template-columns:1fr}}
+.lede{font-size:clamp(18px,1.6vw,21px);color:var(--muted);margin:0;max-width:520px;font-variation-settings:'wdth' 96}
+.lede b{color:var(--ink);font-weight:600}
+.ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
+.specs{margin-top:40px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.specs div{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:16px 18px}
+.specs span{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.specs b{display:block;margin-top:6px;font-size:16px;font-weight:700;font-variation-settings:'wdth' 90}
+
+/* playground */
+.pg{background:var(--card);border:1px solid var(--line-2)}
+.pg-head{display:flex;align-items:center;border-bottom:1px solid var(--line-2);height:46px}
+.pg-head .seg{display:flex;height:100%}
+.pg-head .seg button{border:0;border-right:1px solid var(--line-2);background:transparent;padding:0 18px;font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);cursor:pointer}
+.pg-head .seg button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+.pg-head .ep{margin-left:auto;padding:0 16px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.pg-head .ep b{color:var(--red)}
+.pg-body{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+@media (max-width:640px){.pg-body{grid-template-columns:1fr}}
+.pg-left{padding:20px;border-right:1px solid var(--line-2);display:flex;flex-direction:column;gap:16px;min-height:460px}
+.field{display:flex;flex-direction:column;gap:7px}
+.field label{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--muted)}
+.field label em{font-style:normal;color:var(--red)}
+.input{height:42px;background:var(--bg);border:1px solid var(--line-2);border-radius:0;padding:0 12px;color:var(--ink);font:500 15px var(--sans);width:100%;transition:border-color .15s, box-shadow .15s}
+.input:focus{outline:none;border-color:var(--red);box-shadow:inset 3px 0 0 var(--red)}
+.rows{display:flex;flex-direction:column;gap:6px}
+.row{display:grid;grid-template-columns:minmax(110px,1fr) 52px 80px 32px;gap:6px}
+.row .input{height:38px;font-size:14px;padding:0 10px}
+.row button{border:1px solid var(--line-2);background:transparent;color:var(--faint);cursor:pointer}
+.row button:hover{border-color:var(--red);color:var(--red)}
+.add{align-self:flex-start;border:1px dashed var(--line-2);background:transparent;padding:7px 12px;font-family:var(--mono);font-size:12px;color:var(--muted);cursor:pointer;letter-spacing:.06em}
+.add:hover{border-color:var(--red);color:var(--red)}
+.gen{margin-top:auto;width:100%;justify-content:center}
+.gen .spin{width:14px;height:14px;border:2px solid #fff;border-right-color:transparent;animation:spin .7s linear infinite;display:none}
+.gen.busy .spin{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.json{display:none;margin:0;padding:18px;flex:1;background:#050505;border:1px solid var(--line);font-family:var(--mono);font-size:12px;line-height:1.75;overflow:auto;white-space:pre;color:#D9D5CE}
+.json .k{color:#FFB4AC}.json .s{color:var(--ink)}.json .p{color:var(--faint)}
+.pg[data-view="json"] .pg-form{display:none}.pg[data-view="json"] .json{display:block}
+.pg-right{background:repeating-linear-gradient(135deg,#0E0E0E 0 10px,#101010 10px 20px);display:flex;flex-direction:column;align-items:center;padding:22px 22px 26px;position:relative;overflow:hidden}
+.printer{width:100%;max-width:340px;height:16px;background:#1B1B1B;border:1px solid var(--line-2);position:relative;z-index:2}
+.printer::after{content:'';position:absolute;left:12px;right:12px;bottom:3px;height:3px;background:#050505}
+.printer i{position:absolute;right:8px;top:4px;width:6px;height:6px;background:var(--faint)}
+.printer.on i{background:var(--red);box-shadow:0 0 10px var(--red);animation:led .4s steps(1) infinite}
+@keyframes led{50%{opacity:.2}}
+.paper-wrap{width:100%;max-width:316px;margin-top:-3px;overflow:hidden}
+.paper{background:var(--paper);color:var(--paper-ink);padding:20px 20px 16px;font-size:11px;display:flex;flex-direction:column;gap:10px;position:relative;font-family:'Archivo','Anuphan',sans-serif;box-shadow:0 30px 60px -20px rgba(0,0,0,.9)}
+.paper.feed{animation:feed 1.1s cubic-bezier(.3,.1,.2,1) both}
+@keyframes feed{from{transform:translateY(-100%)}to{transform:none}}
+.p-head{display:flex;justify-content:space-between;gap:10px;border-bottom:2px solid var(--paper-ink);padding-bottom:10px}
+.p-brand{display:flex;align-items:center;gap:7px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.p-brand i{width:12px;height:12px;background:var(--red);display:block}
+.p-title{font-weight:900;font-size:22px;letter-spacing:-.01em;font-variation-settings:'wdth' 75;text-transform:uppercase;line-height:1}
+.p-meta{color:#6A6660;font-size:9.5px;line-height:1.5}
+.paper table{width:100%;border-collapse:collapse;font-size:10.5px}
+.paper th{text-align:left;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:#6A6660;font-weight:500;padding:5px 0;border-bottom:1px solid var(--paper-line)}
+.paper td{padding:5px 0;border-bottom:1px solid var(--paper-line)}
+.paper th:not(:first-child),.paper td:not(:first-child){text-align:right}
+.p-total{display:flex;justify-content:space-between;align-items:baseline;background:var(--paper-ink);color:var(--paper);padding:7px 9px;font-weight:700}
+.p-total b{font-size:15px;font-family:var(--mono)}
+.p-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:4px}
+.qr{display:block;width:64px;height:64px}
+.qr-cap{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:#6A6660;text-transform:uppercase;margin-top:4px}
+.bc{display:flex;align-items:flex-end;gap:1px;height:30px}
+.bc i{display:block;background:var(--paper-ink);height:100%}
+.bind{transition:background .4s}
+.bind.hit{background:rgba(242,39,28,.22)}
+.stamp{position:absolute;right:14px;top:68px;border:3px double var(--red);color:var(--red);padding:5px 10px;font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.18em;transform:rotate(-10deg) scale(2.4);opacity:0;pointer-events:none;mix-blend-mode:multiply}
+.stamp.show{animation:stamp .5s .9s cubic-bezier(.2,1.5,.4,1) forwards}
+@keyframes stamp{to{opacity:.95;transform:rotate(-10deg) scale(1)}}
+.toast{position:absolute;left:22px;right:22px;bottom:14px;background:var(--ink);color:var(--bg);font-family:var(--mono);font-size:12px;padding:10px 12px;display:flex;align-items:center;gap:10px;transform:translateY(140%);transition:transform .35s cubic-bezier(.2,.8,.2,1);z-index:3}
+.toast.show{transform:none}
+.toast i{width:8px;height:8px;background:var(--red);display:block;flex:none}
+
+/* ticker */
+.ticker{background:var(--red);color:#fff;overflow:hidden;border-bottom:1px solid var(--line)}
+.ticker-track{display:flex;width:max-content;animation:tick 36s linear infinite}
+.ticker span{display:inline-flex;align-items:center;gap:22px;padding:14px 22px;font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.02em;font-variation-settings:'wdth' 80;white-space:nowrap}
+.ticker span::after{content:'';width:8px;height:8px;background:#fff;display:block;margin-left:22px}
+.ticker:hover .ticker-track{animation-play-state:paused}
+@keyframes tick{to{transform:translateX(-50%)}}
+
+/* sections */
+.sec{padding:120px 0;border-bottom:1px solid var(--line)}
+.sec-top{display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;margin-bottom:64px}
+@media (max-width:820px){.sec-top{grid-template-columns:1fr}}
+.sec-no{font-family:var(--mono);font-size:12px;letter-spacing:.16em;color:var(--muted);padding-top:12px;border-top:2px solid var(--red);align-self:start}
+.sec-no b{color:var(--red);font-weight:700}
+.sec-top h2{margin:0;font-size:clamp(48px,7vw,104px)}
+.sec-top p{margin:22px 0 0;font-size:19px;color:var(--muted);max-width:620px}
+.reveal{opacity:0;transform:translateY(30px);transition:opacity .9s cubic-bezier(.2,.8,.2,1), transform .9s cubic-bezier(.2,.8,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--line-2);border-left:1px solid var(--line-2)}
+@media (max-width:900px){.steps{grid-template-columns:1fr}}
+.step{border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);padding:36px 32px 32px;position:relative;overflow:hidden;transition:background .3s}
+.step::before{content:'';position:absolute;left:0;top:0;height:3px;width:0;background:var(--red);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.step:hover{background:var(--bg-2)}
+.step:hover::before{width:100%}
+.step .big{font-family:var(--sans);font-weight:900;font-variation-settings:'wdth' 64;font-size:120px;line-height:.8;color:transparent;-webkit-text-stroke:1px var(--line-2);position:absolute;right:20px;top:24px;transition:-webkit-text-stroke-color .3s}
+.step:hover .big{-webkit-text-stroke-color:var(--red)}
+.step h3{margin:64px 0 12px;font-size:28px;font-weight:800;text-transform:uppercase;font-variation-settings:'wdth' 80;letter-spacing:.005em}
+.step p{margin:0;color:var(--muted)}
+.step code{display:inline-block;margin-top:22px;font-family:var(--mono);font-size:12px;border:1px solid var(--line-2);padding:5px 9px;color:var(--ink)}
+
+/* feature explorer */
+.fx{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:0;border:1px solid var(--line-2)}
+@media (max-width:980px){.fx{grid-template-columns:1fr}}
+.fx-list{border-right:1px solid var(--line-2)}
+.fx-item{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:56px 1fr 24px;align-items:center;gap:10px;width:100%;padding:24px 24px;border-bottom:1px solid var(--line-2);position:relative;transition:background .2s}
+.fx-item:last-child{border-bottom:0}
+.fx-item:focus-visible{outline:2px solid var(--red);outline-offset:-2px}
+.fx-item .ix{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.fx-item h3{margin:0;font-size:22px;font-weight:800;text-transform:uppercase;font-variation-settings:'wdth' 82}
+.fx-item p{grid-column:2/4;margin:0;color:var(--muted);font-size:15px;max-height:0;overflow:hidden;transition:max-height .35s, margin .35s}
+.fx-item .arr{color:var(--faint);transition:transform .25s, color .25s}
+.fx-item .prog{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--red);transform:scaleY(0);transform-origin:top}
+.fx-item:hover{background:var(--bg-2)}
+.fx-item.active{background:var(--bg-2)}
+.fx-item.active .ix,.fx-item.active .arr{color:var(--red)}
+.fx-item.active .arr{transform:translateX(4px)}
+.fx-item.active p{max-height:80px;margin-top:6px}
+.fx-item.active .prog{animation:progy 4s linear forwards}
+.fx-list.paused .fx-item.active .prog{animation:none;transform:none}
+@keyframes progy{to{transform:scaleY(1)}}
+.fx-stage{background:radial-gradient(circle at 50% 45%,rgba(242,39,28,.08),transparent 60%),var(--bg-1);display:grid;place-items:center;padding:56px 32px;min-height:560px;position:relative}
+.fx-stage .paper{width:100%;max-width:380px;font-size:11.5px}
+.zone{position:relative;transition:opacity .35s, box-shadow .35s, background .35s}
+.fx-stage.focus .zone{opacity:.25}
+.fx-stage.focus .zone.lit{opacity:1;box-shadow:0 0 0 2px var(--red);background:rgba(242,39,28,.06)}
+.ztag{position:absolute;left:-2px;top:-2px;transform:translateY(-100%);background:var(--red);color:#fff;font-family:var(--mono);font-size:9.5px;padding:2px 6px;opacity:0;transition:opacity .3s;white-space:nowrap;z-index:2}
+.fx-stage.focus .zone.lit .ztag{opacity:1}
+.sig{font-family:'Archivo',sans-serif;font-style:italic;font-weight:300;font-variation-settings:'wdth' 125;font-size:20px;color:#1F2C66;transform:rotate(-5deg);display:inline-block}
+
+/* developers */
+.dev{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:56px;align-items:start}
+@media (max-width:980px){.dev{grid-template-columns:1fr}}
+.dev-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-2)}
+.dev-list li{display:grid;grid-template-columns:44px 1fr;gap:8px;padding:20px 0;border-bottom:1px solid var(--line-2)}
+.dev-list li span{font-family:var(--mono);font-size:12px;color:var(--red);padding-top:3px}
+.dev-list b{display:block;font-size:18px;font-weight:700;text-transform:uppercase;font-variation-settings:'wdth' 86}
+.dev-list em{display:block;font-style:normal;color:var(--muted);margin-top:4px}
+.code{border:1px solid var(--line-2);background:#050505}
+.code-top{display:flex;border-bottom:1px solid var(--line-2)}
+.code-tab{border:0;border-right:1px solid var(--line-2);background:transparent;color:var(--muted);font-family:var(--mono);font-size:12px;letter-spacing:.08em;padding:14px 18px;cursor:pointer;text-transform:uppercase}
+.code-tab[aria-selected="true"]{color:#fff;background:var(--red)}
+.copy{margin-left:auto;border:0;border-left:1px solid var(--line-2);background:transparent;color:var(--ink);font-family:var(--mono);font-size:12px;padding:0 18px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase}
+.copy:hover{background:var(--bg-2)}
+.code pre{margin:0;padding:24px;font-family:var(--mono);font-size:13.5px;line-height:1.8;min-height:360px;overflow:auto;color:#D9D5CE}
+.code .c{color:var(--faint)}.code .k{color:#FFB4AC}.code .s{color:#fff}
+.caret{display:inline-block;width:9px;height:1.1em;background:var(--red);vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* self host */
+.own{border-bottom:1px solid var(--line);background:var(--bg-1)}
+.own .wrap{padding-top:120px;padding-bottom:120px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:56px;align-items:center}
+@media (max-width:980px){.own .wrap{grid-template-columns:1fr}}
+.own h2{margin:24px 0 0;font-size:clamp(48px,6.4vw,96px)}
+.own p{color:var(--muted);font-size:19px;margin:22px 0 0;max-width:520px}
+.facts{margin-top:40px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line-2);border-left:1px solid var(--line-2)}
+.facts div{border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);padding:18px 20px}
+.facts span{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+.facts b{display:block;margin-top:6px;font-size:18px;font-weight:700;font-variation-settings:'wdth' 88}
+.term{border:1px solid var(--line-2);background:#040404;font-family:var(--mono);font-size:13.5px}
+.term-top{display:flex;align-items:center;border-bottom:1px solid var(--line-2);height:40px;padding:0 14px;color:var(--faint);font-size:12px;gap:8px}
+.term-top i{width:10px;height:10px;border:1px solid var(--line-2);display:block}
+.term-top i:first-child{background:var(--red);border-color:var(--red)}
+.term-top span{margin-left:8px}
+.term pre{margin:0;padding:22px;min-height:320px;line-height:1.85;white-space:pre-wrap;color:#D9D5CE}
+.term .ok{color:#fff}.term .ok b{color:var(--red);font-weight:700}.term .pr{color:var(--red)}.term .dim{color:var(--faint)}
+
+/* pricing */
+.plans{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid var(--line-2);border-left:1px solid var(--line-2)}
+@media (max-width:860px){.plans{grid-template-columns:1fr}}
+.plan{border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);padding:44px 40px;display:flex;flex-direction:column;gap:26px;position:relative;transition:background .3s}
+.plan:hover{background:var(--bg-2)}
+.plan.pro{background:var(--red);color:#fff;border-color:var(--red)}
+.plan.pro:hover{background:var(--red-hi)}
+.plan .pl{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.75}
+.price{font-weight:900;font-variation-settings:'wdth' 66;font-size:clamp(72px,9vw,128px);line-height:.8;text-transform:uppercase}
+.price small{display:block;font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.12em;margin-top:14px;opacity:.8;font-variation-settings:normal}
+.plan ul{list-style:none;margin:0;padding:0;border-top:1px solid currentColor}
+.plan.pro ul{border-color:rgba(255,255,255,.4)}
+.plan:not(.pro) ul{border-color:var(--line-2)}
+.plan li{padding:13px 0;border-bottom:1px solid var(--line-2);display:flex;gap:12px;align-items:baseline}
+.plan.pro li{border-color:rgba(255,255,255,.3)}
+.plan li::before{content:'+';font-family:var(--mono);color:var(--red);font-weight:700}
+.plan.pro li::before{color:#fff}
+.plan .btn{margin-top:auto;justify-content:center}
+.btn-white{background:#fff;color:var(--red)}
+.btn-white:hover{background:var(--bg);color:#fff}
+
+/* faq */
+.faq{border-top:1px solid var(--line-2)}
+.qa{border-bottom:1px solid var(--line-2)}
+.qa button{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:grid;grid-template-columns:60px 1fr 40px;align-items:center;padding:26px 0;font-size:clamp(20px,2vw,26px);font-weight:700;text-transform:uppercase;font-variation-settings:'wdth' 84}
+.qa button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.qa .n{font-family:var(--mono);font-size:12px;color:var(--faint);font-weight:400}
+.qa .pm{width:36px;height:36px;border:1px solid var(--line-2);display:grid;place-items:center;font-family:var(--mono);font-size:18px;transition:transform .3s, background .3s, border-color .3s}
+.qa:hover .pm{border-color:var(--ink)}
+.qa[open] .pm{transform:rotate(45deg);background:var(--red);border-color:var(--red)}
+.qa .ans{display:grid;grid-template-rows:0fr;transition:grid-template-rows .4s cubic-bezier(.2,.8,.2,1)}
+.qa[open] .ans{grid-template-rows:1fr}
+.qa .ans>div{overflow:hidden}
+.qa .ans p{margin:0 0 28px 60px;color:var(--muted);font-size:18px;max-width:720px}
+
+/* cta */
+.cta{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+.cta .wrap{padding-top:140px;padding-bottom:140px;position:relative}
+.cta h2{margin:0;font-size:clamp(64px,12vw,190px)}
+.cta-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:28px;margin-top:44px;border-top:1px solid var(--line-2);padding-top:32px}
+.cta-row p{margin:0;color:var(--muted);font-size:19px}
+.cta-row code{font-family:var(--mono);color:var(--ink);background:var(--bg-2);border:1px solid var(--line-2);padding:3px 8px;font-size:15px}
+.cta .btn{height:60px;padding:0 32px;font-size:16px}
+
+footer .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px;padding-top:36px;padding-bottom:36px;color:var(--muted);font-size:13px}
+footer nav{display:flex;gap:26px;flex-wrap:wrap;text-transform:uppercase;letter-spacing:.08em;font-weight:600;font-variation-settings:'wdth' 90}
+footer a:hover{color:var(--red)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+  .reveal{opacity:1;transform:none}
+  .hero h1 .row>span{transform:none}
+  .hero-bg .scan{display:none}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- Qorstack mark: a square Q whose tail turns into document lines; red tab from the original logo -->
+    <symbol id="qmark" viewBox="0 0 40 40">
+      <path d="M4 4H30V22H24V10H10V28H17V34H4Z" fill="currentColor"/>
+      <rect x="20" y="20" width="16" height="4" fill="currentColor"/>
+      <rect x="20" y="27" width="16" height="4" fill="currentColor"/>
+      <rect x="20" y="34" width="16" height="4" fill="currentColor"/>
+      <rect x="31" y="13" width="5" height="4" fill="#F2271C"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a href="#top" class="brand" aria-label="Qorstack Report home">
+      <svg width="34" height="34" aria-hidden="true"><use href="#qmark"/></svg>
+      <span class="brand-word"><b>QORSTACK</b><span>REPORT</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#developers">Developers</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#docs">Docs</a>
+    </nav>
+    <div class="nav-right">
+      <a class="gh" href="https://github.com/qorstack/qorstack-report" target="_blank" rel="noopener" aria-label="Star Qorstack Report on GitHub">
+        <span><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>Star</span>
+        <span class="count"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6L2.5 9.4l6.6-.8z"/></svg><b id="stars" style="font-weight:500">—</b></span>
+      </a>
+      <a href="#start" class="btn btn-red btn-sm">Get started</a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<section class="hero" id="hero">
+  <div class="hero-bg" aria-hidden="true">
+    <div class="grid"></div>
+    <div class="scan"></div>
+    <div class="coords">A4 · 210 × 297 MM<br>REG ✛ 0.00 / 0.00<br>CMYK · 300 DPI</div>
+  </div>
+  <div class="wrap">
+    <div class="hero-top"><span class="tag">OPEN SOURCE</span><span class="label">Self-hosted document API</span></div>
+    <h1 class="h-display">
+      <span class="row"><span>Templates in.</span></span>
+      <span class="row"><span><span class="pdf" style="text-transform:none">PDFs</span> out.</span></span>
+    </h1>
+    <div class="hero-grid">
+      <div>
+        <p class="lede">Design documents in <b>Word</b> and <b>Excel</b>. Send JSON to one endpoint. Get back a finished PDF, DOCX or XLSX — rendered on <b>your own servers</b>.</p>
+        <div class="ctas">
+          <a href="#start" class="btn btn-red">Deploy with Docker
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+          <a href="#playground" class="btn btn-line">Try it live</a>
+        </div>
+        <div class="specs">
+          <div><span>Licence</span><b>MIT core</b></div>
+          <div><span>Output</span><b>PDF · DOCX · XLSX</b></div>
+          <div><span>Fonts</span><b>Thai + custom</b></div>
+        </div>
+      </div>
+
+      <div class="pg crop" id="playground" data-view="form" aria-label="Interactive playground"><span class="cm"></span>
+        <div class="pg-head">
+          <div class="seg" role="tablist" aria-label="Request view">
+            <button role="tab" aria-selected="true" data-view="form" type="button">Form</button>
+            <button role="tab" aria-selected="false" data-view="json" type="button">JSON</button>
+          </div>
+          <span class="ep"><b>POST</b> /render/word/template</span>
+        </div>
+        <div class="pg-body">
+          <div class="pg-left">
+            <div class="pg-form" style="display:flex;flex-direction:column;gap:16px;flex:1">
+              <div class="field"><label for="f-c"><em>{{customer}}</em></label><input class="input" id="f-c" value="ACME Co., Ltd." autocomplete="off"></div>
+              <div class="field"><label for="f-n"><em>{{invoice_no}}</em></label><input class="input" id="f-n" value="INV-2026-0042" autocomplete="off"></div>
+              <div class="field"><label><em>{{row:item}}</em> · QTY · PRICE</label><div class="rows" id="rows"></div><button class="add" id="add" type="button">+ ADD ROW</button></div>
+              <button class="btn btn-red gen" id="gen" type="button"><span class="spin" aria-hidden="true"></span><span class="gl">Generate PDF</span></button>
+            </div>
+            <pre class="json" id="json" aria-label="Request body"></pre>
+          </div>
+          <div class="pg-right">
+            <div class="printer" id="printer" aria-hidden="true"><i></i></div>
+            <div class="paper-wrap">
+              <article class="paper" id="paper" aria-label="Document preview">
+                <div class="p-head">
+                  <div><div class="p-brand"><i></i>Your Company</div><div class="p-meta">123 Sukhumvit Rd, Bangkok</div></div>
+                  <div style="text-align:right"><div class="p-title">Invoice</div><div class="p-meta mono">No. <span class="bind" id="p-n"></span></div></div>
+                </div>
+                <div class="p-meta">BILL TO<br><b style="color:#141414;font-size:12px" class="bind" id="p-c"></b></div>
+                <table><thead><tr><th>Item</th><th>Qty</th><th>Amount</th></tr></thead><tbody id="p-rows"></tbody></table>
+                <div class="p-total"><span>TOTAL THB</span><b class="bind" id="p-t"></b></div>
+                <div class="p-foot">
+                  <div><svg class="qr" id="qr1" viewBox="0 0 29 29" role="img" aria-label="QR code"></svg><div class="qr-cap">Scan me</div></div>
+                  <div class="bc" id="bc" aria-hidden="true"></div>
+                </div>
+                <div class="stamp" id="stamp" aria-hidden="true">PDF · READY</div>
+              </article>
+            </div>
+            <div class="toast" id="toast" role="status" aria-live="polite"><i></i><span id="toast-t">invoice.pdf · 1 page · 42 KB</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ticker" aria-label="Works with">
+  <div class="ticker-track" aria-hidden="true">
+    <span>Microsoft Word</span><span>Microsoft Excel</span><span>Docker</span><span>Node.js SDK</span><span>.NET SDK</span><span>MCP for AI agents</span><span>PostgreSQL</span><span>MinIO / S3</span><span>Thai fonts</span>
+    <span>Microsoft Word</span><span>Microsoft Excel</span><span>Docker</span><span>Node.js SDK</span><span>.NET SDK</span><span>MCP for AI agents</span><span>PostgreSQL</span><span>MinIO / S3</span><span>Thai fonts</span>
+  </div>
+</div>
+
+<section class="sec" id="how">
+  <div class="wrap">
+    <div class="sec-top reveal">
+      <div class="sec-no"><b>§01</b> — HOW IT WORKS</div>
+      <div><h2 class="h-display">Zero <span class="red">layout</span> code.</h2><p>The people who know how the document should look keep editing it in Word. Your code only sends data.</p></div>
+    </div>
+    <div class="steps reveal">
+      <div class="step"><span class="big" aria-hidden="true">01</span><h3>Upload a template</h3><p>Mark the blanks in a .docx or .xlsx — text, table rows, images, QR codes.</p><code>invoice.docx</code></div>
+      <div class="step"><span class="big" aria-hidden="true">02</span><h3>Send JSON</h3><p>One POST with your API key — from your app, a cron job or an AI agent.</p><code>POST /render</code></div>
+      <div class="step"><span class="big" aria-hidden="true">03</span><h3>Get the file</h3><p>A download link to the finished file, kept in history for audit.</p><code>invoice.pdf</code></div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="features" style="background:var(--bg-1)">
+  <div class="wrap">
+    <div class="sec-top reveal">
+      <div class="sec-no"><b>§02</b> — TEMPLATES</div>
+      <div><h2 class="h-display">Built for <span class="red">real</span> paperwork.</h2><p>Invoices, contracts, payslips, shipping labels — everything a business document needs.</p></div>
+    </div>
+    <div class="fx reveal">
+      <div class="fx-list" id="fxList">
+        <button class="fx-item active" data-zone="text" type="button"><span class="ix">01</span><h3>Text fields</h3><span class="arr" aria-hidden="true">→</span><p>Names, dates and totals anywhere — headers and footers too.</p><span class="prog"></span></button>
+        <button class="fx-item" data-zone="table" type="button"><span class="ix">02</span><h3>Repeating tables</h3><span class="arr" aria-hidden="true">→</span><p>Rows from data with sorting, grouping, merged cells and repeated headers.</p><span class="prog"></span></button>
+        <button class="fx-item" data-zone="image" type="button"><span class="ix">03</span><h3>Images &amp; signatures</h3><span class="arr" aria-hidden="true">→</span><p>Logos, signatures and photos from a URL or base64, sized to fit.</p><span class="prog"></span></button>
+        <button class="fx-item" data-zone="qr" type="button"><span class="ix">04</span><h3>QR &amp; barcodes</h3><span class="arr" aria-hidden="true">→</span><p>Payment QR, tracking and product barcodes generated at render time.</p><span class="prog"></span></button>
+        <button class="fx-item" data-zone="font" type="button"><span class="ix">05</span><h3>Thai &amp; custom fonts</h3><span class="arr" aria-hidden="true">→</span><p>Upload TH Sarabun or your brand font — the PDF matches the template.</p><span class="prog"></span></button>
+      </div>
+      <div class="fx-stage focus" id="fxStage">
+        <article class="paper" aria-label="Sample document">
+          <div class="p-head">
+            <div class="zone" data-zone="image"><span class="ztag">{{image:logo}}</span><div class="p-brand" style="font-size:13px"><i style="width:16px;height:16px"></i>Siam Logistics</div><div class="p-meta">Bangkok 10110</div></div>
+            <div class="zone" data-zone="font" style="text-align:right"><span class="ztag">TH SARABUN</span><div class="p-title" style="font-family:'Anuphan',sans-serif;text-transform:none;font-size:20px;font-weight:600">ใบแจ้งหนี้</div><div class="p-meta">INVOICE</div></div>
+          </div>
+          <div class="zone" data-zone="text"><span class="ztag">{{customer}}</span><div class="p-meta">BILL TO<br><b style="color:#141414;font-size:12px">Bangkok Trading Co.</b><br>Due 30 Nov 2026</div></div>
+          <div class="zone" data-zone="table"><span class="ztag">{{row:*}}</span>
+            <table><thead><tr><th>Service</th><th>Qty</th><th>Amount</th></tr></thead>
+            <tbody><tr><td>Express delivery</td><td>12</td><td>4,800.00</td></tr><tr><td>Warehousing</td><td>1</td><td>9,500.00</td></tr><tr><td>Insurance</td><td>1</td><td>1,200.00</td></tr></tbody></table>
+          </div>
+          <div class="p-total"><span>TOTAL THB</span><b>15,500.00</b></div>
+          <div class="p-foot">
+            <div class="zone" data-zone="qr"><span class="ztag">{{qr:payment}}</span><svg class="qr" id="qr2" viewBox="0 0 29 29" role="img" aria-label="QR code"></svg></div>
+            <div class="zone" data-zone="image" style="text-align:right"><span class="ztag">{{image:signature}}</span><span class="sig">K. Somchai</span><div class="p-meta">AUTHORISED SIGNATURE</div></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="developers">
+  <div class="wrap">
+    <div class="sec-top reveal">
+      <div class="sec-no"><b>§03</b> — DEVELOPERS</div>
+      <div><h2 class="h-display">One request. <span class="red">Any</span> stack.</h2></div>
+    </div>
+    <div class="dev">
+      <ul class="dev-list reveal">
+        <li><span>A</span><div><b>Plain REST</b><em>One endpoint and an API key. Works from any language.</em></div></li>
+        <li><span>B</span><div><b>Typed SDKs</b><em>Node.js and .NET clients generated from the OpenAPI spec.</em></div></li>
+        <li><span>C</span><div><b>MCP server</b><em>AI agents list templates and render documents on their own.</em></div></li>
+        <li><span>D</span><div><b>Copy-ready code</b><em>Every template shows the exact request to send.</em></div></li>
+      </ul>
+      <div class="code crop reveal" id="code"><span class="cm"></span>
+        <div class="code-top" role="tablist" aria-label="Language">
+          <button class="code-tab" role="tab" aria-selected="true" data-lang="curl" type="button">curl</button>
+          <button class="code-tab" role="tab" aria-selected="false" data-lang="node" type="button">Node.js</button>
+          <button class="code-tab" role="tab" aria-selected="false" data-lang="dotnet" type="button">.NET</button>
+          <button class="copy" id="copy" type="button">Copy</button>
+        </div>
+        <pre id="codeOut" aria-live="polite"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="own" id="selfhost">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="sec-no" style="display:inline-block;padding-right:24px"><b>§04</b> — SELF-HOSTED</div>
+      <h2 class="h-display">Data stays <span class="red">inside.</span></h2>
+      <p>Invoices, contracts and payslips carry customer data. Qorstack runs in your network — no third-party rendering service.</p>
+      <div class="facts">
+        <div><span>Deploy</span><b>One compose file</b></div>
+        <div><span>Storage</span><b>Your MinIO / S3</b></div>
+        <div><span>Access</span><b>API keys per project</b></div>
+        <div><span>Audit</span><b>Generation history</b></div>
+      </div>
+    </div>
+    <div class="term crop reveal" aria-label="Terminal demo"><span class="cm"></span>
+      <div class="term-top"><i></i><i></i><i></i><span>~/qorstack-report/selfhost</span></div>
+      <pre id="term"></pre>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="pricing">
+  <div class="wrap">
+    <div class="sec-top reveal">
+      <div class="sec-no"><b>§05</b> — PRICING</div>
+      <div><h2 class="h-display">Pay <span class="red">once.</span><br>Or never.</h2><p>No subscription. No per-document fees.</p></div>
+    </div>
+    <div class="plans reveal">
+      <div class="plan">
+        <span class="pl">Open source</span>
+        <div class="price">Free<small>MIT-LICENSED CORE</small></div>
+        <ul><li>Unlimited templates and documents</li><li>Word &amp; Excel → PDF, DOCX, XLSX</li><li>SDKs, MCP server, full REST API</li></ul>
+        <a href="#start" class="btn btn-line">Deploy with Docker</a>
+      </div>
+      <div class="plan pro">
+        <span class="pl">Pro · lifetime licence</span>
+        <div class="price">[PRICE]<small>ONE-TIME PAYMENT</small></div>
+        <ul><li>Everything in Open source</li><li>PDF password protection</li><li>Watermarks in your own fonts</li></ul>
+        <a href="#buy" class="btn btn-white">Get a Pro licence</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="faq" style="background:var(--bg-1)">
+  <div class="wrap">
+    <div class="sec-top reveal">
+      <div class="sec-no"><b>§06</b> — FAQ</div>
+      <div><h2 class="h-display">Questions.</h2></div>
+    </div>
+    <div class="faq reveal" id="faq-list">
+      <div class="qa"><button type="button" aria-expanded="false"><span class="n">Q.01</span>What do I need to run it?<span class="pm" aria-hidden="true">+</span></button><div class="ans"><div><p>Docker. One compose file starts the API, web app, PostgreSQL, MinIO and the PDF converter.</p></div></div></div>
+      <div class="qa"><button type="button" aria-expanded="false"><span class="n">Q.02</span>Will the PDF match my Word file?<span class="pm" aria-hidden="true">+</span></button><div class="ans"><div><p>Upload the fonts your template uses and the layout follows Word's spacing and line breaks — Thai text included.</p></div></div></div>
+      <div class="qa"><button type="button" aria-expanded="false"><span class="n">Q.03</span>Can an AI agent generate documents?<span class="pm" aria-hidden="true">+</span></button><div class="ans"><div><p>Yes. The bundled MCP server lets agents list templates, render documents and check job status.</p></div></div></div>
+      <div class="qa"><button type="button" aria-expanded="false"><span class="n">Q.04</span>What does Pro add?<span class="pm" aria-hidden="true">+</span></button><div class="ans"><div><p>PDF password protection and watermarks. Everything else is in the free version.</p></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta" id="start">
+  <div class="hero-bg" aria-hidden="true"><div class="grid" style="mask-image:radial-gradient(ellipse 70% 80% at 30% 50%,#000 20%,transparent 75%)"></div></div>
+  <div class="wrap reveal">
+    <h2 class="h-display">First PDF<br>in <span class="red">10 min.</span></h2>
+    <div class="cta-row">
+      <p>Clone the repo · <code>docker compose up -d</code> · upload a template</p>
+      <a href="https://github.com/qorstack/qorstack-report" class="btn btn-red">Deploy with Docker
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg></a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <a href="#top" class="brand" aria-label="Back to top"><svg width="26" height="26" aria-hidden="true"><use href="#qmark"/></svg><span class="brand-word"><b style="font-size:14px">QORSTACK</b><span>REPORT · MIT CORE</span></span></a>
+    <nav aria-label="Footer"><a href="#docs">Docs</a><a href="#selfhost">Self-host</a><a href="https://github.com/qorstack/qorstack-report">GitHub</a><a href="#pricing">Pricing</a></nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* GitHub stars — cached 1 h; stays "—" when the API is unreachable */
+  (async () => {
+    const el = $('#stars'), key = 'qs-stars';
+    const show = n => (el.textContent = n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n));
+    try { const c = JSON.parse(localStorage.getItem(key) || 'null'); if (c && Date.now() - c.t < 36e5) return show(c.n); } catch (e) {}
+    try {
+      const r = await fetch('https://api.github.com/repos/qorstack/qorstack-report');
+      if (!r.ok) return;
+      const n = (await r.json()).stargazers_count;
+      if (typeof n === 'number') { show(n); try { localStorage.setItem(key, JSON.stringify({ n, t: Date.now() })); } catch (e) {} }
+    } catch (e) {}
+  })();
+
+  /* Real, scannable QR codes (qrcode-generator). Finder patterns drawn in red. */
+  function drawQr(svg, text) {
+    if (!window.qrcode) return false;
+    const q = qrcode(0, 'M'); q.addData(text); q.make();
+    const n = q.getModuleCount(), pad = 1, size = n + pad * 2;
+    const inFinder = (r, c) => (r < 7 && c < 7) || (r < 7 && c >= n - 7) || (r >= n - 7 && c < 7);
+    let path = '';
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c) && !inFinder(r, c)) path += `M${c + pad} ${r + pad}h1v1h-1z`;
+    const finder = (x, y) => `<rect x="${x + .5}" y="${y + .5}" width="6" height="6" fill="none" stroke="#F2271C" stroke-width="1"/><rect x="${x + 2}" y="${y + 2}" width="3" height="3" fill="#141414"/>`;
+    svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+    svg.innerHTML = `<rect width="${size}" height="${size}" fill="#F7F5F0"/><path d="${path}" fill="#141414"/>` + finder(pad, pad) + finder(n - 7 + pad, pad) + finder(pad, n - 7 + pad);
+    return true;
+  }
+  function qrs() {
+    const ok = drawQr($('#qr1'), 'https://github.com/qorstack/qorstack-report') && drawQr($('#qr2'), 'https://github.com/qorstack/qorstack-report#readme');
+    if (!ok) setTimeout(qrs, 150);
+  }
+  qrs();
+
+  /* barcode (Code128-style bars, decorative) */
+  let bx = 7;
+  $('#bc').innerHTML = Array.from({ length: 42 }, () => { bx = (bx * 69069 + 1) & 0xffff; return `<i style="width:${1 + (bx % 3)}px;margin-right:${bx % 2}px"></i>`; }).join('');
+
+  /* playground */
+  const st = { c: 'ACME Co., Ltd.', n: 'INV-2026-0042', rows: [{ item: 'Template setup', qty: 1, price: 4500 }, { item: 'Monthly reports', qty: 3, price: 1200 }] };
+  const money = v => Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const hit = el => { if (reduce) return; el.classList.add('hit'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('hit'), 500); };
+  function rowsUi() {
+    $('#rows').innerHTML = st.rows.map((r, i) => `<div class="row">
+      <input class="input" aria-label="Item ${i + 1}" data-i="${i}" data-k="item" value="${esc(r.item)}">
+      <input class="input" aria-label="Quantity ${i + 1}" data-i="${i}" data-k="qty" type="number" min="0" value="${r.qty}">
+      <input class="input" aria-label="Price ${i + 1}" data-i="${i}" data-k="price" type="number" min="0" value="${r.price}">
+      <button type="button" aria-label="Remove row ${i + 1}" data-rm="${i}">✕</button></div>`).join('');
+  }
+  function doc(changed) {
+    $('#p-c').textContent = st.c || '—'; $('#p-n').textContent = st.n || '—';
+    $('#p-rows').innerHTML = st.rows.map(r => `<tr><td>${esc(r.item || '—')}</td><td>${+r.qty || 0}</td><td class="mono">${money((+r.qty || 0) * (+r.price || 0))}</td></tr>`).join('');
+    $('#p-t').textContent = money(st.rows.reduce((s, r) => s + (+r.qty || 0) * (+r.price || 0), 0));
+    if (changed) hit($(changed === 'c' ? '#p-c' : changed === 'n' ? '#p-n' : '#p-t'));
+    json();
+  }
+  function json() {
+    const k = s => `<span class="k">"${s}"</span>`, v = s => `<span class="s">"${esc(s)}"</span>`;
+    const rows = st.rows.map(r => `      [{ ${k('key')}: ${v('item')}, ${k('value')}: ${v(r.item)} },\n       { ${k('key')}: ${v('qty')}, ${k('value')}: ${+r.qty || 0} }]`).join(',\n');
+    $('#json').innerHTML = `{\n  ${k('templateKey')}: ${v('invoice')},\n  ${k('fileType')}: ${v('pdf')},\n  ${k('replace')}: [\n    { ${k('key')}: ${v('customer')}, ${k('value')}: ${v(st.c)} },\n    { ${k('key')}: ${v('invoice_no')}, ${k('value')}: ${v(st.n)} }\n  ],\n  ${k('table')}: [{ ${k('rows')}: [\n${rows}\n  ] }]\n}\n<span class="p">// the exact body your code sends</span>`;
+  }
+  $('#f-c').addEventListener('input', e => { st.c = e.target.value; doc('c'); });
+  $('#f-n').addEventListener('input', e => { st.n = e.target.value; doc('n'); });
+  $('#rows').addEventListener('input', e => { const t = e.target; if (!t.dataset.k) return; st.rows[+t.dataset.i][t.dataset.k] = t.value; doc('t'); });
+  $('#rows').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (!b) return; st.rows.splice(+b.dataset.rm, 1); rowsUi(); doc('t'); });
+  $('#add').addEventListener('click', () => { if (st.rows.length >= 5) return; st.rows.push({ item: 'New item', qty: 1, price: 500 }); rowsUi(); doc('t'); const ins = $$('#rows [data-k="item"]'); ins[ins.length - 1].select(); });
+  const pg = $('#playground');
+  $$('.seg button', pg).forEach(b => b.addEventListener('click', () => { $$('.seg button', pg).forEach(x => x.setAttribute('aria-selected', String(x === b))); pg.dataset.view = b.dataset.view; }));
+  const gen = $('#gen'), paper = $('#paper'), stamp = $('#stamp'), toast = $('#toast'), printer = $('#printer');
+  gen.addEventListener('click', () => {
+    if (gen.classList.contains('busy')) return;
+    gen.classList.add('busy'); $('.gl', gen).textContent = 'Rendering…';
+    stamp.classList.remove('show'); toast.classList.remove('show'); printer.classList.add('on');
+    setTimeout(() => {
+      paper.classList.remove('feed'); void paper.offsetWidth; paper.classList.add('feed');
+      stamp.classList.remove('show'); void stamp.offsetWidth; stamp.classList.add('show');
+      setTimeout(() => {
+        printer.classList.remove('on'); gen.classList.remove('busy'); $('.gl', gen).textContent = 'Generate again';
+        $('#toast-t').textContent = `${(st.n || 'invoice').toLowerCase().replace(/[^a-z0-9-]+/g, '-')}.pdf · 1 page · ready`;
+        toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000);
+      }, reduce ? 0 : 1300);
+    }, reduce ? 0 : 450);
+  });
+  rowsUi(); doc();
+
+  /* reveal on scroll */
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return;
+    e.target.classList.add('in'); io.unobserve(e.target);
+    if (e.target.id === 'code') typeCode();
+    if (e.target.classList.contains('term')) runTerm();
+  }), { threshold: .15 });
+  $$('.reveal').forEach(el => io.observe(el));
+
+  /* feature explorer */
+  const list = $('#fxList'), stage = $('#fxStage'), items = $$('.fx-item', list);
+  let fi = 0, ft, paused = false;
+  const setZ = i => { fi = i; items.forEach((it, j) => it.classList.toggle('active', j === i)); const z = items[i].dataset.zone; $$('.zone', stage).forEach(el => el.classList.toggle('lit', el.dataset.zone === z)); };
+  const loop = () => { clearTimeout(ft); if (paused || reduce) return; ft = setTimeout(() => { setZ((fi + 1) % items.length); loop(); }, 4000); };
+  items.forEach((it, i) => ['mouseenter', 'focus', 'click'].forEach(ev => it.addEventListener(ev, () => { paused = true; list.classList.add('paused'); clearTimeout(ft); setZ(i); })));
+  list.addEventListener('mouseleave', () => { paused = false; list.classList.remove('paused'); setZ(fi); loop(); });
+  setZ(0); loop();
+
+  /* code */
+  const snip = {
+    curl: `<span class="c">curl -X POST $API/render/word/template \\</span>\n<span class="c">  -H "X-API-Key: $KEY" \\</span>\n<span class="c">  -H "Content-Type: application/json" \\</span>\n<span class="c">  -d '</span>{\n  <span class="k">"templateKey"</span>: <span class="s">"invoice"</span>,\n  <span class="k">"fileType"</span>: <span class="s">"pdf"</span>,\n  <span class="k">"replace"</span>: [\n    { <span class="k">"key"</span>: <span class="s">"customer"</span>, <span class="k">"value"</span>: <span class="s">"ACME Co."</span> }\n  ]\n}<span class="c">'</span>\n\n<span class="c"># → { "downloadUrl": "https://…/invoice.pdf" }</span>`,
+    node: `<span class="k">import</span> { QorstackApi } <span class="k">from</span> <span class="s">'qorstack-report-sdk'</span>;\n\n<span class="k">const</span> api = <span class="k">new</span> QorstackApi({ baseUrl, securityData });\n\n<span class="k">const</span> { data } = <span class="k">await</span> api.render.postRenderWordTemplate({\n  templateKey: <span class="s">'invoice'</span>,\n  replace: [{ key: <span class="s">'customer'</span>, value: <span class="s">'ACME Co.'</span> }],\n  table: [{ rows: items.map(i => [\n    { key: <span class="s">'item'</span>, value: i.name },\n    { key: <span class="s">'qty'</span>, value: i.qty }\n  ]) }]\n});\n\nconsole.log(data.downloadUrl);`,
+    dotnet: `<span class="k">var</span> api = <span class="k">new</span> QorstackApi(apiUrl, apiKey);\n\n<span class="k">var</span> res = <span class="k">await</span> api.PostRenderWordTemplateAsync(<span class="k">new</span> PdfFromTemplateRequest\n{\n    TemplateKey = <span class="s">"invoice"</span>,\n    Replace = <span class="k">new</span> List&lt;KeyValueRequest&gt;\n    {\n        <span class="k">new</span>() { Key = <span class="s">"customer"</span>, Value = <span class="s">"ACME Co."</span> }\n    }\n});\n\nConsole.WriteLine(res.DownloadUrl);`
+  };
+  const out = $('#codeOut'); let lang = 'curl', typed = false, tt;
+  const plain = h => { const d = document.createElement('div'); d.innerHTML = h; return d.textContent; };
+  function show(anim) {
+    clearInterval(tt); const h = snip[lang];
+    if (!anim || reduce) { out.innerHTML = h; return; }
+    const t = plain(h); let i = 0;
+    tt = setInterval(() => { i += 4; out.innerHTML = esc(t.slice(0, i)) + '<span class="caret"></span>'; if (i >= t.length) { clearInterval(tt); out.innerHTML = h; } }, 16);
+  }
+  function typeCode() { if (typed) return; typed = true; show(true); }
+  $$('.code-tab').forEach(t => t.addEventListener('click', () => { $$('.code-tab').forEach(x => x.setAttribute('aria-selected', String(x === t))); lang = t.dataset.lang; typed = true; show(false); }));
+  $('#copy').addEventListener('click', async e => { try { await navigator.clipboard.writeText(plain(snip[lang])); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Failed'; } setTimeout(() => (e.target.textContent = 'Copy'), 1500); });
+
+  /* terminal */
+  let ran = false;
+  function runTerm() {
+    if (ran) return; ran = true;
+    const el = $('#term');
+    const L = [['cmd', 'git clone https://github.com/qorstack/qorstack-report.git'], ['cmd', 'cd qorstack-report/selfhost && cp .env.example .env'], ['cmd', 'docker compose up -d'],
+      ['ok', 'postgres   started'], ['ok', 'minio      started'], ['ok', 'gotenberg  started'], ['ok', 'api        started  → :8080'], ['ok', 'web        started  → :3000'], ['dim', ''], ['cmd', 'bash verify.sh'], ['ok', 'All checks passed']];
+    const r = ([t, s]) => t === 'cmd' ? `<span class="pr">$</span> ${esc(s)}` : t === 'ok' ? `<span class="ok"><b>■</b> ${esc(s)}</span>` : `<span class="dim">${esc(s)}</span>`;
+    if (reduce) { el.innerHTML = L.map(r).join('\n'); return; }
+    let li = 0, ci = 0, acc = '';
+    (function step() {
+      if (li >= L.length) { el.innerHTML = acc + `<span class="pr">$</span> <span class="caret"></span>`; return; }
+      const [t, s] = L[li];
+      if (t === 'cmd' && ci <= s.length) { el.innerHTML = acc + `<span class="pr">$</span> ${esc(s.slice(0, ci))}<span class="caret"></span>`; ci++; setTimeout(step, 20); }
+      else { acc += r(L[li]) + '\n'; li++; ci = 0; el.innerHTML = acc; setTimeout(step, t === 'cmd' ? 320 : 230); }
+    })();
+  }
+
+  /* faq */
+  $$('#faq-list .qa').forEach(q => { const b = $('button', q); b.addEventListener('click', () => { const o = q.hasAttribute('open'); o ? q.removeAttribute('open') : q.setAttribute('open', ''); b.setAttribute('aria-expanded', String(!o)); }); });
+})();
+</script>
+</body>
+</html>

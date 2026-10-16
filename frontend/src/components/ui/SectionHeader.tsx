@@ -1,6 +1,7 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { cn } from '@heroui/react'
 
 interface SectionHeaderProps {
   title: string
@@ -10,12 +11,10 @@ interface SectionHeaderProps {
 }
 
 export const SectionHeader = ({ title, description, action, className }: SectionHeaderProps) => (
-  <div className={`mb-3 flex flex-wrap items-center justify-between gap-2 ${className ?? ''}`}>
+  <div className={cn('mb-3 flex flex-wrap items-center justify-between gap-2', className)}>
     <div className='min-w-0'>
-      <h3 className='font-label text-[10.5px] font-black uppercase tracking-[0.2em] text-default-600'>
-        {title}
-      </h3>
-      {description && <p className='mt-0.5 text-[11px] text-default-500'>{description}</p>}
+      <h3 className='text-[14px] font-semibold text-foreground'>{title}</h3>
+      {description && <p className='mt-1 text-[13px] text-default-500'>{description}</p>}
     </div>
     {action && <div className='flex shrink-0 items-center gap-1.5'>{action}</div>}
   </div>

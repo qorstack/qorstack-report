@@ -56,3 +56,22 @@ internal sealed class SdkOperationTransformer : IOpenApiOperationTransformer
         return Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// Endpoints are served under <c>/api</c>. The document lists paths without that prefix and declares
+/// <c>/api</c> as the server, so generated clients (SDKs, the web app) keep stable paths and only the
+/// base URL carries the prefix (e.g. <c>http://localhost:8080/api</c>).
+/// </summary>
+internal sealed class ApiPrefixDocumentTransformer : IOpenApiDocumentTransformer
+{
+    public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
+    {
+        var prefix = WebApplicationExtensions.ApiPrefix;
+        var paths = new OpenApiPaths();
+        foreach (var (path, item) in document.Paths)
+            paths.Add(path.StartsWith(prefix + "/", StringComparison.Ordinal) ? path[prefix.Length..] : path, item);
+        document.Paths = paths;
+        document.Servers = [new OpenApiServer { Url = prefix }];
+        return Task.CompletedTask;
+    }
+}

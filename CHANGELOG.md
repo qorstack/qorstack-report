@@ -4,7 +4,174 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.1.0] — 2026-10-17
+
+### Changed
+
+- **Live Preview is free.** Auto-render while you edit a template now works without a Pro license.
+  `/features` still returns `livePreview` (now always `true`).
+
+### Fixed
+
+- `og:site_name` is the product name (was "Qorstack Report Engine").
+
+## [2.0.0] — 2026-10-14
+
+Upgrade guide: README › [Upgrading to v2](README.md#upgrading-to-v2).
+Staying on v1? Pin image tags to `1.1.0` (the last v1 release).
+
+### ⚠ BREAKING
+
+- **One image, one port; the API moved under `/api`.** Web UI and API ship as one image,
+  `qorstack/report` (root `Dockerfile`), on port 8080: web UI at `/`, API at `/api`
+  (e.g. `POST /api/render/word/template`, downloads at `/api/files/{token}`, health at `/api/health`,
+  reference at `/api/docs`). `qorstack/report-api` / `qorstack/report-web` and port 3000 are gone.
+  Compose has one `app` service; `API_URL`, `FRONTEND_PORT`, `REPORT_API_TAG`/`REPORT_WEB_TAG` and
+  `NEXT_PUBLIC_SERVICE` were removed — set `PUBLIC_URL` (and `APP_PORT`). `CORS_ORIGINS` is now only
+  for other origins. API clients add `/api` to the base URL; SDK 1.0 and the MCP server do it
+  automatically. GitHub sign-in config moved to the backend (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
+  `GOOGLE_CLIENT_ID`), and the code exchange now runs server-side.
+
+- **Storage uses one bucket on any S3 server.** `STORAGE_BUCKET` (default `qorstack-report`)
+  with folders `template/`, `generated-report/` (incl. `temp-download/`, deleted after 1 day)
+  and `fonts/` replaces the `templates` / `reports` / `fonts` buckets. `MINIO_BUCKET_TEMPLATE`,
+  `MINIO_BUCKET_REPORT`, `Minio:TemplateBucket` and `Minio:ReportBucket` were removed.
+  Copy existing data once with `selfhost/migrate-storage.sh keep-minio` or `to-rustfs` (rclone);
+  the backend logs a warning when old-bucket data was not migrated.
+- **RustFS is the default storage.** The self-host compose starts RustFS (Apache-2.0) with no
+  extra settings; MinIO stays available through the `docker-compose.minio.yml` override (image pinned
+  from quay.io — MinIO left Docker Hub), and `docker-compose.external-s3.yml` points `STORAGE_*` at
+  any external S3. Unreachable storage now gives a clear 503 and an unhealthy `storage` health check. Settings are `STORAGE_*` / `Storage:*`; v1 `MINIO_*` / `Minio:*` still work as fallbacks.
+- **Downloads go through the API.** Every link (`downloadUrl`, previews, fonts, history) is now
+  `{PUBLIC_API_URL}/files/{token}` — signed, time-limited, streamed by the backend with Range
+  support — instead of a presigned storage URL. Storage no longer needs a public address:
+  `MINIO_PUBLIC_ENDPOINT` is no longer needed and port 9000 is not published.
+- **Postgres is no longer published on the host** (port 5432), so it can't clash with a local
+  Postgres. Tools that connected from the host (DBeaver, psql) need the commented
+  `127.0.0.1:${DB_HOST_PORT:-5432}:5432` line under `postgres` in `docker-compose.yml`, or `docker exec`.
+- **font-syncer uses rclone** (`rclone/rclone`) instead of the MinIO client, so it works with
+  any S3 server.
+- **Render request shape.** Every v1 alternative form was removed and now returns `400`
+  naming the field and the expected shape:
+  ```text
+  replace:              { "customer": "ACME" }            → [{ "key": "customer", "value": "ACME" }]
+  image/qrcode/barcode: { "logo": { "src": "…" } }        → [{ "key": "logo", "src": "…" }]
+  table rows:           [{ "item": "A", "qty": 2 }]       → "columns": ["item", "qty"], "rows": [["A", 2]]
+  generateTotals / numberFormat: { "amount": "sum" }      → [{ "key": "amount", "value": "SUM" }]
+  sort:                 "date desc"                       → [{ "field": "date", "direction": "desc" }]
+  verticalMerge / collapse: "group"                       → ["group"]
+  ```
+  Row length must match `columns`; sort / merge / totals must name existing columns.
+- **`POST /render/excel/template` is Excel in, Excel out** — `fileType` and the PDF
+  options were removed (always `.xlsx`).
+- **Image URLs** in requests may no longer point at private or internal addresses
+  (localhost, 10.x, 172.16–31.x, 192.168.x, 100.64–127.x, cloud metadata). Set
+  `IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS=true` for intranet image servers. `minio:` paths are
+  accepted only for the template's own builder assets.
+- **`zipOutput` is a Pro feature** (it was documented as Pro but never enforced); without Pro it
+  now returns `403`.
+- **Website is dark only** (the light theme and theme toggle were removed).
+- **SDK 1.0.0** (Node / .NET) uses the new types. Stay on API 1.1.0 / SDK 0.x if you still
+  send the old forms.
+
+### Added
+
+- **Project export & import (Pro)**: Project settings → Export & import. Export downloads one ZIP
+  (manifest + latest active version of every template, its test data and builder images, uploaded
+  fonts); import shows a preview (create / update / skip) and then creates new templates with the same
+  key and adds newer versions — equal or older versions are skipped. `GET /projects/{id}/export`,
+  `POST /projects/{id}/import?dryRun=true|false`; size limit `PROJECT_IMPORT_MAX_MB` (200).
+- **Request limits** (env, 0 = unlimited): `RENDER_MAX_BODY_MB` (30), `RENDER_MAX_TABLE_ROWS`
+  (50,000 per table), `RENDER_MAX_ITEMS_PER_FIELD` (1,000 per replace / image / qrcode / barcode).
+  Over a limit → `400` naming the field and the setting.
+- **Validation**: all errors in one `400`, keyed by JSON path (`table[0].rows[12]`, `replace[3].key`).
+- **`templateVersion`** (optional) renders a stored older version; unknown version → `404`.
+- **Async renders (Pro)**: `"async": true` returns `202 { jobId, status: "pending", statusUrl }`;
+  poll `GET /render/jobs/{id}` (fresh `downloadUrl` on success). Optional `webhookUrl` receives
+  `POST { jobId, status, downloadUrl?, expiresIn?, error? }`, signed with
+  `X-Qorstack-Signature: sha256=<HMAC>` when `WEBHOOK_SIGNING_SECRET` is set; delivery state is stored
+  on the job (migration `006_webhook-delivery.sql`, 3 tries: now, +10 s, +60 s), so retries survive restarts.
+  The queue lives in PostgreSQL (`report_jobs`, migration `005_render-queue.sql`): jobs survive restarts,
+  several backend instances can share it (`FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY`), a crashed worker's job
+  is picked up again when its lease ends, and infrastructure errors are retried (10 s, 60 s; 3 tries).
+  Settings: `RENDER_ASYNC_WORKERS` (2), `RENDER_JOB_LEASE_SECONDS` (300), `RENDER_POLL_SECONDS` (5),
+  `RENDER_MAX_PENDING_JOBS_PER_USER` (100 → `429`).
+- Website: new Press design, new logo/icons and a generated link-preview image.
+- `selfhost/migrate-storage.sh`, fully commented `.env.example` files, `init.sh` / migration script
+  downloadable from `/selfhost/`.
+
+### Fixed
+
+- Public Excel API calls no longer overwrite the template's saved builder payload.
+- Server-side request forgery through image URLs and cross-template `minio:` paths.
+- `System.Security.Cryptography.Pkcs` pinned to 10.0.13 (CVE-2026-84008, CVE-2026-70162; it comes in
+  through Microsoft.Data.SqlClient). Image builds failed restore on these advisories.
+- **Startup**: database migrations finish before anything else starts (render worker, storage, HTTP),
+  so a fresh upgrade no longer logs `column ... does not exist`; a failed migration stops startup.
+- **Project pages** follow the project in the URL: a stale or deleted project link shows
+  "Project not found" instead of another project (Settings › Delete acted on the wrong one).
+- **Account**: a failed password change no longer reports success; a failed GitHub sign-in shows an
+  error instead of spinning; the system admin is told their login comes from `ADMIN_EMAIL` /
+  `ADMIN_PASSWORD`; Google/GitHub buttons show only when configured.
+- **Editor**: test values save automatically (with a leave-page warning while unsaved); Rename no
+  longer sends inline images in the URL; "Make current" asks first; Generate opens the preview on
+  mobile; Excel tables get the same summary and filter as PDF.
+- **Excel editor** no longer runs a hidden render each time it opens (it added a History entry and
+  its result was never used).
+- **History and Templates** filter and search on the server, so rows beyond the first page are found;
+  live polling no longer duplicates rows.
+- **Template gallery** shows each template rendered with its sample data
+  (`GET /templates/gallery/{id}/thumbnail`; regenerate with `python gallery/_thumbnails.py`). The gallery
+  samples use the v2 request shape, so they can be sent to the API as-is, and the sales report's total comes from `generateTotals` instead of an unsupported `{{table_sum:...}}` marker.
+- **Self-host**: `verify.sh` reads `APP_PORT`; docs and the agent prompt use the `app` service, `bash verify.sh` and
+  `docker compose up -d`; one Free vs Pro list across the site; SDK examples include `/api`.
+
+## [1.1.0] — 2026-06-16
+
+### Added
+
+- **Template Gallery** — new `/gallery` page listing ready-made templates (invoice,
+  receipt, quotation, delivery note, certificate, price list, sales report) with
+  live modal preview and one-click import into any project.
+- `GET /templates/gallery` — list all gallery templates from the bundled
+  `gallery/gallery.json` manifest; returns name, description, type, and thumbnail URL.
+- `POST /templates/gallery/{id}/import` — clone a gallery template (DOCX or XLSX)
+  into the caller's project as a new draft template ready for customisation.
+- Seven sample templates shipped with the container under `gallery/`:
+  `invoice`, `receipt`, `quotation`, `delivery-note`, `certificate`,
+  `price-list`, `sales-report` — each with a `.docx`/`.xlsx` and a `sample.json`
+  payload illustrating all supported fields.
+- `gallery/_generate.py` — helper script for regenerating or extending the gallery
+  manifest from a local template directory.
+- **Log detail view** — `GET /render/jobs/{id}` now returns the full request
+  payload (`requestData`) plus a presigned `downloadUrl` and `downloadUrlExpiresAt`
+  so the generated document can be re-downloaded directly from the log entry.
+- Generated files are now stored at `report-logs/{userId}/{jobId}.{ext}` (instead
+  of `temp-download/`) so they persist beyond the MinIO temp-download lifecycle and
+  remain accessible for the duration of the project's retention policy.
+- **Per-project log settings** — two new project-level settings:
+  - `logEnabled` (default `true`) — disable report job logging entirely for a project
+    without affecting document generation.
+  - `logRetentionDays` (default `90`, `0` = keep forever) — automatically purge logs
+    older than this many days.
+- `GET /projects/{id}/log-settings` — read the current log settings for a project.
+- `PUT /projects/{id}/log-settings` — update log settings (validates 0–3650 days).
+- `LogRetentionBackgroundService` — hosted service that runs every 24 hours, deletes
+  expired `ReportJob` records per project policy, and removes the associated MinIO
+  files to reclaim storage.
+- Database migration `002_log-settings.sql` — adds `log_enabled` and
+  `log_retention_days` columns to the `projects` table (applied automatically on
+  startup; existing projects default to enabled / 90-day retention).
+
+### Changed
+
+- `ExportPdfCommandHandler` and `ExportExcelCommandHandler` now persist
+  `OutputFilePath` on the `ReportJob` record so log detail views can generate a
+  fresh presigned URL on demand.
+- Both export handlers skip `ReportJob` creation entirely when `logEnabled = false`
+  on the template's project, keeping the generation path unchanged.
+
+## [1.0.0]
 
 ### Added
 

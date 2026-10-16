@@ -23,6 +23,8 @@ public static class DependencyInjection
 
         services.AddScoped<IUser, CurrentUser>();
 
+        services.AddSingleton<IGalleryService, GalleryService>();
+
         services.AddHttpContextAccessor();
         services.AddMemoryCache();
 
@@ -147,6 +149,8 @@ public static class DependencyInjection
         });
 
         // Customise default API behaviour
+        services.Configure<QorstackReportService.Application.Reports.Models.RenderLimits>(configuration.GetSection(QorstackReportService.Application.Reports.Models.RenderLimits.SectionName));
+
         services.Configure<ApiBehaviorOptions>(options =>
             options.SuppressModelStateInvalidFilter = true);
 
@@ -155,6 +159,7 @@ public static class DependencyInjection
         services.AddOpenApi(options =>
         {
             options.AddDocumentTransformer<ApiKeyDocumentTransformer>();
+            options.AddDocumentTransformer<ApiPrefixDocumentTransformer>();
             options.AddOperationTransformer<ApiKeyOperationTransformer>();
             options.AddOperationTransformer<SdkOperationTransformer>();
         });

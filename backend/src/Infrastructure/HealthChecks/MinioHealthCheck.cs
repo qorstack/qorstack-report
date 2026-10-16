@@ -8,9 +8,9 @@ namespace QorstackReportService.Infrastructure.HealthChecks;
 
 public class MinioHealthCheck : IHealthCheck
 {
-    private readonly MinioSettings _settings;
+    private readonly StorageSettings _settings;
 
-    public MinioHealthCheck(IOptions<MinioSettings> settings)
+    public MinioHealthCheck(IOptions<StorageSettings> settings)
     {
         _settings = settings.Value;
     }
@@ -29,14 +29,15 @@ public class MinioHealthCheck : IHealthCheck
                 .WithSSL(_settings.UseSsl)
                 .Build();
 
-            var args = new BucketExistsArgs().WithBucket(_settings.TemplateBucket);
+            var args = new BucketExistsArgs().WithBucket(_settings.Bucket);
             await client.BucketExistsAsync(args, cancellationToken);
             var scheme = _settings.UseSsl ? "https" : "http";
             return HealthCheckResult.Healthy($"{scheme}://{endpoint}");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy(ex.Message);
+            return HealthCheckResult.Unhealthy(
+                $"Cannot reach file storage at {_settings.Endpoint} (bucket {_settings.Bucket}) — check STORAGE_ENDPOINT and that the storage container is running. {ex.Message}");
         }
     }
 }

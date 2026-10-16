@@ -15,6 +15,13 @@ public class PdfFromTemplateRequest : DocumentProcessingRequestBase
     public string TemplateKey { get; set; } = string.Empty;
 
     /// <summary>
+    /// Render a specific stored version of the template (see the template's version history).
+    /// Omit to render the current version.
+    /// </summary>
+    [JsonPropertyName("templateVersion")]
+    public int? TemplateVersion { get; set; }
+
+    /// <summary>
     /// Optional file name for the output (without extension). If not provided, a UUID will be generated.
     /// </summary>
     [JsonPropertyName("fileName")]

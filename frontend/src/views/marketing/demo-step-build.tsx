@@ -102,7 +102,7 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
           {/* Tabs */}
           <div className='flex items-center gap-1 px-2 pt-1.5'>
             <button className='rounded bg-content2 px-2 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-foreground dark:bg-content3'>
-              <Icon icon='lucide:layout-panel-left' className='inline h-2.5 w-2.5' /> Builder UI
+              <Icon icon='lucide:layout-panel-left' className='inline h-2.5 w-2.5' /> Fields
             </button>
             <button className='rounded px-2 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-default-500'>
               <Icon icon='lucide:code' className='inline h-2.5 w-2.5' /> Code
@@ -112,9 +112,9 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
           <div className='flex flex-1 overflow-hidden p-2'>
             {/* Vertical category nav */}
             <nav className='flex w-[88px] shrink-0 flex-col gap-0.5'>
-              <span className='px-1 pb-1 font-label text-[7.5px] font-bold uppercase tracking-wider text-default-400'>Primitives</span>
+              <span className='px-1 pb-1 font-label text-[7.5px] font-bold uppercase tracking-wider text-default-400'>Content</span>
               {[
-                { i: 'lucide:braces', t: 'Variables', count: 23, active: true },
+                { i: 'lucide:type', t: 'Text fields', count: 23, active: true },
                 { i: 'lucide:table', t: 'Tables', count: 0 },
                 { i: 'lucide:image', t: 'Images', count: 3 },
                 { i: 'lucide:qr-code', t: 'QR Codes', count: 2 },
@@ -130,10 +130,10 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
                   <span className='ml-auto text-[7.5px] text-default-500'>{row.count}</span>
                 </div>
               ))}
-              <span className='mt-1 px-1 pb-1 font-label text-[7.5px] font-bold uppercase tracking-wider text-default-400'>Config</span>
+              <span className='mt-1 px-1 pb-1 font-label text-[7.5px] font-bold uppercase tracking-wider text-default-400'>Output</span>
               <div className='flex items-center gap-1 rounded px-1.5 py-1 text-[8.5px] font-semibold text-default-500'>
                 <Icon icon='lucide:settings' className='h-2.5 w-2.5' />
-                <span>Settings</span>
+                <span>Output settings</span>
                 <span className='ml-auto text-[7.5px]'>0</span>
               </div>
             </nav>
@@ -142,12 +142,12 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
             <div className='flex-1 overflow-hidden pl-2'>
               <div className='mb-1.5 flex items-center justify-between'>
                 <div>
-                  <h3 className='text-[11px] font-bold text-foreground'>Variables</h3>
-                  <p className='text-[8.5px] text-default-500'>Text tokens replaced at render time</p>
+                  <h3 className='text-[11px] font-bold text-foreground'>Text fields</h3>
+                  <p className='text-[8.5px] text-default-500'>Each {'{{name}}'} in your Word file is replaced with the value you type here.</p>
                 </div>
                 <button className='inline-flex items-center gap-0.5 rounded bg-content2 px-1.5 py-0.5 text-[8.5px] font-bold text-default-600 dark:bg-content3'>
                   <Icon icon='lucide:plus' className='h-2.5 w-2.5' />
-                  Add Variable
+                  Add text field
                 </button>
               </div>
               <div className='mb-1.5 flex items-center justify-between text-[8.5px]'>
@@ -169,7 +169,7 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
                       </div>
                       <div className='flex h-5 flex-1 items-center rounded bg-content1 px-1.5 dark:bg-content2'>
                         <span className={`font-mono text-[8.5px] ${isFilled ? 'text-foreground' : 'text-default-400'}`}>
-                          {isFilled ? v.value : 'Type value...'}
+                          {isFilled ? v.value : 'Type a value'}
                         </span>
                       </div>
                       <Icon icon='lucide:trash-2' className='h-2.5 w-2.5 text-default-400' />
@@ -186,22 +186,22 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
           <div className='flex items-center justify-between border-b border-default-200/70 px-2 py-1 dark:border-default-200/10'>
             <div className='flex items-center gap-1'>
               <Icon icon='lucide:file-text' className='h-3 w-3 text-foreground' />
-              <span className='text-[10px] font-bold text-foreground'>Preview</span>
+              <span className='text-[10px] font-bold text-foreground'>Template</span>
             </div>
             <div className='flex items-center gap-1.5'>
               <div className='flex rounded bg-content2 p-[1px] dark:bg-content3'>
                 <span className='rounded bg-content1 px-1.5 py-0.5 font-label text-[8px] font-bold uppercase tracking-wider text-foreground dark:bg-content2'>
-                  Source
+                  Template
                 </span>
                 <span className='px-1.5 py-0.5 font-label text-[8px] font-bold uppercase tracking-wider text-default-500'>
-                  Result
+                  Preview
                 </span>
               </div>
               <div className='flex items-center gap-1'>
                 <div className='flex h-3 w-5 items-center rounded-full bg-primary p-[1px]'>
                   <span className='ml-auto h-2 w-2 rounded-full bg-white' />
                 </div>
-                <span className='font-label text-[8px] font-bold uppercase tracking-wider text-default-500'>Live</span>
+                <span className='font-label text-[8px] font-bold uppercase tracking-wider text-default-500'>Auto-preview</span>
               </div>
               <button
                 className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-label text-[8.5px] font-bold uppercase tracking-wider transition-colors ${
@@ -228,7 +228,7 @@ export const DemoStepBuild = ({ onComplete }: { onComplete?: () => void }) => {
             <div className='flex items-center gap-1 border-b border-default-200/70 bg-content2/50 px-2 py-1 dark:border-default-200/10 dark:bg-content3/30'>
               <Icon icon='lucide:info' className='h-2.5 w-2.5 text-default-400' />
               <span className='text-[8.5px] text-default-500'>
-                Source preview — variable values won't appear here.
+                This is your template file. Values appear after you press Generate.
               </span>
             </div>
           )}

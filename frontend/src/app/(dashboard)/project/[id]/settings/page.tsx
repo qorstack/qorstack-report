@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { ProjectBreadcrumbHeader } from '@/components/common/ProjectBreadcrumbHeader'
+import { PageHeader, PanelHeader } from '@/components/ui/PageHeader'
 import {
   Button,
   Input,
@@ -14,11 +14,17 @@ import {
 } from '@heroui/react'
 import Icon from '@/components/icon'
 import { useRouter } from 'next/navigation'
+import { useRouteParams } from '@/hooks/use-route-params'
 import { useProject } from '@/providers/ProjectContext'
+import { ProjectTransferPanel } from '@/components/projects/ProjectTransferPanel'
 
 export default function ProjectSettings() {
   const router = useRouter()
-  const { currentProject, projects, updateProject, deleteProject } = useProject()
+  const params = useRouteParams()
+  const projectId = typeof params.id === 'string' ? params.id : null
+  const { projects, updateProject, deleteProject } = useProject()
+  // Always act on the project in the URL, never on whichever project happens to be "current".
+  const currentProject = projects.find(p => p.id === projectId) ?? null
 
   const [projectName, setProjectName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,10 +38,10 @@ export default function ProjectSettings() {
   }, [currentProject])
 
   const handleUpdate = async () => {
-    if (!currentProject?.id) return
+    if (!projectId || !currentProject) return
     setLoading(true)
     try {
-      await updateProject(currentProject.id, { name: projectName, description: null })
+      await updateProject(projectId, { name: projectName, description: null })
     } catch (error: any) {
       console.error('Update failed', error)
     } finally {
@@ -44,10 +50,10 @@ export default function ProjectSettings() {
   }
 
   const handleDelete = async () => {
-    if (!currentProject?.id) return
+    if (!projectId || !currentProject) return
     setDeleteLoading(true)
     try {
-      const deletedId = currentProject.id
+      const deletedId = projectId
       await deleteProject(deletedId)
       const remaining = projects.filter(p => p.id !== deletedId)
       if (remaining.length > 0) {
@@ -64,89 +70,95 @@ export default function ProjectSettings() {
 
   if (!currentProject) return null
 
+  const isDirty = projectName.trim() !== (currentProject.name || '') && projectName.trim().length > 0
+
   return (
-    <div className='dashboard-page mx-auto w-full max-w-2xl pb-20 pt-4'>
-      <ProjectBreadcrumbHeader
-        crumbs={[{ label: 'Projects' }, { label: currentProject.name || '' }]}
-        title='Settings'
-        subtitle='Manage your project preferences and configurations.'
+    <div className='mx-auto flex w-full max-w-3xl flex-col gap-6'>
+      <PageHeader
+        breadcrumb={[
+          { label: currentProject.name || 'Project', href: `/project/${currentProject.id}` },
+          { label: 'Project settings' }
+        ]}
+        title='Project settings'
+        description='Rename this project, move it to another deployment, or delete it.'
       />
 
-      <div className='space-y-5'>
-        {/* General */}
-        <div className='dashboard-panel'>
-          <div className='dashboard-header'>
-            <h3 className='text-[13px] font-bold text-foreground'>General Information</h3>
-            <p className='mt-0.5 text-[11.5px] text-default-500'>Basic details about your project.</p>
-          </div>
-          <div className='p-6'>
-            <div className='space-y-2'>
-              <label className='label-mono text-default-500'>Project Name</label>
-              <Input
-                value={projectName}
-                onValueChange={setProjectName}
-                variant='bordered'
-                size='sm'
-                className='max-w-full'
-              />
-            </div>
-          </div>
-          <div className='border-t border-default-200/70 bg-content2/50 px-6 py-3 text-right dark:border-white/10'>
-            <Button
-              color='primary'
-              size='sm'
-              radius='md'
-              className='h-8 px-4 text-[11.5px] font-bold'
-              isLoading={loading}
-              onPress={handleUpdate}>
-              Save Changes
-            </Button>
-          </div>
+      <section className='border border-divider bg-content1'>
+        <PanelHeader title='General' description='The name is shown in the sidebar and the project switcher.' />
+        <div className='p-5'>
+          <Input
+            label='Project name'
+            labelPlacement='outside'
+            placeholder='e.g. Invoices'
+            value={projectName}
+            onValueChange={setProjectName}
+            variant='bordered'
+            classNames={{
+              label: 'text-[13px] font-medium !text-default-500',
+              inputWrapper: 'h-10 border-default-300 bg-content2',
+              input: 'text-[14px]'
+            }}
+          />
         </div>
-
-        {/* Danger Zone */}
-        <div className='overflow-hidden rounded-2xl bg-content1 ring-1 ring-danger/25'>
-          <div className='border-b border-danger/15 bg-danger/5 px-6 py-4'>
-            <h3 className='text-[13px] font-bold text-danger'>Danger Zone</h3>
-          </div>
-          <div className='flex flex-col items-start justify-between gap-4 p-6 md:flex-row md:items-center'>
-            <div>
-              <h4 className='text-[13px] font-bold text-foreground'>Delete Project</h4>
-              <p className='mt-1 max-w-lg text-[11.5px] text-default-500'>
-                Deleting this project will permanently remove all associated templates, history, and API keys. This
-                action cannot be undone.
-              </p>
-            </div>
-            <Button
-              color='danger'
-              variant='flat'
-              size='sm'
-              radius='md'
-              className='h-8 shrink-0 px-4 text-[11.5px] font-bold'
-              onPress={onDeleteOpen}>
-              Delete Project
-            </Button>
-          </div>
+        <div className='flex justify-end border-t border-divider px-5 py-4'>
+          <Button
+            color='primary'
+            className='h-10 font-medium'
+            isLoading={loading}
+            isDisabled={!isDirty}
+            onPress={handleUpdate}>
+            Save changes
+          </Button>
         </div>
-      </div>
+      </section>
 
-      <Modal isOpen={isDeleteOpen} onOpenChange={onDeleteOpenChange}>
+      <ProjectTransferPanel projectId={currentProject.id} projectName={currentProject.name || 'project'} />
+
+      <section className='border border-divider bg-content1'>
+        <PanelHeader title='Danger zone' tone='danger' description='Actions here cannot be undone.' />
+        <div className='flex flex-col items-start justify-between gap-4 p-5 md:flex-row md:items-center'>
+          <div>
+            <h3 className='text-[15px] font-semibold text-foreground'>Delete this project</h3>
+            <p className='mt-1 max-w-lg text-[14px] text-default-500'>
+              Permanently removes its templates, history and API key. This cannot be undone.
+            </p>
+          </div>
+          <Button
+            color='danger'
+            variant='bordered'
+            className='h-10 shrink-0 font-medium'
+            startContent={<Icon icon='lucide:trash-2' className='h-4 w-4' />}
+            onPress={onDeleteOpen}>
+            Delete project
+          </Button>
+        </div>
+      </section>
+
+      <Modal isOpen={isDeleteOpen} onOpenChange={onDeleteOpenChange} classNames={{ base: 'border border-divider bg-content1' }}>
         <ModalContent>
           {onClose => (
             <>
-              <ModalHeader className='flex flex-col gap-1'>Delete Project</ModalHeader>
+              <ModalHeader className='text-[16px] font-semibold'>Delete project?</ModalHeader>
               <ModalBody>
-                <p className='text-sm text-default-500'>
-                  Are you sure you want to delete <strong>{currentProject.name}</strong>? This action cannot be undone.
-                  All templates and data associated with this project will be permanently removed.
-                </p>
+                <div className='flex items-start gap-3 border border-danger/40 p-3 text-[14px]'>
+                  <Icon icon='lucide:alert-circle' className='mt-0.5 h-5 w-5 shrink-0 text-danger' />
+                  <p className='text-default-500'>
+                    <span className='font-semibold text-foreground'>{currentProject.name}</span> and all of its templates,
+                    history and API key will be permanently removed. This cannot be undone.
+                  </p>
+                </div>
               </ModalBody>
               <ModalFooter>
-                <Button color='default' variant='light' onPress={onClose}>
+                <Button variant='light' onPress={onClose} className='h-10 font-medium'>
                   Cancel
                 </Button>
-                <Button color='danger' onPress={handleDelete} isLoading={deleteLoading}>
-                  Yes, Delete
+                <Button
+                  color='danger'
+                  variant='bordered'
+                  onPress={handleDelete}
+                  isLoading={deleteLoading}
+                  className='h-10 font-medium'>
+                  Yes, delete project
                 </Button>
               </ModalFooter>
             </>

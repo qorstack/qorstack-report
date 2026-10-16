@@ -1,46 +1,66 @@
 'use client'
 
-import RectButton from '@/components/rect-button'
-import { useEffect, useState, useCallback } from 'react'
-import { useAuth } from '@/providers/AuthContext'
-import { useProject } from '@/providers/ProjectContext'
-import { useRouter, usePathname } from 'next/navigation'
-import Icon from '@/components/icon'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useCallback, useEffect, useState, type JSX } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import DocSearch from '@/components/docs/DocSearch'
-import SwitchTheme from '@/components/switch-theme'
-import Image from 'next/image'
-
-const BRAND_NAME = process.env.NEXT_PUBLIC_BRAND_NAME || 'Qorstack Report'
-const GITHUB_URL = 'https://github.com/qorstack/qorstack-report'
-const isCloud = process.env.NEXT_PUBLIC_SITE_MODE === 'cloud'
+import { Logo } from '@/components/brand/Logo'
+import { GitHubStarButton } from '@/components/landing/GitHubStars'
+import { GITHUB_URL, IS_MARKETING_SITE, PRICING_HREF } from '@/components/landing/constants'
+import { cn } from '@/utils/cn'
 
 interface NavbarProps {
   maxWidth?: string
   onSearchNavigate?: (id: string) => void
 }
 
-const Navbar = ({ maxWidth, onSearchNavigate }: NavbarProps) => {
-  const [scrolled, setScrolled] = useState(false)
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+interface NavLink {
+  name: string
+  href: string
+}
+
+// Landing-page anchors exist only on the marketing site; a self-hosted install opens the app at "/".
+const NAV_LINKS: NavLink[] = IS_MARKETING_SITE
+  ? [
+      { name: 'How it works', href: '/#how' },
+      { name: 'Features', href: '/#features' },
+      { name: 'Developers', href: '/#developers' },
+      { name: 'Pricing', href: PRICING_HREF },
+      { name: 'Docs', href: '/docs' }
+    ]
+  : [
+      { name: 'Docs', href: '/docs' },
+      { name: 'Self-host', href: '/self-host' },
+      { name: 'Free vs Pro', href: PRICING_HREF }
+    ]
+
+const SearchIcon = (): JSX.Element => (
+  <svg width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' aria-hidden='true'>
+    <circle cx='11' cy='11' r='7' />
+    <path d='M20 20l-3.5-3.5' strokeLinecap='square' />
+  </svg>
+)
+
+const MenuIcon = ({ open }: { open: boolean }): JSX.Element => (
+  <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' aria-hidden='true'>
+    {open ? <path d='M5 5l14 14M19 5L5 19' /> : <path d='M3 7h18M3 12h18M3 17h18' />}
+  </svg>
+)
+
+const Navbar = ({ maxWidth, onSearchNavigate }: NavbarProps): JSX.Element => {
+  const [menuOpen, setMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const { user, openAuthModal, navigateHome, logout } = useAuth()
-  const { currentProject } = useProject()
   const router = useRouter()
   const pathname = usePathname()
+  const isDocs = pathname?.startsWith('/docs') ?? false
 
   useEffect(() => {
-    const handleScroll = () => setScrolled(globalThis.scrollY > 20)
-    globalThis.addEventListener('scroll', handleScroll)
-    return () => globalThis.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setSearchOpen(prev => !prev)
       }
+      if (e.key === 'Escape') setMenuOpen(false)
     }
     globalThis.addEventListener('keydown', handleKeyDown)
     return () => globalThis.removeEventListener('keydown', handleKeyDown)
@@ -60,226 +80,99 @@ const Navbar = ({ maxWidth, onSearchNavigate }: NavbarProps) => {
     [onSearchNavigate, router]
   )
 
-  const getInitials = () => {
-    if (user?.firstName) return user.firstName[0].toUpperCase()
-    if (user?.email) return user.email[0].toUpperCase()
-    return 'U'
-  }
+  const isActive = (href: string): boolean => !href.includes('#') && pathname === href
 
-  const isActive = (path: string) => pathname === path
-
-  const navLinks: { name: string; path: string; live?: boolean; badge?: string }[] = [
-    { name: 'Documentation', path: '/docs' },
-    ...(isCloud ? [{ name: 'Self-Host', path: '/self-host' }] : [])
-  ]
+  const primaryCta = IS_MARKETING_SITE ? { name: 'Get started', href: '/self-host' } : { name: 'Dashboard', href: '/' }
 
   return (
     <>
-      <nav
-        className={`fixed top-0 z-50 w-full transition-all duration-300 ${
-          scrolled
-            ? 'bg-background/75 py-3.5 backdrop-blur-xl lg:py-4'
-            : 'bg-background/40 py-4 backdrop-blur-sm lg:py-5'
-        }`}>
-        <div className={`mx-auto flex items-center justify-between px-4 lg:px-6 ${maxWidth || 'container'}`}>
-          {/* Logo + Version */}
-          <div className='flex items-center gap-2'>
-            <div
-              className='group flex cursor-pointer items-center gap-2.5'
-              onClick={() => isCloud ? router.push('/') : currentProject?.id ? router.push(`/project/${currentProject.id}`) : router.push('/create-project')}>
-              <Image
-                src='/images/logo/logo.png'
-                alt={BRAND_NAME}
-                width={32}
-                height={32}
-                className='h-7 w-7 rounded-lg lg:h-8 lg:w-8'
-              />
-              <span className='font-headline text-sm font-bold tracking-tight text-foreground transition-colors group-hover:text-primary lg:text-base'>
-                {BRAND_NAME}
-              </span>
-            </div>
-          </div>
+      <header className='sticky top-0 z-[60] border-b border-divider bg-background/85 backdrop-blur-md'>
+        <div className={cn('mx-auto flex h-[68px] items-center gap-10 px-4 sm:px-7', maxWidth || 'max-w-[1280px]')}>
+          <Link href='/' aria-label='Qorstack Report home' className='shrink-0'>
+            <Logo size={34} />
+          </Link>
 
-          {/* Desktop Menu */}
-          <div className='hidden items-center gap-7 md:flex'>
-            {navLinks.map(link => (
-              <div
-                key={link.path}
-                onClick={() => !link.badge && router.push(link.path)}
-                className={`flex cursor-pointer items-center gap-1.5 text-sm font-medium transition-colors ${
-                  link.badge
-                    ? 'cursor-default text-default-500'
-                    : isActive(link.path)
-                      ? 'font-bold text-primary'
-                      : 'text-default-600 hover:text-primary'
-                }`}>
-                {link.live && (
-                  <span className='relative flex h-1.5 w-1.5'>
-                    <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75' />
-                    <span className='relative inline-flex h-1.5 w-1.5 rounded-full bg-success' />
-                  </span>
-                )}
+          <nav
+            aria-label='Main'
+            className='hidden gap-[30px] text-[14px] font-medium uppercase tracking-[0.06em] text-default-500 [font-variation-settings:"wdth"_92] min-[900px]:flex'>
+            {NAV_LINKS.map(link => (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={isActive(link.href) ? 'page' : undefined}
+                className={cn(
+                  "relative py-1.5 transition-colors after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-left after:scale-x-0 after:bg-primary after:transition-transform after:duration-200 after:content-[''] hover:text-foreground hover:after:scale-x-100",
+                  isActive(link.href) && 'text-foreground'
+                )}>
                 {link.name}
-                {link.badge && (
-                  <span className='rounded bg-primary/10 px-1.5 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-primary'>
-                    {link.badge}
-                  </span>
-                )}
-              </div>
+              </Link>
             ))}
-          </div>
+          </nav>
 
-          {/* Desktop Right: Theme + Search + Auth */}
-          <div className='hidden items-center gap-2 md:flex'>
-            <SwitchTheme />
-
-            <button
-              onClick={() => setSearchOpen(true)}
-              className='flex items-center gap-2 rounded-md bg-content2 px-3 py-1 text-sm text-default-500 transition-colors hover:bg-content3 lg:w-48'>
-              <Icon icon='solar:magnifer-linear' className='text-sm' />
-              <span className='flex-1 text-left text-xs'>Search docs...</span>
-              <kbd className='rounded bg-content3 px-1 py-0.5 font-mono text-[10px] text-default-500'>
-                ⌘K
-              </kbd>
-            </button>
-
-            {isCloud ? (
-              <a
-                href={GITHUB_URL}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='flex items-center gap-1.5 rounded-lg border border-hairline bg-content1 px-3 py-1.5 text-[13px] font-semibold text-ink transition-shadow hover:shadow-lift'>
-                <Icon icon='mdi:github' className='h-3.5 w-3.5' />
-                GitHub
-              </a>
-            ) : user ? (
-              <div
-                className='flex cursor-pointer items-center gap-2 rounded-md bg-content2 p-0.5 pr-3 transition-colors hover:bg-content3'
-                onClick={() => navigateHome()}>
-                <div className='flex h-6 w-6 items-center justify-center rounded bg-primary text-[10px] font-bold text-primary-foreground'>
-                  {getInitials()}
-                </div>
-                <span className='text-xs font-medium text-primary'>{user.firstName || user.email?.split('@')[0]}</span>
-              </div>
-            ) : (
-              <RectButton
-                variant='primary'
-                className='!rounded-md !bg-primary !py-1.5 !text-primary-foreground !shadow-glow'
-                onClick={() => openAuthModal('login')}>
-                Get Started
-              </RectButton>
+          <div className='ml-auto flex items-center gap-2.5'>
+            {isDocs && (
+              <button
+                type='button'
+                onClick={() => setSearchOpen(true)}
+                aria-label='Search docs'
+                className='inline-flex h-10 items-center gap-2 border border-default-300 px-3 text-default-500 transition-colors hover:border-foreground hover:text-foreground'>
+                <SearchIcon />
+                <kbd className='hidden font-mono text-[11px] lg:inline'>⌘K</kbd>
+              </button>
             )}
-          </div>
-
-          {/* Mobile Right */}
-          <div className='flex items-center gap-1 md:hidden'>
-            <SwitchTheme />
+            <GitHubStarButton className='max-[560px]:hidden' />
+            <Link
+              href={primaryCta.href}
+              className='hidden h-10 items-center bg-primary px-4 text-[13px] font-bold uppercase tracking-[0.04em] text-white transition-colors [font-variation-settings:"wdth"_90] hover:bg-primary-600 sm:inline-flex'>
+              {primaryCta.name}
+            </Link>
             <button
-              onClick={() => setSearchOpen(true)}
-              className='flex h-8 w-8 items-center justify-center rounded-md text-default-600 hover:bg-content3 hover:text-primary'>
-              <Icon icon='solar:magnifer-linear' className='text-base' />
-            </button>
-            <button
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className='flex h-8 w-8 items-center justify-center rounded-md text-default-600 hover:bg-content3 hover:text-primary'>
-              <Icon icon={isMobileMenuOpen ? 'lucide:x' : 'lucide:menu'} className='h-5 w-5' />
+              type='button'
+              onClick={() => setMenuOpen(o => !o)}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={menuOpen}
+              aria-controls='mobile-menu'
+              className='inline-flex h-10 w-10 items-center justify-center border border-default-300 text-foreground transition-colors hover:border-foreground min-[900px]:hidden'>
+              <MenuIcon open={menuOpen} />
             </button>
           </div>
         </div>
 
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {isMobileMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: '100dvh' }}
-              exit={{ opacity: 0, height: 0 }}
-              className='overflow-hidden bg-background/95 backdrop-blur-xl md:hidden'>
-              <div className='flex flex-col space-y-4 p-4'>
-                {navLinks.map(link => (
-                  <div
-                    key={link.path}
-                    onClick={() => {
-                      if (!link.badge) {
-                        router.push(link.path)
-                        setIsMobileMenuOpen(false)
-                      }
-                    }}
-                    className={`flex items-center gap-3 rounded-md px-4 py-3 text-base font-medium transition-colors ${
-                      link.badge
-                        ? 'text-default-500'
-                        : isActive(link.path)
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-default-600 hover:bg-content3 hover:text-primary'
-                    }`}>
-                    {link.live && (
-                      <span className='relative flex h-2 w-2'>
-                        <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75' />
-                        <span className='relative inline-flex h-2 w-2 rounded-full bg-success' />
-                      </span>
-                    )}
+        {menuOpen && (
+          <nav
+            id='mobile-menu'
+            aria-label='Mobile'
+            className='border-t border-divider bg-background px-4 pb-6 pt-2 min-[900px]:hidden'>
+            <ul className='flex flex-col'>
+              {NAV_LINKS.map(link => (
+                <li key={link.href} className='border-b border-divider'>
+                  <Link
+                    href={link.href}
+                    onClick={() => setMenuOpen(false)}
+                    className='block py-4 text-[15px] font-semibold uppercase tracking-[0.06em] text-default-500 hover:text-foreground'>
                     {link.name}
-                    {link.badge && (
-                      <span className='rounded bg-primary/10 px-2 py-0.5 font-label text-[9px] font-bold uppercase tracking-wider text-primary'>
-                        {link.badge}
-                      </span>
-                    )}
-                  </div>
-                ))}
-
-                <div className='my-2 h-px bg-content3' />
-
-                {user ? (
-                  <div className='flex flex-col gap-2'>
-                    <div
-                      onClick={() => {
-                        navigateHome()
-                        setIsMobileMenuOpen(false)
-                      }}
-                      className='flex items-center gap-3 rounded-md px-4 py-3 hover:bg-content3'>
-                      <div className='flex h-8 w-8 items-center justify-center rounded bg-primary text-sm font-bold text-primary-foreground'>
-                        {getInitials()}
-                      </div>
-                      <div className='flex flex-col'>
-                        <span className='text-sm font-bold text-foreground'>{user.firstName || 'User'}</span>
-                        <span className='text-xs text-default-500'>{user.email}</span>
-                      </div>
-                    </div>
-                    <RectButton
-                      variant='ghost'
-                      className='w-full justify-center text-danger hover:bg-danger/10 hover:text-danger'
-                      onClick={() => {
-                        logout()
-                        setIsMobileMenuOpen(false)
-                      }}>
-                      Log out
-                    </RectButton>
-                  </div>
-                ) : isCloud ? (
-                  <a
-                    href={GITHUB_URL}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    className='flex items-center justify-center gap-2 rounded-md bg-content2 px-4 py-2.5 text-sm font-bold text-foreground'>
-                    <Icon icon='mdi:github' className='h-4 w-4' />
-                    GitHub
-                  </a>
-                ) : (
-                  <RectButton
-                    variant='primary'
-                    className='w-full justify-center !bg-primary !text-primary-foreground !shadow-glow'
-                    onClick={() => {
-                      openAuthModal('login')
-                      setIsMobileMenuOpen(false)
-                    }}>
-                    Get Started
-                  </RectButton>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </nav>
+                  </Link>
+                </li>
+              ))}
+              <li className='border-b border-divider'>
+                <a
+                  href={GITHUB_URL}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='block py-4 text-[15px] font-semibold uppercase tracking-[0.06em] text-default-500 hover:text-foreground'>
+                  GitHub
+                </a>
+              </li>
+            </ul>
+            <Link
+              href={primaryCta.href}
+              onClick={() => setMenuOpen(false)}
+              className='mt-5 flex h-12 items-center justify-center bg-primary text-[14px] font-bold uppercase tracking-[0.04em] text-white hover:bg-primary-600'>
+              {primaryCta.name}
+            </Link>
+          </nav>
+        )}
+      </header>
 
       {searchOpen && <DocSearch onNavigate={handleSearchNavigate} onClose={() => setSearchOpen(false)} />}
     </>

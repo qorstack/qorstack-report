@@ -33,6 +33,8 @@
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="System.Drawing.Common" />
+    <!-- Pins the patched version of a Microsoft.Data.SqlClient dependency (see Directory.Packages.props). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Zitadel" />
     <PackageReference Include="ZXing.Net.Bindings.SkiaSharp" />
   </ItemGroup>

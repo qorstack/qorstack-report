@@ -45,11 +45,11 @@ Qorstack Report Service เป็น REST API ที่ช่วยในกา�
 
 ```json
 {
-    "replace": {
-        "customer_name": "สมชาย ใจดี",
-        "invoice_number": "INV-2026-001",
-        "invoice_date": "23 มกราคม 2569"
-    }
+    "replace": [
+        { "key": "customer_name", "value": "สมชาย ใจดี" },
+        { "key": "invoice_number", "value": "INV-2026-001" },
+        { "key": "invoice_date", "value": "23 มกราคม 2569" }
+    ]
 }
 ```
 
@@ -68,29 +68,25 @@ Qorstack Report Service เป็น REST API ที่ช่วยในกา�
 
 ```json
 {
-    "tables": [
-        [
-            {
-                "product_name": "สินค้า A",
-                "quantity": "2",
-                "price": "100.00"
-            },
-            {
-                "product_name": "สินค้า B",
-                "quantity": "1",
-                "price": "50.00"
-            }
-        ],
-        [
-             {
-                 "other_col": "..."
-             }
-        ]
+    "table": [
+        {
+            "columns": ["product_name", "quantity", "price"],
+            "rows": [
+                ["สินค้า A", 2, "100.00"],
+                ["สินค้า B", 1, "50.00"]
+            ]
+        },
+        {
+            "columns": ["other_col"],
+            "rows": [
+                ["..."]
+            ]
+        }
     ]
 }
 ```
 
-หมายเหตุ: ข้อมูลใน `tables` จะถูกนำไปใส่ในตารางที่พบในเอกสารตามลำดับ (ตารางแรกในเอกสารใช้ข้อมูล index 0, ตารางที่สองใช้ index 1, ฯลฯ)
+หมายเหตุ: ระบุชื่อคอลัมน์ (ตัวแปรในแถวของตาราง) ครั้งเดียวใน `columns` แล้วแต่ละแถวใน `rows` เป็น array ของค่าตามลำดับคอลัมน์ และข้อมูลใน `table` จะถูกนำไปใส่ในตารางที่พบในเอกสารตามลำดับ (ตารางแรกในเอกสารใช้ข้อมูล index 0, ตารางที่สองใช้ index 1, ฯลฯ)
 
 ### 3. Images
 
@@ -105,14 +101,15 @@ Qorstack Report Service เป็น REST API ที่ช่วยในกา�
 
 ```json
 {
-    "image": {
-        "company_logo": {
+    "image": [
+        {
+            "key": "company_logo",
             "src": "http://example.com/logo.png",
             "width": 200,
             "height": 80,
-            "objectFit": "cover"
+            "fit": "cover"
         }
-    }
+    ]
 }
 ```
 
@@ -132,20 +129,22 @@ Barcode:
 
 ```json
 {
-    "qrCode": {
-        "payment_qr": {
+    "qrcode": [
+        {
+            "key": "payment_qr",
             "text": "https://example.com/pay",
             "size": 150
         }
-    },
-    "barcode": {
-        "product_code": {
+    ],
+    "barcode": [
+        {
+            "key": "product_code",
             "text": "123456789",
             "format": "Code128",
             "width": 300,
             "height": 100
         }
-    }
+    ]
 }
 ```
 

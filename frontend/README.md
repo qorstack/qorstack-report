@@ -2,6 +2,12 @@
 
 The web application for [Qorstack Report](https://qorstack.dev), a powerful API for generating PDF and Excel reports from Microsoft Word (DOCX) templates.
 
+## Local development
+
+No frontend env is needed. From the repo root: `cp .env.dev.example .env`, `make infra-up`, `make dev`,
+then open http://localhost:3000. `pnpm dev` proxies `/api/*` to `DEV_BACKEND_URL` (root `.env`,
+default `http://localhost:5000`). `frontend/.env.example` lists the optional Vercel/marketing variables only.
+
 ## SDK Integration
 
 The frontend uses the official [`qorstack-report-sdk`](https://www.npmjs.com/package/qorstack-report-sdk) for type-safe API access.
@@ -40,7 +46,7 @@ To use the SDK, you need an **API Key** from the Qorstack Portal.
 import { QorstackApi } from 'qorstack-report-sdk'
 
 // 1. Initialize the client
-// By default, it connects to http://localhost:8080
+// By default, it connects to http://localhost:8080/api/api
 const qorstackApi = new QorstackApi({
   // baseUrl: "https://your-custom-url.com" // Optional: Override Base URL
 })
@@ -85,23 +91,21 @@ Use `postRenderTemplatePdf` when you have already uploaded a DOCX template to Qo
 try {
   const data = await mockService.getExamplesAsync(123)
 
-  const tableRows = data.map(item => ({
-    description: item.description,
-    quantity: item.quantity,
-    price: item.price
-  }))
+  // Column names ({{row:<name>}} markers) are listed once; each row holds the values in that order
+  const columns = ['description', 'quantity', 'price']
+  const tableRows = data.map(item => [item.description, item.quantity, item.price])
 
   const response = await qorstackApi.render.postRenderTemplatePdf({
     templateKey: 'invoice-template-v1',
     fileName: 'Invoice-INV001',
-    replace: {
-      customerName: 'John Doe',
-      invoiceNumber: 'INV-001',
-      date: '2023-10-25'
-    },
+    replace: [
+      { key: 'customerName', value: 'John Doe' },
+      { key: 'invoiceNumber', value: 'INV-001' },
+      { key: 'date', value: '2023-10-25' }
+    ],
     table: [
       {
-        name: 'items',
+        columns,
         rows: tableRows
       }
     ]
@@ -118,55 +122,44 @@ try {
 ```csharp
 var data = await _exampleService.GetDataAsync(id);
 
-var tableRows = data.Select((item, index) => new
+// Column names ({{row:<name>}} markers) are listed once; each row holds the values in that order
+var columns = new List<string> { "no", "category", "description", "qty", "unit_price", "amount" };
+var tableRows = data.Select((item, index) => (ICollection<object>)new List<object>
 {
-    no = index + 1,
-    category = item.Category,
-    description = item.Description,
-    qty = item.Quantity,
-    unit_price = item.Price,
-    amount = item.Total
+    index + 1, item.Category, item.Description, item.Quantity, item.Price, item.Total
 }).ToList();
 
 var request = new PdfFromTemplateRequest
 {
     TemplateKey = "QORSTACK-7326-758-974-2067",
     FileName = "Full_Report_Example",
-    Replace = new()
+    Replace = new List<KeyValueRequest>
     {
-        { "customer_name", "บริษัท ตัวอย่าง จำกัด" },
-        { "document_date", DateTime.Now.ToString("dd/MM/yyyy") },
-        { "total_amount", "1,500.00" }
+        new KeyValueRequest { Key = "customer_name", Value = "บริษัท ตัวอย่าง จำกัด" },
+        new KeyValueRequest { Key = "document_date", Value = DateTime.Now.ToString("dd/MM/yyyy") },
+        new KeyValueRequest { Key = "total_amount", Value = "1,500.00" }
     },
     Table = new()
     {
         new()
         {
+          Columns = columns,
           Rows = tableRows,
           VerticalMerge = new() { "category" },
           Collapse = new() { "description" }
         }
     },
-    Image = new()
+    Image = new List<ImageDataRequest>
     {
-        {
-            "header_logo",
-            new() { Src = "https://example.com/logo.png", Width = 200, Fit = "contain" }
-        }
+        new ImageDataRequest { Key = "header_logo", Src = "https://example.com/logo.png", Width = 200, Fit = ImageDataRequestFit.Contain }
     },
-    QrCode = new()
+    Qrcode = new List<QrCodeDataRequest>
     {
-        {
-            "payment_qr",
-            new() { Text = "https://payment.link/123456", Size = 150 }
-        }
+        new QrCodeDataRequest { Key = "payment_qr", Text = "https://payment.link/123456", Size = 150 }
     },
-    Barcode = new()
+    Barcode = new List<BarcodeDataRequest>
     {
-        {
-            "product_barcode",
-            new() { Text = "PROD-123456789", Format = "Code128", Width = 300, Height = 80 }
-        }
+        new BarcodeDataRequest { Key = "product_barcode", Text = "PROD-123456789", Format = "Code128", Width = 300, Height = 80 }
     }
 };
 ```
@@ -186,9 +179,7 @@ const base64File = fileBuffer.toString('base64')
 const response = await qorstackApi.render.postRenderDocxPdf({
   fileBase64: base64File,
   fileName: 'Dynamic-Report',
-  replace: {
-    title: 'Monthly Report'
-  }
+  replace: [{ key: 'title', value: 'Monthly Report' }]
 })
 ```
 
@@ -202,9 +193,9 @@ var response = await qorstackApi.PostRenderDocxPdfAsync(new PdfFromFileRequest
 {
     FileBase64 = base64File,
     FileName = "Dynamic-Report",
-    Replace = new()
+    Replace = new List<KeyValueRequest>
     {
-        { "title", "Monthly Report" }
+        new KeyValueRequest { Key = "title", Value = "Monthly Report" }
     }
 });
 ```
@@ -213,13 +204,18 @@ var response = await qorstackApi.PostRenderDocxPdfAsync(new PdfFromFileRequest
 
 ## Data Binding Reference
 
+`replace`, `table`, `image`, `qrcode` and `barcode` are **keyed arrays**: every item
+names the template marker it fills via `key`. Duplicate or empty keys return `400`.
+The v1 object-map form (`"replace": { "customerName": "..." }`) was removed in v2.0 and
+now returns `400` with the field name.
+
 ### Text Replacement (`replace`)
 
 ```json
-"replace": {
-  "customerName": "Acme Corp",
-  "totalAmount": "$1,050.00"
-}
+"replace": [
+  { "key": "customerName", "value": "Acme Corp" },
+  { "key": "totalAmount", "value": "$1,050.00" }
+]
 ```
 
 ### Tables (`table`)
@@ -227,9 +223,10 @@ var response = await qorstackApi.PostRenderDocxPdfAsync(new PdfFromFileRequest
 ```json
 "table": [
   {
+    "columns": ["name", "last_name"],
     "rows": [
-      { "name": "Value A", "last_name": "Value B" },
-      { "name": "Value C", "last_name": "Value D" }
+      ["Value A", "Value B"],
+      ["Value C", "Value D"]
     ]
   }
 ]
@@ -238,38 +235,41 @@ var response = await qorstackApi.PostRenderDocxPdfAsync(new PdfFromFileRequest
 ### Images (`image`)
 
 ```json
-"image": {
-  "logo": {
+"image": [
+  {
+    "key": "logo",
     "src": "https://example.com/logo.png",
     "width": 150,
     "height": 50,
     "fit": "contain"
   }
-}
+]
 ```
 
 ### QR Codes (`qrcode`)
 
 ```json
-"qrcode": {
-  "website": {
+"qrcode": [
+  {
+    "key": "website",
     "text": "https://qorstack.dev",
     "size": 200,
     "color": "#000000"
   }
-}
+]
 ```
 
 ### Barcodes (`barcode`)
 
 ```json
-"barcode": {
-  "productId": {
+"barcode": [
+  {
+    "key": "productId",
     "text": "1234567890",
     "format": "Code128",
     "includeText": true
   }
-}
+]
 ```
 
 ### Conditional Logic (`condition`)

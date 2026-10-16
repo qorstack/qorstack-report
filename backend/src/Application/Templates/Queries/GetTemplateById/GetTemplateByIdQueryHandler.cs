@@ -86,7 +86,7 @@ public class GetTemplateByIdQueryHandler : IRequestHandler<GetTemplateByIdQuery,
             return null;
         }
 
-        var templateBucket = _configuration["Minio:TemplateBucket"] ?? "templates";
+        var templateBucket = StorageAreas.Templates;
 
         if (template.ActiveVersion != null)
         {
@@ -123,7 +123,7 @@ public class GetTemplateByIdQueryHandler : IRequestHandler<GetTemplateByIdQuery,
             }
         }
 
-        var reportBucket = _configuration["Minio:ReportBucket"] ?? "reports";
+        var reportBucket = StorageAreas.Reports;
 
         // Sandbox Last Test Presigned URL
         // Use version specific sandbox path if available

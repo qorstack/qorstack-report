@@ -1,35 +1,44 @@
 'use client'
 
-import { ReactNode } from 'react'
+import type { JSX, ReactNode } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/utils/cn'
 import Sidebar from '@/layouts/partial/sidebar'
 import Header from '@/layouts/partial/header'
-import { motion } from 'framer-motion'
 
 interface Props {
   children: ReactNode
 }
 
-const SidebarLayout = ({ children }: Props) => {
+const SidebarLayout = ({ children }: Props): JSX.Element => {
+  const reduceMotion = useReducedMotion()
+  const pathname = usePathname() || ''
+  // Builder pages size themselves to the viewport (calc(100vh - 110px)); keep their tight padding and full width.
+  const isBuilder = /^\/(pdf|excel)\/templates\/(?!create)[^/]+/.test(pathname)
+
   return (
     <div className='flex h-screen flex-col overflow-hidden bg-background text-foreground lg:flex-row'>
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (mobile uses the drawer in Header, same content) */}
       <div className='hidden lg:block'>
         <Sidebar />
       </div>
 
-      {/* Main content */}
-      <div className='flex flex-1 flex-col overflow-hidden lg:pl-[256px]'>
-        {/* Header (contains mobile drawer trigger) */}
+      <div className='flex min-w-0 flex-1 flex-col overflow-hidden lg:pl-[256px]'>
         <div className='shrink-0'>
           <Header />
         </div>
 
-        {/* Page content — subtle lavender radial glow from top-right for depth */}
         <motion.main
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className='flex-1 overflow-y-auto bg-background px-3 py-4 sm:px-4 lg:px-5 lg:py-4'>
-          <div className='w-full'>{children}</div>
+          id='dashboard-main'
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className={cn(
+            'flex-1 overflow-y-auto bg-background',
+            isBuilder ? 'px-3 py-4 sm:px-4 lg:px-5' : 'px-4 py-6 sm:px-6 lg:px-8 lg:py-8'
+          )}>
+          <div className={cn('w-full', !isBuilder && 'mx-auto max-w-[1400px]')}>{children}</div>
         </motion.main>
       </div>
     </div>

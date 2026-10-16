@@ -19,5 +19,15 @@ namespace QorstackReportService.Application.DTOs
         public DateTime? CreatedDatetime { get; set; }
         public string? UpdatedBy { get; set; }
         public DateTime? UpdatedDatetime { get; set; }
+
+        /// <summary>
+        /// Presigned download URL for the generated document. Only populated on detail (single-job) requests.
+        /// </summary>
+        public string? DownloadUrl { get; set; }
+
+        /// <summary>
+        /// UTC expiry time of the presigned download URL.
+        /// </summary>
+        public DateTime? DownloadUrlExpiresAt { get; set; }
     }
 }

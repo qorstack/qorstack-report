@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <RootNamespace>QorstackReportService.Application.FunctionalTests</RootNamespace>
         <AssemblyName>QorstackReportService.Application.FunctionalTests</AssemblyName>
         <IsTestProject>true</IsTestProject>
@@ -38,6 +38,7 @@
         <PackageReference Include="Moq" />
         <PackageReference Include="Respawn" />
         <PackageReference Include="Testcontainers.MsSql" />
+        <PackageReference Include="SSH.NET" />
     </ItemGroup>
 
     <ItemGroup>

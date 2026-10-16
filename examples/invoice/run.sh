@@ -10,7 +10,8 @@
 #   QORSTACK_API_KEY=... TEMPLATE_KEY=... bash examples/invoice/run.sh
 set -euo pipefail
 
-API_URL="${QORSTACK_API_URL:-http://localhost:8080}"
+API_URL="${QORSTACK_API_URL:-http://localhost:8080/api}"
+API_URL="${API_URL%/}"; case "$API_URL" in */api) ;; *) API_URL="$API_URL/api" ;; esac
 : "${QORSTACK_API_KEY:?Set QORSTACK_API_KEY (web UI -> Settings -> API Keys)}"
 : "${TEMPLATE_KEY:?Set TEMPLATE_KEY (web UI -> after uploading invoice.docx)}"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

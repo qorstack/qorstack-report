@@ -29,6 +29,6 @@ public class GetProfileQueryHandler : IRequestHandler<GetProfileQuery, ProfileDt
         var user = await _context.Users.FindAsync(new object[] { userId }, cancellationToken);
         if (user == null) throw new UnauthorizedAccessException();
 
-        return new ProfileDto(user.Id, user.Email, user.FirstName, user.LastName, user.ProfileImageUrl);
+        return new ProfileDto(user.Id, user.Email, user.FirstName, user.LastName, user.ProfileImageUrl, user.IsSystemAdmin);
     }
 }

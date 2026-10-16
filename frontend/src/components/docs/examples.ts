@@ -16,16 +16,16 @@ export const getInitClient = (lang: 'ts' | 'csharp') => {
     return `import { QorstackApi } from "qorstack-report-sdk";
 
 const qorstackApi = new QorstackApi({
-  baseUrl: process.env.QORSTACK_API_URL || "http://localhost:8080",
+  baseUrl: process.env.QORSTACK_API_URL || "http://localhost:8080/api",
   securityData: {
     headers: {
-      "X-API-KEY": process.env.QORSTACK_API_KEY || "YOUR_API_KEY"
+      "X-API-Key": process.env.QORSTACK_API_KEY || "YOUR_API_KEY"
     }
   }
 });`
   return `using Qorstack.Report.Sdk;
 
-var apiUrl = Environment.GetEnvironmentVariable("QORSTACK_API_URL") ?? "http://localhost:8080";
+var apiUrl = Environment.GetEnvironmentVariable("QORSTACK_API_URL") ?? "http://localhost:8080/api";
 var apiKey = Environment.GetEnvironmentVariable("QORSTACK_API_KEY") ?? "YOUR_API_KEY";
 var qorstackApi = new QorstackApi(apiUrl, apiKey);`
 }

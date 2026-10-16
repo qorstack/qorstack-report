@@ -6,7 +6,7 @@ This SDK simplifies integration into your **Node.js** and **.NET** applications.
 ## Features
 
 - **Word template rendering** — generate PDF or DOCX from a stored DOCX template.
-- **Excel template rendering** — generate XLSX (or PDF) from a stored XLSX template, with auto-filter, freeze header, table styles, and conditional formatting.
+- **Excel template rendering** — generate XLSX from a stored XLSX template (Excel in, Excel out), with auto-filter, freeze header, table styles, and conditional formatting.
 - **Sandbox rendering** — render a template using its configured sample payload (great for previews).
 - **Render job history** — list and inspect past render jobs.
 - **Rich data binding:**
@@ -14,10 +14,11 @@ This SDK simplifies integration into your **Node.js** and **.NET** applications.
   - Dynamic tables (with vertical merge / column collapse on Word; auto-filter / freeze / split-to-sheets on Excel)
   - Images (URL or Base64)
   - QR codes and barcodes
-- **Pro features** *(requires Pro license on self-hosted, included on cloud Pro plans)*:
+- **Pro features** *(require a Pro license on your Qorstack Report server)*:
   - PDF password protection
   - PDF watermarking
-- **Zip output** — bundle multiple output files into a `.zip`.
+  - Async renders with webhooks (`async: true`, then poll or `waitForJob`)
+  - Zip output — the rendered file inside a `.zip`
 - **Cross-platform** — fully typed clients for TypeScript/Node.js and C#/.NET 8.0+.
 
 ---
@@ -42,11 +43,11 @@ dotnet add package Qorstack.Report.Sdk
 
 ## Authentication
 
-You need an **API Key** from the Qorstack Portal.
+You need an **API key** from your Qorstack Report server (one per project).
 
-1. Log in to the Qorstack Portal.
-2. Navigate to **Settings → API Keys**.
-3. Create a new API Key (scoped per project).
+1. Sign in to the web UI of your Qorstack Report server.
+2. Open the project, then **API key** in the sidebar.
+3. Copy the key and send it as the `X-API-Key` header.
 
 ---
 
@@ -61,17 +62,17 @@ import { QorstackApi } from "qorstack-report-sdk";
 const qorstackApi = new QorstackApi({
   securityData: {
     headers: {
-      "X-API-KEY": "YOUR_API_KEY_HERE",
+      "X-API-Key": "YOUR_API_KEY_HERE",
     },
   },
 });
 
 // OR: with custom Base URL (e.g. self-hosted instance)
 const qorstackApiCustom = new QorstackApi({
-  baseUrl: "https://your-custom-url.com",
+  baseUrl: "https://your-host/api", // v2: the API lives under /api (appended automatically if missing)
   securityData: {
     headers: {
-      "X-API-KEY": "YOUR_API_KEY_HERE",
+      "X-API-Key": "YOUR_API_KEY_HERE",
     },
   },
 });
@@ -86,7 +87,7 @@ using Qorstack.Report.Sdk;
 var qorstackApi = new QorstackApi(apiKey: "YOUR_API_KEY_HERE");
 
 // OR: with custom Base URL
-var qorstackApiCustom = new QorstackApi("https://your-custom-url.com", "YOUR_API_KEY_HERE");
+var qorstackApiCustom = new QorstackApi("https://your-host/api", "YOUR_API_KEY_HERE"); // /api appended if missing
 ```
 
 ---
@@ -104,52 +105,38 @@ Use `fileType: "pdf"` (default) to get a PDF, or `"docx"` to get the rendered Wo
 
 ```typescript
 // Node.js (TypeScript)
-const tableRows = data.map((item, index) => ({
-  no: index + 1,
-  category: item.category,
-  description: item.description,
-  qty: item.quantity,
-  unit_price: item.price,
-  amount: item.total,
-}));
+// Column names ({{row:<name>}} markers) are listed once; each row holds the values in that order
+const columns = ["no", "category", "description", "qty", "unit_price", "amount"];
+const tableRows = data.map((item, index) => [
+  index + 1, item.category, item.description, item.quantity, item.price, item.total,
+]);
 
 const response = await qorstackApi.render.postRenderWordTemplate({
   templateKey: "RENDOX-7326-758-974-2067",
   fileName: "Full_Report_Example",
   fileType: "pdf", // "pdf" | "docx"
-  replace: {
-    customer_name: "Example Company Ltd.",
-    document_date: new Date().toLocaleDateString("en-GB"),
-    total_amount: "1,500.00",
-  },
+  replace: [
+    { key: "customer_name", value: "Example Company Ltd." },
+    { key: "document_date", value: new Date().toLocaleDateString("en-GB") },
+    { key: "total_amount", value: "1,500.00" },
+  ],
   table: [
     {
+      columns,
       rows: tableRows,
       verticalMerge: ["category"],
       collapse: ["description"],
     },
   ],
-  image: {
-    header_logo: {
-      src: "https://example.com/logo.png",
-      width: 200,
-      fit: "contain",
-    },
-  },
-  qrcode: {
-    payment_qr: {
-      text: "https://payment.link/123456",
-      size: 150,
-    },
-  },
-  barcode: {
-    product_barcode: {
-      text: "PROD-123456789",
-      format: "Code128",
-      width: 300,
-      height: 80,
-    },
-  },
+  image: [
+    { key: "header_logo", src: "https://example.com/logo.png", width: 200, fit: "contain" },
+  ],
+  qrcode: [
+    { key: "payment_qr", text: "https://payment.link/123456", size: 150 },
+  ],
+  barcode: [
+    { key: "product_barcode", text: "PROD-123456789", format: "Code128", width: 300, height: 80 },
+  ],
 });
 
 console.log("Download URL:", response.data.downloadUrl);
@@ -159,47 +146,45 @@ console.log("Download URL:", response.data.downloadUrl);
 // C# (.NET)
 var data = await _exampleService.GetDataAsync(id);
 
-var tableRows = data.Select((item, index) => new Dictionary<string, object>
+// Column names ({{row:<name>}} markers) are listed once; each row holds the values in that order
+var columns = new List<string> { "no", "category", "description", "qty", "unit_price", "amount" };
+var tableRows = data.Select((item, index) => (ICollection<object>)new List<object>
 {
-    { "no", index + 1 },
-    { "category", item.Category },
-    { "description", item.Description },
-    { "qty", item.Quantity },
-    { "unit_price", item.Price },
-    { "amount", item.Total }
+    index + 1, item.Category, item.Description, item.Quantity, item.Price, item.Total
 }).ToList();
 
 var request = new PdfFromTemplateRequest
 {
     TemplateKey = "RENDOX-7326-758-974-2067",
     FileName = "Full_Report_Example",
-    FileType = "pdf",
-    Replace = new()
+    FileType = PdfFromTemplateRequestFileType.Pdf,
+    Replace = new List<KeyValueRequest>
     {
-        { "customer_name", "Example Company Ltd." },
-        { "document_date", DateTime.Now.ToString("dd/MM/yyyy") },
-        { "total_amount", "1,500.00" }
+        new KeyValueRequest { Key = "customer_name", Value = "Example Company Ltd." },
+        new KeyValueRequest { Key = "document_date", Value = DateTime.Now.ToString("dd/MM/yyyy") },
+        new KeyValueRequest { Key = "total_amount", Value = "1,500.00" }
     },
     Table = new()
     {
         new()
         {
-            Rows = tableRows,
+            Columns = columns,
+          Rows = tableRows,
             VerticalMerge = new() { "category" },
             Collapse = new() { "description" }
         }
     },
-    Image = new()
+    Image = new List<ImageDataRequest>
     {
-        { "header_logo", new() { Src = "https://example.com/logo.png", Width = 200, Fit = "contain" } }
+        new ImageDataRequest { Key = "header_logo", Src = "https://example.com/logo.png", Width = 200, Fit = ImageDataRequestFit.Contain }
     },
-    QrCode = new()
+    Qrcode = new List<QrCodeDataRequest>
     {
-        { "payment_qr", new() { Text = "https://payment.link/123456", Size = 150 } }
+        new QrCodeDataRequest { Key = "payment_qr", Text = "https://payment.link/123456", Size = 150 }
     },
-    Barcode = new()
+    Barcode = new List<BarcodeDataRequest>
     {
-        { "product_barcode", new() { Text = "PROD-123456789", Format = "Code128", Width = 300, Height = 80 } }
+        new BarcodeDataRequest { Key = "product_barcode", Text = "PROD-123456789", Format = "Code128", Width = 300, Height = 80 }
     }
 };
 
@@ -219,24 +204,28 @@ Method: `render.postRenderExcelTemplate` (Node) / `PostRenderExcelTemplateAsync`
 const response = await qorstackApi.render.postRenderExcelTemplate({
   templateKey: "XLSX-1234-5678",
   fileName: "Sales_Report_Q1",
-  replace: {
-    report_period: "Q1 2026",
-    generated_by: "Sales Team",
-  },
+  replace: [
+    { key: "report_period", value: "Q1 2026" },
+    { key: "generated_by", value: "Sales Team" },
+  ],
   table: [
     {
+      columns: ['region', 'product', 'qty', 'total'],
       rows: [
-        { region: "North", product: "A", qty: 10, total: 1000 },
-        { region: "North", product: "B", qty: 5, total: 500 },
-        { region: "South", product: "A", qty: 8, total: 800 },
+        ['North', 'A', 10, 1000],
+        ['North', 'B', 5, 500],
+        ['South', 'A', 8, 800]
       ],
       autoFilter: true,
       freezeHeader: true,
       autoFitColumns: true,
       asExcelTable: true,
       excelTableStyle: "TableStyleMedium2",
-      generateTotals: { total: "sum", qty: "sum" },
-      numberFormat: { total: "#,##0.00" },
+      generateTotals: [
+        { key: "total", value: "SUM" },
+        { key: "qty", value: "SUM" },
+      ],
+      numberFormat: [{ key: "total", value: "#,##0.00" }],
     },
   ],
 });
@@ -250,28 +239,33 @@ var request = new ExcelFromTemplateRequest
 {
     TemplateKey = "XLSX-1234-5678",
     FileName = "Sales_Report_Q1",
-    Replace = new()
+    Replace = new List<KeyValueRequest>
     {
-        { "report_period", "Q1 2026" },
-        { "generated_by", "Sales Team" }
+        new KeyValueRequest { Key = "report_period", Value = "Q1 2026" },
+        new KeyValueRequest { Key = "generated_by", Value = "Sales Team" }
     },
-    Table = new()
+    Table = new List<ExcelTableDataRequest>
     {
-        new()
+        new ExcelTableDataRequest
         {
-            Rows = new()
+            Columns = new List<string> { "region", "product", "qty", "total" },
+            Rows = new List<ICollection<object>>
             {
-                new Dictionary<string, object> { { "region", "North" }, { "product", "A" }, { "qty", 10 }, { "total", 1000 } },
-                new Dictionary<string, object> { { "region", "North" }, { "product", "B" }, { "qty", 5 },  { "total", 500 } },
-                new Dictionary<string, object> { { "region", "South" }, { "product", "A" }, { "qty", 8 },  { "total", 800 } }
+                new List<object> { "North", "A", 10, 1000 },
+                new List<object> { "North", "B", 5, 500 },
+                new List<object> { "South", "A", 8, 800 }
             },
             AutoFilter = true,
             FreezeHeader = true,
             AutoFitColumns = true,
             AsExcelTable = true,
             ExcelTableStyle = "TableStyleMedium2",
-            GenerateTotals = new() { { "total", "sum" }, { "qty", "sum" } },
-            NumberFormat = new() { { "total", "#,##0.00" } }
+            GenerateTotals = new List<KeyValueRequest>
+            {
+                new KeyValueRequest { Key = "total", Value = "SUM" },
+                new KeyValueRequest { Key = "qty", Value = "SUM" }
+            },
+            NumberFormat = new List<KeyValueRequest> { new KeyValueRequest { Key = "total", Value = "#,##0.00" } }
         }
     }
 };
@@ -332,33 +326,72 @@ const response = await qorstackApi.render.postRenderWordTemplateSandbox(
 
 ---
 
-### 6. Inspect render jobs
+### 6. Async renders *(Pro)* and job status
+
+With `"async": true` the API queues the render and answers `202` with a job id instead of the file.
+Use the helpers below — they handle both answers, poll the job, and turn `429` (too many pending
+jobs) into a typed error. Without a Pro license the API answers `403`.
 
 ```typescript
-// List jobs
-const jobs = await qorstackApi.render.getRenderJobs({
-  page: 1,
-  pageSize: 20,
-  // templateKey: "...", status: "Success" | "Failed" | "Pending"
-});
+import { QorstackApi, RenderQueueFullError } from "qorstack-report-sdk";
 
-// Get one
-const job = await qorstackApi.render.getRenderJobById("job-id-here");
+const outcome = await qorstackApi.renderWord({ templateKey: "invoice", async: true, replace: [/* … */] });
+
+if (outcome.kind === "queued") {
+  const job = await qorstackApi.waitForJob(outcome.job.jobId!, { intervalMs: 2000, timeoutMs: 600_000 });
+  console.log(job.downloadUrl); // fresh link once status is "success"
+} else {
+  console.log(outcome.download.downloadUrl); // rendered in this request (async not set)
+}
+
+// const job = await qorstackApi.getRenderJob(jobId);   // single status check
+// catch (e) { if (e instanceof RenderQueueFullError) retry after e.retryAfterSeconds }
 ```
+
+```csharp
+var outcome = await qorstackApi.RenderWordAsync(new PdfFromTemplateRequest { TemplateKey = "invoice", Async = true });
+
+var link = outcome.IsQueued
+    ? (await qorstackApi.WaitForJobAsync(outcome.Job!.JobId, TimeSpan.FromSeconds(2), TimeSpan.FromMinutes(10))).DownloadUrl
+    : outcome.Download!.DownloadUrl;
+
+// RenderQueueFullException.RetryAfter on 429 · RenderJobFailedException when the job fails
+// var job = await qorstackApi.GetRenderJobAsync(jobId);
+```
+
+`renderWord` / `renderExcel` (`RenderWordAsync` / `RenderExcelAsync`) also work without `async` —
+they then always return the download. The generated `render.postRender…` methods stay available.
 
 ---
 
 ## Data Binding Reference
 
+`replace`, `image`, `qrcode` and `barcode` are **keyed arrays**: every item names the
+template marker it fills via `key` (SDK types: `KeyValueRequest`, `ImageDataRequest`,
+`QrCodeDataRequest`, `BarcodeDataRequest`). Tables list their column names once in
+`columns`; each row in `rows` holds the values in that order.
+
+The API validates the whole request first and returns every problem in one `400`,
+keyed by JSON path (`replace[3].key`, `table[0].rows[12]`, `image[0].fit`).
+
+Set `templateVersion` to render an older stored version of the template (omit it for the
+current version; an unknown version returns `404`).
+
+> **SDK 1.0 / API v2.0:** the v1 forms were removed and now return `400`: object maps
+> (`"replace": { "customerName": "..." }`), rows as objects or `{ key, value }` cells,
+> single-string `sort` / `verticalMerge` / `collapse`, and `fileType` on the Excel endpoint.
+> Upgrading from SDK 0.x? See
+> [Migrating from v1](../backend/documents/10_RENDER-API-SUMMARY.md#migrating-from-v1).
+
 ### Text replacement (`replace`)
 
-Replaces `{{variable}}` placeholders with strings.
+Replaces `{{variable}}` placeholders with strings (`KeyValueRequest[]`).
 
 ```json
-"replace": {
-  "customerName": "Acme Corp",
-  "totalAmount": "$1,050.00"
-}
+"replace": [
+  { "key": "customerName", "value": "Acme Corp" },
+  { "key": "totalAmount", "value": "$1,050.00" }
+]
 ```
 
 ### Word table (`table` — `WordTableDataRequest[]`)
@@ -366,9 +399,10 @@ Replaces `{{variable}}` placeholders with strings.
 ```json
 "table": [
   {
+    "columns": ["category", "description", "amount"],
     "rows": [
-      { "name": "Value A", "last_name": "Value B" },
-      { "name": "Value C", "last_name": "Value D" }
+      ["Hardware", "Laptop", 1200],
+      ["Hardware", "Monitor", 300]
     ],
     "verticalMerge": ["category"],
     "collapse": ["description"]
@@ -378,7 +412,9 @@ Replaces `{{variable}}` placeholders with strings.
 
 | Field | Description |
 | --- | --- |
-| `rows` | Array of row objects. Keys match column placeholders. |
+| `columns` | Column names, listed once — each matches a `{{row:<name>}}` placeholder. Unique; required when there are rows. |
+| `rows` | Array of rows; each row is an array of values in `columns` order (string, number, boolean or null). A row with the wrong number of values returns `400` naming the row. |
+| `sort` | `[{ "field": column, "direction": "asc" \| "desc" }]`. |
 | `verticalMerge` | Columns whose adjacent identical values are merged vertically. |
 | `collapse` | Columns whose empty/duplicate values collapse to keep layout tidy. |
 
@@ -387,14 +423,17 @@ Replaces `{{variable}}` placeholders with strings.
 ```json
 "table": [
   {
-    "rows": [{ "region": "North", "qty": 10 }],
+    "columns": ["region", "qty"],
+    "rows": [
+      ["North", 10]
+    ],
     "autoFilter": true,
     "freezeHeader": true,
     "autoFitColumns": true,
     "asExcelTable": true,
     "excelTableStyle": "TableStyleMedium2",
-    "generateTotals": { "qty": "sum" },
-    "numberFormat": { "qty": "#,##0" }
+    "generateTotals": [ { "key": "qty", "value": "SUM" } ],
+    "numberFormat": [ { "key": "qty", "value": "#,##0" } ]
   }
 ]
 ```
@@ -405,8 +444,8 @@ Replaces `{{variable}}` placeholders with strings.
 | `freezeHeader` | Freeze the header row. |
 | `autoFitColumns` | Auto-fit column widths to content. |
 | `asExcelTable` / `excelTableStyle` | Render as native Excel table with style. |
-| `generateTotals` | Per-column aggregation (`sum`, `avg`, `count`, `min`, `max`). |
-| `numberFormat` | Excel number format string per column. |
+| `generateTotals` | Per-column aggregation: `[{ "key": column, "value": "SUM" }]` (`SUM`, `AVERAGE`, `COUNT`, `MIN`, `MAX`). |
+| `numberFormat` | Excel number format per column: `[{ "key": column, "value": "#,##0.00" }]`. |
 | `conditionalFormat` | Conditional formatting rules. |
 | `splitToSheets` | Split rows into multiple sheets by a column value. |
 | `sort` | Sort rows before render. |
@@ -416,14 +455,15 @@ Replaces `{{variable}}` placeholders with strings.
 Replaces `{{image:logo}}`. Accepts URL or Base64.
 
 ```json
-"image": {
-  "logo": {
+"image": [
+  {
+    "key": "logo",
     "src": "https://example.com/logo.png",
     "width": 150,
     "height": 50,
     "fit": "contain"
   }
-}
+]
 ```
 
 ### QR codes (`qrcode`)
@@ -431,13 +471,14 @@ Replaces `{{image:logo}}`. Accepts URL or Base64.
 Replaces `{{qr:website}}`.
 
 ```json
-"qrcode": {
-  "website": {
+"qrcode": [
+  {
+    "key": "website",
     "text": "https://qorstack.dev",
     "size": 200,
     "color": "#000000"
   }
-}
+]
 ```
 
 ### Barcodes (`barcode`)
@@ -445,15 +486,16 @@ Replaces `{{qr:website}}`.
 Replaces `{{barcode:productId}}`. Default format: `Code128`.
 
 ```json
-"barcode": {
-  "productId": {
+"barcode": [
+  {
+    "key": "productId",
     "text": "1234567890",
     "format": "Code128",
     "includeText": true,
     "width": 300,
     "height": 80
   }
-}
+]
 ```
 
 ### Output options
@@ -461,6 +503,7 @@ Replaces `{{barcode:productId}}`. Default format: `Code128`.
 | Field | Type | Description |
 | --- | --- | --- |
 | `fileName` | string | Output file name (without extension). |
+| `templateVersion` | integer | Render this stored version of the template; omit for the current version (unknown → `404`). |
 | `fileType` | string | Word only: `"pdf"` (default) or `"docx"`. |
 | `zipOutput` | boolean | If `true`, bundle the output into a `.zip` archive. |
 | `pdfPassword` | object | *(Pro)* Encrypt the PDF and set permissions. |

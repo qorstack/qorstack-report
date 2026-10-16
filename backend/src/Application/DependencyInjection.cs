@@ -29,6 +29,9 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<PasswordHasherService>();
 
+        // Pro: project export / import (ZIP)
+        services.AddScoped<QorstackReportService.Application.Projects.Transfer.IProjectTransferService, QorstackReportService.Application.Projects.Transfer.ProjectTransferService>();
+
         return services;
     }
 }

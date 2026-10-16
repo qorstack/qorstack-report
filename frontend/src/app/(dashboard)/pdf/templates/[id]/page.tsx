@@ -1,26 +1,12 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '@/api/generated/main-service'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouteParams } from '@/hooks/use-route-params'
 import dynamic from 'next/dynamic'
-import {
-  Button,
-  Spinner,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalBody,
-  ModalFooter,
-  Skeleton,
-  Dropdown,
-  DropdownTrigger,
-  DropdownMenu,
-  DropdownItem,
-  addToast,
-  cn
-} from '@heroui/react'
-import Icon from '@/components/icon'
+import Link from 'next/link'
+import { Spinner, Skeleton, addToast } from '@heroui/react'
 import {
   TemplateVersionResponse,
   PdfWatermarkRequest,
@@ -28,6 +14,7 @@ import {
   FontSummaryDto
 } from '@/api/generated/main-service/apiGenerated'
 import { PdfFromTemplateRequest } from '@/types/pdf-sandbox'
+import { toWordRenderRequest } from '@/utils/keyed-request'
 import { DeleteTemplateModal } from '@/components/pdf/DeleteTemplateModal'
 import { useUpgradeGate } from '@/hooks/use-upgrade-gate'
 import { useLivePreview } from '@/hooks/use-live-preview'
@@ -50,28 +37,53 @@ import {
   formatKey
 } from '@/components/pdf/SandboxInputs'
 import { CodeSwitcher } from '@/components/docs/CodeSwitcher'
+import { CategoryNav } from '@/components/ui'
 import {
-  VariablesContent,
-  TablesContent,
-  ImagesContent,
-  QrCodesContent,
-  BarcodesContent,
-  FileSettingsContent
-} from '@/components/docs/DocContents'
-import { SectionHeader, KeyBadge, SegmentedTabs, CategoryNav } from '@/components/ui'
+  AutoPreviewSwitch,
+  BuilderPanel,
+  BuilderSection,
+  BuilderSplit,
+  DownloadResultButton,
+  EndpointHint,
+  GenerateSplitButton,
+  HeadTabs,
+  PanelHead,
+  PreviewCanvas,
+  PreviewEmpty,
+  PreviewNotice,
+  PreviewOpenButton,
+  ValidationSummary,
+  FieldsSourceNote,
+  FieldChangesNotice,
+  isSingleColumnLayout,
+  type FieldChanges
+} from '@/components/template-editor/BuilderLayout'
+import {
+  TestDataSaveIndicator,
+  toStorablePayload,
+  useTestDataAutosave
+} from '@/components/template-editor/test-data-autosave'
+import { diffFields, fieldMarkers, savedEntries, savedTables } from '@/components/template-editor/field-changes'
+import {
+  focusWhenRendered,
+  mapRenderErrors,
+  readValidationErrors,
+  type MappedError
+} from '@/components/template-editor/api-errors'
 import { getSdkCodeExamples } from '@/utils/code-gen'
 import type { CodeExamples } from '@/utils/code-gen'
 import PdfPreviewDrawer from '@/components/pdf/PdfPreviewDrawer'
 import { handleApiError } from '@/hooks/useApiError'
 import { downloadFileFromUrl } from '@/utils/download-file'
+import { getDownloadLinkExpiry } from '@/utils/download-link'
 
 // --- Dynamic Components ---
 const PdfPreview = dynamic(() => import('@/components/pdf/PdfPreview'), {
   ssr: false,
   loading: () => (
     <div className='flex items-center gap-2 p-4'>
-      <Spinner size='sm' color='primary' />
-      <span className='text-sm text-default-500'>Initializing Preview...</span>
+      <Spinner size='sm' color='default' />
+      <span className='text-[14px] text-default-500'>Loading preview…</span>
     </div>
   )
 })
@@ -121,15 +133,15 @@ const convertToUiState = (data: PdfFromTemplateRequest): UiState => {
     pdfPassword: data.pdfPassword || undefined,
     watermark: sanitizeWatermark(data.watermark),
     zipOutput: (data as PdfFromTemplateRequest & { zipOutput?: boolean }).zipOutput || false,
-    replace: Object.entries(data.replace || {}).map(([key, value]) => ({
+    replace: savedEntries(data.replace).map(([key, value]) => ({
       id: generateId(),
       key: formatKey(key, 'replace'),
       value: value === null || value === undefined || value === 'null' ? '' : String(value)
     })),
-    table: (data.table || []).map(t => ({
+    table: savedTables<NonNullable<PdfFromTemplateRequest['table']>[number]>(data.table).map(t => ({
       id: generateId(),
-      columns: t.rows && t.rows.length > 0 ? Object.keys(t.rows[0]) : [],
-      rows: (t.rows || []).map(row => {
+      columns: Array.isArray(t.rows) && t.rows.length > 0 && t.rows[0] ? Object.keys(t.rows[0]) : [],
+      rows: (Array.isArray(t.rows) ? t.rows : []).filter(Boolean).map(row => {
         const newRow: Record<string, string> = {}
         Object.entries(row as Record<string, unknown>).forEach(([k, v]) => {
           newRow[k] = v === null || v === undefined || v === 'null' ? '' : String(v)
@@ -141,17 +153,17 @@ const convertToUiState = (data: PdfFromTemplateRequest): UiState => {
       collapse: (t.collapse as string[] | undefined) || [],
       repeatHeader: t.repeatHeader ?? false
     })),
-    image: Object.entries(data.image || {}).map(([key, val]) => ({
+    image: savedEntries<NonNullable<PdfFromTemplateRequest['image']>[string]>(data.image, true).map(([key, val]) => ({
       id: generateId(),
       key: formatKey(key, 'image'),
       data: val
     })),
-    qrcode: Object.entries(data.qrcode || {}).map(([key, val]) => ({
+    qrcode: savedEntries<NonNullable<PdfFromTemplateRequest['qrcode']>[string]>(data.qrcode, true).map(([key, val]) => ({
       id: generateId(),
       key: formatKey(key, 'qrcode'),
       data: val
     })),
-    barcode: Object.entries(data.barcode || {}).map(([key, val]) => ({
+    barcode: savedEntries<NonNullable<PdfFromTemplateRequest['barcode']>[string]>(data.barcode, true).map(([key, val]) => ({
       id: generateId(),
       key: formatKey(key, 'barcode'),
       data: val
@@ -205,32 +217,9 @@ const convertFromUiState = (state: UiState): PdfFromTemplateRequest => {
   }
 }
 
-const SectionWrapper = ({
-  title,
-  description,
-  action,
-  children
-}: {
-  title: string
-  description?: string
-  action?: React.ReactNode
-  children: React.ReactNode
-}) => (
-  <div className='flex h-full w-full flex-col'>
-    <div className='mb-3 flex items-start justify-between gap-3'>
-      <div className='flex min-w-0 flex-col gap-0.5'>
-        <h2 className='text-[16px] font-bold leading-tight tracking-tight text-foreground'>{title}</h2>
-        {description && <p className='text-[11.5px] font-normal leading-snug text-default-500'>{description}</p>}
-      </div>
-      {action && <div className='shrink-0'>{action}</div>}
-    </div>
-    <div className='pb-8'>{children}</div>
-  </div>
-)
-
 const TemplateSandboxPage = () => {
   const router = useRouter()
-  const params = useParams()
+  const params = useRouteParams()
   const searchParams = useSearchParams()
   const templateKeyParam = params.id as string
 
@@ -249,6 +238,12 @@ const TemplateSandboxPage = () => {
   const [isDownloadingSource, setIsDownloadingSource] = useState(false)
 
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [errorSummary, setErrorSummary] = useState<MappedError[]>([])
+  /** What the last Replace file changed in the field list. */
+  const [fieldChanges, setFieldChanges] = useState<FieldChanges | null>(null)
+  const [loadError, setLoadError] = useState(false)
+  /** Version shown in the preview / rendered by Generate. null = the current version. */
+  const [previewVersion, setPreviewVersion] = useState<number | null>(null)
 
   const clearValidationError = (id: string) => {
     setValidationErrors(prev => {
@@ -267,16 +262,19 @@ const TemplateSandboxPage = () => {
   const [generatedIsZip, setGeneratedIsZip] = useState(false)
   const [generatedZipUrl, setGeneratedZipUrl] = useState<string | null>(null)
   const [previewMode, setPreviewMode] = useState<'before' | 'after'>('before')
-  const [drawerFile, setDrawerFile] = useState<string | null>(null)
   const [isExpanded, setIsExpanded] = useState(false)
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null)
   const [liveMode, setLiveMode] = useState(false)
-  const { requireFeature, gateModal, isLoading: isFeaturesLoading, features } = useUpgradeGate()
-  const { width: panelWidth, handleMouseDown: handlePanelResize } = useResizablePanel('builder-panel-width-pdf', 640)
-  const canUseLivePreview = !!features?.livePreview
+  const { requireFeature, gateModal } = useUpgradeGate()
+  const {
+    width: panelWidth,
+    handleMouseDown: handlePanelResize,
+    handleKeyDown: handlePanelResizeKey,
+    minWidth: panelMinWidth,
+    maxWidth: panelMaxWidth
+  } = useResizablePanel('builder-panel-width-pdf', 640)
 
   const handleLiveModeToggle = () => {
-    if (!requireFeature('livePreview')) return
     setLiveMode(v => {
       const next = !v
       if (!next) setPreviewMode('before')
@@ -288,34 +286,22 @@ const TemplateSandboxPage = () => {
   const lastPreviewRefreshRef = useRef(0)
   const previewRefreshFailCountRef = useRef(0)
 
-  // Parse `X-Amz-Expires=3600` + `X-Amz-Date=...` from the presigned URL and schedule a
-  // proactive refresh ~5 minutes before the link expires. Reactive refresh (on error) still
-  // acts as a safety net if the timer didn't fire (tab sleeping, server clock skew, etc.).
+  // Read the link's expiry (API /files token or legacy presigned URL) and schedule a proactive
+  // refresh ~5 minutes before it expires. Reactive refresh (on error) still acts as a safety net
+  // if the timer didn't fire (tab sleeping, server clock skew, etc.).
   useEffect(() => {
     if (!previewFilePath) return
-    try {
-      const url = new URL(previewFilePath)
-      const expiresSec = Number(url.searchParams.get('X-Amz-Expires'))
-      const dateStr = url.searchParams.get('X-Amz-Date')
-      if (!expiresSec || !dateStr) return
-      // X-Amz-Date format: 20260424T040209Z
-      const iso = dateStr.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, '$1-$2-$3T$4:$5:$6Z')
-      const signedAt = Date.parse(iso)
-      if (!signedAt) return
-      const expireAt = signedAt + expiresSec * 1000
-      const refreshAt = expireAt - 5 * 60 * 1000 // 5 min before expiry
-      const ms = refreshAt - Date.now()
-      if (ms <= 0) {
-        refreshPreviewUrl()
-        return
-      }
-      const t = setTimeout(() => {
-        refreshPreviewUrl()
-      }, ms)
-      return () => clearTimeout(t)
-    } catch {
-      // URL parse failed — skip proactive refresh, reactive one will still kick in on error.
+    const expireAt = getDownloadLinkExpiry(previewFilePath)
+    if (!expireAt) return
+    const ms = expireAt - 5 * 60 * 1000 - Date.now()
+    if (ms <= 0) {
+      refreshPreviewUrl()
+      return
     }
+    const t = setTimeout(() => {
+      refreshPreviewUrl()
+    }, ms)
+    return () => clearTimeout(t)
   }, [previewFilePath])
 
   const refreshPreviewUrl = useCallback(async () => {
@@ -353,21 +339,12 @@ const TemplateSandboxPage = () => {
   const [tempEditData, setTempEditData] = useState({ name: '', key: '' })
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isGeneratingKey, setIsGeneratingKey] = useState(false)
-  const [containerWidth, setContainerWidth] = useState<number>(0)
 
   const [isUpdateFileOpen, setIsUpdateFileOpen] = useState(false)
-  const previewContainerRef = useRef<HTMLDivElement>(null)
-  const [isSticky, setIsSticky] = useState(false)
 
   // Version State
   const [versions, setVersions] = useState<TemplateVersionResponse[]>([])
   const [activeVersion, setActiveVersion] = useState<number | null>(null)
-
-  // Docs State
-  const [isDocsOpen, setIsDocsOpen] = useState(false)
-  const [activeDocsSection, setActiveDocsSection] = useState<
-    'variables' | 'tables' | 'image' | 'qrcode' | 'barcode' | 'settings'
-  >('variables')
 
   // Fonts for watermark font family picker
   const [fonts, setFonts] = useState<FontSummaryDto[]>([])
@@ -382,8 +359,10 @@ const TemplateSandboxPage = () => {
       .catch(() => {})
   }, [templateKeyParam])
 
-  const fetchTemplateDetails = async (key: string) => {
+  const fetchTemplateDetails = async (key: string): Promise<UiState | null> => {
+    let loaded: UiState | null = null
     setIsLoading(true)
+    setLoadError(false)
     try {
       const template = await api.templates.getTemplateById(key)
       setTemplateName(template.name || '')
@@ -416,35 +395,74 @@ const TemplateSandboxPage = () => {
             ...parsed,
             templateKey: template.templateKey || parsed.templateKey
           }
-          setUiState(convertToUiState(fullRequest))
+          loaded = convertToUiState(fullRequest)
         } catch (e) {
           console.error('Failed to parse sandbox payload', e)
-          setUiState({ ...DEFAULT_UI_STATE, templateKey: template.templateKey || '' })
+          loaded = { ...DEFAULT_UI_STATE, templateKey: template.templateKey || '' }
         }
       } else {
-        setUiState({ ...DEFAULT_UI_STATE, templateKey: template.templateKey || '' })
+        loaded = { ...DEFAULT_UI_STATE, templateKey: template.templateKey || '' }
       }
+      setUiState(loaded)
+      markTestDataSaved(loaded)
     } catch (err) {
+      setLoadError(true)
       handleApiError(err, 'Failed to load template.')
     } finally {
       setIsLoading(false)
     }
+    return loaded
   }
 
-  const validateUiState = (): boolean => {
+  const clearRenderErrors = () => {
     setValidationErrors({})
+    setErrorSummary([])
+  }
+
+  /** API validation errors → highlighted fields + a short summary. Returns false when it isn't one. */
+  const showRenderErrors = (err: unknown): boolean => {
+    const raw = readValidationErrors(err)
+    if (!raw) return false
+    const mapped = mapRenderErrors(raw, uiState)
+    setValidationErrors(mapped.fieldErrors)
+    setErrorSummary(mapped.summary)
+    const first = mapped.summary[0]
+    if (first) {
+      setActiveMainTab('builder')
+      setActiveBuilderCategory(first.category)
+      focusWhenRendered(first.focusId)
+    }
     return true
   }
 
+  const jumpToError = (e: MappedError) => {
+    setActiveMainTab('builder')
+    setActiveBuilderCategory(e.category)
+    focusWhenRendered(e.focusId)
+  }
+
+  /** Renders an older stored version through the public API (templateVersion). */
+  const renderVersion = async (version: number, fileType: 'pdf' | 'docx') => {
+    const payload = convertFromUiState(uiState)
+    payload.templateKey = templateKey
+    payload.fileType = fileType
+    return api.render.wordTemplateCreate({ ...toWordRenderRequest(payload), templateVersion: version })
+  }
+
   const handleGenerate = async () => {
-    if (!validateUiState()) return
+    clearRenderErrors()
     setGenerating(true)
     try {
       const renderPayload = JSON.parse(JSON.stringify(convertFromUiState(uiState)))
       renderPayload.templateKey = templateKey
-      const res = await api.render.wordTemplateSandboxCreate(templateKey, renderPayload, {
-        fileName: uiState.fileName || undefined
-      })
+      const res =
+        previewVersion != null
+          ? await renderVersion(previewVersion, 'pdf')
+          : await api.render.wordTemplateSandboxCreate(templateKey, renderPayload, {
+              fileName: uiState.fileName || undefined
+            })
+      // The sandbox render stores these test values on the server (a pinned older version does not).
+      if (previewVersion == null) markTestDataSaved(uiState)
       if (res?.downloadUrl) {
         setPreviewMode('after')
         if (res.isZipped || res.fileType === 'zip') {
@@ -455,11 +473,12 @@ const TemplateSandboxPage = () => {
           setGeneratedIsZip(false)
           setGeneratedZipUrl(null)
           setGeneratedUrl(res.downloadUrl)
-          setDrawerFile(res.downloadUrl)
+          // Below lg the preview panel is hidden — show the result in the drawer.
+          if (isSingleColumnLayout()) setIsExpanded(true)
         }
       }
     } catch (err) {
-      handleApiError(err, 'Generation failed. Please check your inputs.')
+      if (!showRenderErrors(err)) handleApiError(err, 'Generation failed. Please check your inputs.')
     } finally {
       setGenerating(false)
     }
@@ -468,7 +487,7 @@ const TemplateSandboxPage = () => {
   const { isRendering: isLivePreviewRendering, error: livePreviewError } = useLivePreview({
     templateKey,
     uiState,
-    enabled: liveMode && canUseLivePreview,
+    enabled: liveMode,
     isLoading,
     render: async (state, signal) => {
       const renderPayload = JSON.parse(JSON.stringify(convertFromUiState(state)))
@@ -486,6 +505,18 @@ const TemplateSandboxPage = () => {
     }
   })
 
+  // Auto-preview already stores the test values with every render, so autosave pauses while it is on.
+  const {
+    status: testDataStatus,
+    markSaved: markTestDataSaved,
+    retry: retryTestDataSave
+  } = useTestDataAutosave({
+    templateKey,
+    state: uiState,
+    serialize: convertFromUiState,
+    enabled: !isLoading && !loadError && !(liveMode)
+  })
+
   const handleDownloadProtected = async () => {
     if (!previewSrc) return
     setIsDownloadingProtected(true)
@@ -499,19 +530,22 @@ const TemplateSandboxPage = () => {
   }
 
   const handleGenerateWord = async () => {
-    if (!validateUiState()) return
+    clearRenderErrors()
     setIsGeneratingWord(true)
     try {
       const payload = convertFromUiState(uiState)
       payload.templateKey = templateKey
       payload.fileType = 'docx'
-      const res = await api.render.wordTemplateCreate(payload)
+      const res =
+        previewVersion != null
+          ? await renderVersion(previewVersion, 'docx')
+          : await api.render.wordTemplateCreate(toWordRenderRequest(payload))
       if (res?.downloadUrl) {
         await downloadFileFromUrl(res.downloadUrl, `${uiState.fileName || templateName}.docx`)
         addToast({ title: 'Downloaded', description: 'Word file downloaded successfully.', color: 'success' })
       }
     } catch (err) {
-      handleApiError(err, 'Generation failed. Please check your inputs.')
+      if (!showRenderErrors(err)) handleApiError(err, 'Generation failed. Please check your inputs.')
     } finally {
       setIsGeneratingWord(false)
     }
@@ -535,13 +569,15 @@ const TemplateSandboxPage = () => {
         {
           name: tempEditData.name,
           newTemplateKey: keyChanged ? trimmedKey : undefined,
-          sandboxPayload: JSON.stringify(payload),
+          // Inline base64 images are too large for the query string — keep the stored file URLs instead.
+          sandboxPayload: await toStorablePayload(templateKey, payload),
           project_id: projectId ?? undefined,
           isAutoGeneratedVariable: false
         },
         {}
       )
 
+      markTestDataSaved(uiState)
       setTemplateName(tempEditData.name)
       setIsEditOpen(false)
       addToast({ title: 'Success', description: 'Template saved successfully', color: 'success' })
@@ -602,10 +638,22 @@ const TemplateSandboxPage = () => {
         },
         { file }
       )
-      addToast({ title: 'Success', description: 'Template file updated successfully', color: 'success' })
+      const before = fieldMarkers(uiState)
       setIsUpdateFileOpen(false)
       setPreviewMode('before')
-      fetchTemplateDetails(templateKey)
+      const after = await fetchTemplateDetails(templateKey)
+      if (after) {
+        const changes = diffFields(before, fieldMarkers(after))
+        setFieldChanges(changes)
+        addToast({
+          title: 'File replaced',
+          description:
+            changes.added.length || changes.removed.length
+              ? `${changes.added.length} field(s) added, ${changes.removed.length} removed.`
+              : 'Same fields as before.',
+          color: 'success'
+        })
+      }
     } catch (err) {
       handleApiError(err, 'Failed to update file.')
     } finally {
@@ -616,6 +664,7 @@ const TemplateSandboxPage = () => {
   const handleVersionChange = async (version: number) => {
     try {
       await api.templates.switchVersionUpdate(templateKey, { version })
+      setPreviewVersion(null)
       setPreviewMode('before')
       setGeneratedUrl(null)
       fetchTemplateDetails(templateKey)
@@ -624,40 +673,38 @@ const TemplateSandboxPage = () => {
     }
   }
 
-  useEffect(() => {
-    if (!previewContainerRef.current) return
-
-    const resizeObserver = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width)
-      }
-    })
-    resizeObserver.observe(previewContainerRef.current)
-
-    return () => resizeObserver.disconnect()
-  }, [])
-
-  // Detect scroll inside motion.main to toggle sticky height
-  useEffect(() => {
-    const mainEl = document.querySelector('main')
-    if (!mainEl) return
-    const handleScroll = () => setIsSticky(mainEl.scrollTop > 80)
-    mainEl.addEventListener('scroll', handleScroll, { passive: true })
-    return () => mainEl.removeEventListener('scroll', handleScroll)
-  }, [])
-
   if (isLoading) {
     return (
-      <div className='flex h-[calc(100vh-210px)] items-center justify-center bg-content1'>
-        <Spinner size='lg' />
+      <div className='flex h-[calc(100vh-210px)] items-center justify-center border border-divider bg-content1'>
+        <Spinner size='lg' color='default' label='Loading template…' classNames={{ label: 'text-[13px] text-default-500' }} />
       </div>
     )
   }
 
+  // Never show the empty default editor as if it were this template's data.
+  if (loadError) {
+    return (
+      <div className='flex h-[calc(100vh-210px)] flex-col items-center justify-center gap-3 border border-divider bg-content1 p-8 text-center'>
+        <p className='text-[15px] font-semibold text-foreground'>This template could not be loaded</p>
+        <p className='max-w-sm text-[13px] text-default-500'>
+          Nothing was changed. Check your connection and try again.
+        </p>
+        <button
+          type='button'
+          onClick={() => fetchTemplateDetails(templateKeyParam)}
+          className='h-9 border border-default-300 px-4 text-[13px] font-medium text-foreground hover:border-foreground'>
+          Try again
+        </button>
+      </div>
+    )
+  }
+
+  const viewedVersion = previewVersion != null ? versions.find(v => Number(v.version) === previewVersion) : undefined
+  const sourcePreview = viewedVersion?.previewFilePathPresigned || previewFilePath
   const previewSrc = liveMode
-    ? generatedUrl || previewFilePath || ''
+    ? generatedUrl || sourcePreview || ''
     : previewMode === 'before'
-      ? previewFilePath || ''
+      ? sourcePreview || ''
       : generatedUrl
   const isLivePreviewResult = liveMode && !!generatedUrl && previewSrc === generatedUrl
 
@@ -677,16 +724,354 @@ const TemplateSandboxPage = () => {
     }
   }
 
+  const projectId = searchParams.get('projectId')
+  const templatesHref = projectId ? `/project/${projectId}/templates` : '/project'
+  const hasResult = (generatedIsZip && !!generatedZipUrl) || !!generatedUrl
+  const isBusy = isGenerating || isGeneratingWord
+  const resultFileBase = uiState.fileName || templateName
+
+  const handleDownloadResult = () => {
+    if (generatedIsZip && generatedZipUrl) {
+      void downloadFileFromUrl(generatedZipUrl, `${resultFileBase}.zip`)
+      return
+    }
+    if (generatedUrl) void downloadFileFromUrl(generatedUrl, `${resultFileBase}.pdf`)
+  }
+
+  const runGenerate = () => (generateFormat === 'pdf' ? handleGenerate() : handleGenerateWord())
+
+  const liveNotice = (resultShown: boolean) => {
+    if (livePreviewError) return <PreviewNotice tone='error'>{livePreviewError}</PreviewNotice>
+    if (isLivePreviewRendering) return <PreviewNotice tone='busy'>Updating the preview…</PreviewNotice>
+    return (
+      <PreviewNotice tone='ok'>
+        {resultShown
+          ? 'Showing your latest values.'
+          : 'Auto-preview is on. Edit a field and the preview updates.'}
+      </PreviewNotice>
+    )
+  }
+
+  const pdfViewer = (file: string, fileName: string) => (
+    <div className='h-[calc(100vh-250px)] min-h-[420px]'>
+      <PdfPreview
+        key={file}
+        file={file}
+        fileName={fileName}
+        loading={<Skeleton className='h-full min-h-[500px] w-full' />}
+        className='flex flex-col'
+        onLoadError={refreshPreviewUrl}
+        isReloading={isPreviewReloading}
+        hideDownload
+      />
+    </div>
+  )
+
+  const renderPreviewBody = () => {
+    if (previewMode === 'after') {
+      if (generatedIsZip && generatedZipUrl) {
+        return (
+          <PreviewEmpty
+            icon='lucide:archive'
+            title='ZIP file ready'
+            hint='ZIP files can’t be shown here. Download it to open the PDF inside.'
+            action={<DownloadResultButton onPress={handleDownloadResult} label='Download ZIP' />}
+          />
+        )
+      }
+      if (generatedUrl) {
+        return (
+          <>
+            {liveMode && liveNotice(true)}
+            {liveMode && isLivePreviewRendering && !generatedUrl ? (
+              <Skeleton className='h-full min-h-[500px] w-full' />
+            ) : (
+              pdfViewer(generatedUrl, `${resultFileBase}.pdf`)
+            )}
+          </>
+        )
+      }
+      return (
+        <PreviewEmpty
+          icon='lucide:zap'
+          title='Nothing generated yet'
+          hint='Fill in your fields, then press Generate to see the finished document here.'
+        />
+      )
+    }
+
+    if (previewSrc) {
+      return (
+        <>
+          {liveMode ? (
+            liveNotice(isLivePreviewResult)
+          ) : (
+            <PreviewNotice>
+              {viewedVersion
+                ? `Template file — version ${previewVersion} (not the current version). Generate renders this version.`
+                : 'Template file. Values appear after you press Generate (or turn on Auto-preview).'}
+            </PreviewNotice>
+          )}
+          {liveMode && isLivePreviewRendering && !generatedUrl ? (
+            <Skeleton className='h-full min-h-[500px] w-full' />
+          ) : (
+            pdfViewer(
+              previewSrc,
+              isLivePreviewResult ? `${templateName}_live_preview.pdf` : `${templateName}_template_source.pdf`
+            )
+          )}
+        </>
+      )
+    }
+
+    return (
+      <PreviewEmpty
+        icon='lucide:file-text'
+        title='No preview yet'
+        hint='Upload a Word (.docx) file with Replace file (top right) to see it here.'
+      />
+    )
+  }
+
+  const generateOptions = [
+    { key: 'pdf', label: 'PDF', description: 'Shows here and downloads as .pdf', icon: 'lucide:file-text' },
+    { key: 'word', label: 'Word document', description: 'Downloads a filled .docx', icon: 'lucide:file-down' }
+  ] as const
+
+  const fieldsPanel = (
+    <BuilderPanel>
+      <PanelHead>
+        <HeadTabs
+          ariaLabel='Builder view'
+          active={activeMainTab}
+          onChange={setActiveMainTab}
+          items={[
+            { id: 'builder', label: 'Fields' },
+            { id: 'code', label: 'Code' }
+          ]}
+        />
+        <div className='ml-auto flex items-center'>
+          <TestDataSaveIndicator status={testDataStatus} onRetry={() => void retryTestDataSave()} />
+          <EndpointHint path='/render/word/template' />
+        </div>
+      </PanelHead>
+
+      {activeMainTab === 'builder' && (
+        <div className='flex w-full flex-col gap-4 p-4 md:p-5'>
+          <FieldsSourceNote fileLabel='Word' onReplaceFile={() => setIsUpdateFileOpen(true)} />
+          {fieldChanges && <FieldChangesNotice changes={fieldChanges} onDismiss={() => setFieldChanges(null)} />}
+          <CategoryNav
+            layout='horizontal'
+            active={activeBuilderCategory}
+            onChange={setActiveBuilderCategory}
+            items={
+              [
+                { id: 'text', icon: 'lucide:type', label: 'Text fields', count: uiState.replace.length, hasError: errorSummary.some(e => e.category === 'text') },
+                { id: 'tables', icon: 'lucide:table', label: 'Tables', count: uiState.table.length, hasError: errorSummary.some(e => e.category === 'tables') },
+                { id: 'image', icon: 'lucide:image', label: 'Images', count: uiState.image.length, hasError: errorSummary.some(e => e.category === 'image') },
+                { id: 'qrcode', icon: 'lucide:qr-code', label: 'QR codes', count: uiState.qrcode.length, hasError: errorSummary.some(e => e.category === 'qrcode') },
+                { id: 'barcode', icon: 'lucide:barcode', label: 'Barcodes', count: uiState.barcode.length, hasError: errorSummary.some(e => e.category === 'barcode') },
+                {
+                  id: 'settings',
+                  icon: 'lucide:settings',
+                  label: 'Output settings',
+                  section: 'config',
+                  note: uiState.pdfPassword || uiState.watermark || uiState.zipOutput ? 'Set' : undefined,
+                  hasError: errorSummary.some(e => e.category === 'settings')
+                }
+              ] as const
+            }
+          />
+
+          <div className='min-w-0'>
+            <ValidationSummary
+              items={errorSummary.map(e => ({ ...e, onJump: () => jumpToError(e) }))}
+              onDismiss={() => setErrorSummary([])}
+            />
+            {activeBuilderCategory === 'text' && (
+              <BuilderSection
+                title='Text fields'
+                description='Each {{name}} in your Word file is replaced with the value you type here.'>
+                <ReplacementsSection
+                  items={uiState.replace}
+                  onChange={d => setUiState(p => ({ ...p, replace: d }))}
+                  errors={validationErrors}
+                  onClearError={clearValidationError}
+                />
+              </BuilderSection>
+            )}
+
+            {activeBuilderCategory === 'tables' && (
+              <BuilderSection
+                title='Tables'
+                description='Rows that repeat in a Word table — one row per item.'>
+                <TablesSection
+                  items={uiState.table}
+                  onChange={d => setUiState(p => ({ ...p, table: d }))}
+                  errors={validationErrors}
+                  onClearError={clearValidationError}
+                />
+              </BuilderSection>
+            )}
+
+            {activeBuilderCategory === 'image' && (
+              <BuilderSection
+                title='Images'
+                description='Each {{image:name}} is replaced with the picture you upload or link.'>
+                <ImagesSection
+                  items={uiState.image}
+                  onChange={d => setUiState(p => ({ ...p, image: d }))}
+                  errors={validationErrors}
+                  onClearError={clearValidationError}
+                />
+              </BuilderSection>
+            )}
+
+            {activeBuilderCategory === 'qrcode' && (
+              <BuilderSection
+                title='QR codes'
+                description='Each {{qrcode:name}} becomes a QR code made from your text.'>
+                <QrCodesSection
+                  items={uiState.qrcode}
+                  onChange={d => setUiState(p => ({ ...p, qrcode: d }))}
+                  errors={validationErrors}
+                  onClearError={clearValidationError}
+                />
+              </BuilderSection>
+            )}
+
+            {activeBuilderCategory === 'barcode' && (
+              <BuilderSection
+                title='Barcodes'
+                description='Each {{barcode:name}} becomes a Code128 or EAN13 barcode.'>
+                <BarcodesSection
+                  items={uiState.barcode}
+                  onChange={d => setUiState(p => ({ ...p, barcode: d }))}
+                  errors={validationErrors}
+                  onClearError={clearValidationError}
+                />
+              </BuilderSection>
+            )}
+
+            {activeBuilderCategory === 'settings' && (
+              <BuilderSection
+                title='Output settings'
+                description={
+                  generateFormat === 'pdf'
+                    ? 'File name, PDF password, watermark and ZIP download.'
+                    : 'File name and ZIP download. Password and watermark apply to PDF output only.'
+                }>
+                <FileSettingsSection
+                  showPdfOptions={generateFormat === 'pdf'}
+                  requireFeature={requireFeature}
+                  fileName={uiState.fileName}
+                  pdfPassword={uiState.pdfPassword}
+                  watermark={uiState.watermark}
+                  zipOutput={uiState.zipOutput}
+                  fonts={fonts}
+                  onChange={updates =>
+                    setUiState(p => ({
+                      ...p,
+                      ...(Object.prototype.hasOwnProperty.call(updates, 'fileName') && {
+                        fileName: updates.fileName ?? ''
+                      }),
+                      ...(Object.prototype.hasOwnProperty.call(updates, 'pdfPassword') && {
+                        pdfPassword: updates.pdfPassword
+                      }),
+                      ...(Object.prototype.hasOwnProperty.call(updates, 'watermark') && {
+                        watermark: updates.watermark
+                      }),
+                      ...(Object.prototype.hasOwnProperty.call(updates, 'zipOutput') && {
+                        zipOutput: updates.zipOutput
+                      })
+                    }))
+                  }
+                />
+              </BuilderSection>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeMainTab === 'code' && (
+        <div className='flex flex-col gap-3 p-4 md:p-5'>
+          <p className='text-[13px] text-default-500'>
+            Uses your current test values. The request needs an API key —{' '}
+            <Link
+              href={projectId ? `/project/${projectId}/api-keys` : '/api-keys'}
+              className='text-foreground underline underline-offset-4 hover:text-default-600'>
+              create one on the API key page
+            </Link>
+            .
+          </p>
+          <CodeSwitcher examples={getExampleCode()} title='Code' defaultLanguage='api' isDisableMarginY={true} />
+        </div>
+      )}
+    </BuilderPanel>
+  )
+
+  const previewPanel = (
+    <BuilderPanel className='h-full'>
+      <PanelHead className='pr-3'>
+        <HeadTabs
+          ariaLabel='Preview view'
+          active={previewMode}
+          onChange={setPreviewMode}
+          items={[
+            { id: 'before', label: 'Template file (.docx)' },
+            { id: 'after', label: 'Last result (PDF)' }
+          ]}
+        />
+        <div className='px-3'>
+          <AutoPreviewSwitch isSelected={liveMode} onToggle={handleLiveModeToggle} />
+        </div>
+        <div className='ml-auto flex items-center gap-2 py-1.5'>
+          {hasResult && (
+            <DownloadResultButton
+              onPress={handleDownloadResult}
+              label={generatedIsZip ? 'Download result ZIP' : 'Download result PDF'}
+            />
+          )}
+          <GenerateSplitButton
+            options={generateOptions}
+            selected={generateFormat}
+            onSelect={setGenerateFormat}
+            onGenerate={() => void runGenerate()}
+            isLoading={isBusy}
+          />
+        </div>
+      </PanelHead>
+      <PreviewCanvas>{renderPreviewBody()}</PreviewCanvas>
+    </BuilderPanel>
+  )
+
+  const mobileBar = (
+    <div className='flex items-center gap-2'>
+      <PreviewOpenButton onPress={() => setIsExpanded(true)} />
+      {hasResult && (
+        <DownloadResultButton
+          onPress={handleDownloadResult}
+          iconOnly
+          label={generatedIsZip ? 'Download result ZIP' : 'Download result PDF'}
+        />
+      )}
+      <GenerateSplitButton
+        className='min-w-0 flex-1'
+        options={generateOptions}
+        selected={generateFormat}
+        onSelect={setGenerateFormat}
+        onGenerate={() => void runGenerate()}
+        isLoading={isBusy}
+      />
+    </div>
+  )
+
   return (
     <div className='flex flex-1 flex-col font-sans text-foreground'>
       <DeleteTemplateModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
-        onSuccess={() => {
-          const projectId = searchParams.get('projectId')
-          if (projectId) router.push(`/project/${projectId}/pdf-templates`)
-          else router.push('/')
-        }}
+        onSuccess={() => router.push(templatesHref)}
         templateName={templateName}
         templateKey={templateKey}
       />
@@ -698,6 +1083,7 @@ const TemplateSandboxPage = () => {
         activeVersion={activeVersion}
         versions={versions}
         isDownloadingSource={isDownloadingSource}
+        templatesHref={templatesHref}
         edit={{
           isOpen: isEditOpen,
           name: tempEditData.name,
@@ -714,609 +1100,53 @@ const TemplateSandboxPage = () => {
         onDownloadSource={handleDownloadSource}
         onVersionChange={handleVersionChange}
         onUpdateFile={() => setIsUpdateFileOpen(true)}
+        previewVersion={previewVersion}
+        onPreviewVersion={v => {
+          setPreviewVersion(v)
+          setPreviewMode('before')
+          // Auto-preview renders the current version only.
+          if (v != null) setLiveMode(false)
+        }}
       />
 
-      {/* Main Content Area — Split Panel: left grows naturally, right stays sticky */}
-      <div className='flex items-start'>
-        {/* Left Panel: Builder Area — grows with content, no internal scroll */}
-        <div
-          className='builder-shell flex shrink-0 flex-col rounded-2xl'
-          style={{ width: `${panelWidth}px` }}>
-          <div className='shrink-0 px-4 pt-2 md:px-5'>
-            <SegmentedTabs
-              active={activeMainTab}
-              onChange={setActiveMainTab}
-              items={
-                [
-                  { id: 'builder', label: 'Builder UI', icon: 'lucide:layout' },
-                  { id: 'code', label: 'Code', icon: 'lucide:code' }
-                ] as const
-              }
-            />
-          </div>
+      <BuilderSplit
+        panelWidth={panelWidth}
+        minWidth={panelMinWidth}
+        maxWidth={panelMaxWidth}
+        onResizeStart={handlePanelResize}
+        onResizeKeyDown={handlePanelResizeKey}
+        fields={fieldsPanel}
+        preview={previewPanel}
+        mobileBar={mobileBar}
+      />
 
-          {activeMainTab === 'builder' && (
-            <div className='flex w-full flex-col gap-4 px-4 pb-5 pt-1 md:flex-row md:px-5'>
-              <CategoryNav
-                className=''
-                active={activeBuilderCategory}
-                onChange={setActiveBuilderCategory}
-                items={
-                  [
-                    { id: 'text', icon: 'lucide:type', label: 'Variables', count: uiState.replace.length },
-                    { id: 'tables', icon: 'lucide:table', label: 'Tables', count: uiState.table.length },
-                    { id: 'image', icon: 'lucide:image', label: 'Images', count: uiState.image.length },
-                    { id: 'qrcode', icon: 'lucide:qr-code', label: 'QR Codes', count: uiState.qrcode.length },
-                    { id: 'barcode', icon: 'lucide:barcode', label: 'Barcodes', count: uiState.barcode.length },
-                    {
-                      id: 'settings',
-                      icon: 'lucide:settings',
-                      label: 'Settings',
-                      section: 'config',
-                      count: (uiState.pdfPassword ? 1 : 0) + (uiState.watermark ? 1 : 0) + (uiState.zipOutput ? 1 : 0)
-                    }
-                  ] as const
-                }
-              />
+      {/* Preview drawer — opened from the mobile action bar and after Generate below lg.
+          Shows the last result when there is one, with the template file one tap away. */}
+      <PdfPreviewDrawer
+        key={generatedUrl ?? 'no-result'}
+        isOpen={isExpanded}
+        onClose={() => setIsExpanded(false)}
+        file={sourcePreview || ''}
+        views={[
+          ...(generatedUrl ? [{ id: 'result', label: 'Last result', file: generatedUrl, fileName: `${resultFileBase}.pdf` }] : []),
+          ...(sourcePreview
+            ? [{ id: 'template', label: 'Template file', file: sourcePreview, fileName: `${templateName}_template_source.pdf` }]
+            : [])
+        ]}
+      />
 
-              {/* Section content */}
-              <div className='min-w-0 flex-1 overflow-visible'>
-                {activeBuilderCategory === 'text' && (
-                  <SectionWrapper
-                    title='Variables'
-                    description='Text tokens replaced at render time'
-                    action={
-                      <Button
-                        size='sm'
-                        radius='md'
-                        onPress={() => {
-                          const newId = generateId()
-                          setUiState(p => ({
-                            ...p,
-                            replace: [...p.replace, { id: newId, key: '', value: '' }]
-                          }))
-                        }}
-                        variant='flat'
-                        className='h-8 gap-1 bg-content2 px-3 text-[11.5px] font-semibold text-default-700 transition-colors duration-200 hover:bg-content3'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-                        Add Variable
-                      </Button>
-                    }>
-                    <ReplacementsSection
-                      items={uiState.replace}
-                      onChange={d => setUiState(p => ({ ...p, replace: d }))}
-                      errors={validationErrors}
-                      onClearError={clearValidationError}
-                    />
-                  </SectionWrapper>
-                )}
+      <UpdateFileModal
+        isOpen={isUpdateFileOpen}
+        onOpenChange={setIsUpdateFileOpen}
+        templateType='pdf'
+        isSaving={isSaving}
+        onSubmit={handleUpdateFile}
+      />
 
-                {activeBuilderCategory === 'tables' && (
-                  <SectionWrapper
-                    title='Tables'
-                    description='Dynamic rows populated from structured data'
-                    action={
-                      <Button
-                        size='sm'
-                        radius='md'
-                        onPress={() => {
-                          const newId = generateId()
-                          setUiState(p => ({ ...p, table: [...p.table, { id: newId, columns: [], rows: [] }] }))
-                        }}
-                        variant='flat'
-                        className='h-8 gap-1 bg-content2 px-3 text-[11.5px] font-semibold text-default-700 transition-colors duration-200 hover:bg-content3'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-                        Add Table
-                      </Button>
-                    }>
-                    <TablesSection
-                      items={uiState.table}
-                      onChange={d => setUiState(p => ({ ...p, table: d }))}
-                      errors={validationErrors}
-                      onClearError={clearValidationError}
-                    />
-                  </SectionWrapper>
-                )}
-
-                {activeBuilderCategory === 'image' && (
-                  <SectionWrapper
-                    title='Images'
-                    description='Image tokens replaced with uploaded files'
-                    action={
-                      <Button
-                        size='sm'
-                        radius='md'
-                        onPress={() => {
-                          const newId = generateId()
-                          setUiState(p => ({
-                            ...p,
-                            image: [...p.image, { id: newId, key: '', data: { src: '', fit: 'cover' } }]
-                          }))
-                        }}
-                        variant='flat'
-                        className='h-8 gap-1 bg-content2 px-3 text-[11.5px] font-semibold text-default-700 transition-colors duration-200 hover:bg-content3'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-                        Add Image
-                      </Button>
-                    }>
-                    <ImagesSection
-                      items={uiState.image}
-                      onChange={d => setUiState(p => ({ ...p, image: d }))}
-                      errors={validationErrors}
-                      onClearError={clearValidationError}
-                    />
-                  </SectionWrapper>
-                )}
-
-                {activeBuilderCategory === 'qrcode' && (
-                  <SectionWrapper
-                    title='QR Codes'
-                    description='Generate QR codes from text values'
-                    action={
-                      <Button
-                        size='sm'
-                        radius='md'
-                        onPress={() => {
-                          const newId = generateId()
-                          setUiState(p => ({
-                            ...p,
-                            qrcode: [...p.qrcode, { id: newId, key: '', data: { text: '' } }]
-                          }))
-                        }}
-                        variant='flat'
-                        className='h-8 gap-1 bg-content2 px-3 text-[11.5px] font-semibold text-default-700 transition-colors duration-200 hover:bg-content3'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-                        Add QR
-                      </Button>
-                    }>
-                    <QrCodesSection
-                      items={uiState.qrcode}
-                      onChange={d => setUiState(p => ({ ...p, qrcode: d }))}
-                      errors={validationErrors}
-                      onClearError={clearValidationError}
-                    />
-                  </SectionWrapper>
-                )}
-
-                {activeBuilderCategory === 'barcode' && (
-                  <SectionWrapper
-                    title='Barcodes'
-                    description='Generate Code128 / EAN13 barcodes'
-                    action={
-                      <Button
-                        size='sm'
-                        radius='md'
-                        onPress={() => {
-                          const newId = generateId()
-                          setUiState(p => ({
-                            ...p,
-                            barcode: [
-                              ...p.barcode,
-                              {
-                                id: newId,
-                                key: '',
-                                data: { text: '', format: 'Code128', width: 200, height: 50, includeText: true }
-                              }
-                            ]
-                          }))
-                        }}
-                        variant='flat'
-                        className='h-8 gap-1 bg-content2 px-3 text-[11.5px] font-semibold text-default-700 transition-colors duration-200 hover:bg-content3'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-                        Add Barcode
-                      </Button>
-                    }>
-                    <BarcodesSection
-                      items={uiState.barcode}
-                      onChange={d => setUiState(p => ({ ...p, barcode: d }))}
-                      errors={validationErrors}
-                      onClearError={clearValidationError}
-                    />
-                  </SectionWrapper>
-                )}
-
-                {activeBuilderCategory === 'settings' && (
-                  <SectionWrapper title='File Settings' description='PDF password, watermark, output format'>
-                    <FileSettingsSection
-                      requireFeature={requireFeature}
-                      fileName={uiState.fileName}
-                      pdfPassword={uiState.pdfPassword}
-                      watermark={uiState.watermark}
-                      zipOutput={uiState.zipOutput}
-                      fonts={fonts}
-                      onChange={updates =>
-                        setUiState(p => ({
-                          ...p,
-                          ...(Object.prototype.hasOwnProperty.call(updates, 'fileName') && {
-                            fileName: updates.fileName ?? ''
-                          }),
-                          ...(Object.prototype.hasOwnProperty.call(updates, 'pdfPassword') && {
-                            pdfPassword: updates.pdfPassword
-                          }),
-                          ...(Object.prototype.hasOwnProperty.call(updates, 'watermark') && {
-                            watermark: updates.watermark
-                          }),
-                          ...(Object.prototype.hasOwnProperty.call(updates, 'zipOutput') && {
-                            zipOutput: updates.zipOutput
-                          })
-                        }))
-                      }
-                    />
-                  </SectionWrapper>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeMainTab === 'code' && (
-            <div className='p-3 md:p-4'>
-              <CodeSwitcher
-                examples={getExampleCode()}
-                title='Code'
-                defaultLanguage='api'
-                isDisableMarginY={true}
-              />
-            </div>
-          )}
-        </div>
-        {/* Drag Handle */}
-        <div
-          onMouseDown={handlePanelResize}
-          className='group hidden cursor-col-resize items-center justify-center px-1 lg:flex'
-          style={{ height: 'calc(100vh - 110px)', alignSelf: 'flex-start', position: 'sticky', top: 0 }}>
-          <div className='h-10 w-1 rounded-full bg-default-200 transition-colors group-hover:bg-default-400 group-active:bg-primary' />
-        </div>
-
-        {/* Right Panel: Preview */}
-        <div
-          ref={previewContainerRef}
-          className='builder-shell sticky top-0 hidden h-[calc(100vh-110px)] w-full flex-1 flex-col overflow-hidden rounded-2xl lg:flex'>
-          {/* Preview Header — theme-aware colors for light/dark mode */}
-          <div className='flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-default-200/70 px-4 py-2.5'>
-            <div className='flex items-center gap-2'>
-              <Icon icon='lucide:file-text' className='h-4 w-4 text-default-500' />
-              <span className='text-[13px] font-bold tracking-tight text-foreground'>Preview</span>
-            </div>
-            <div className='flex flex-wrap items-center gap-x-3 gap-y-2'>
-              <div className='flex rounded-md bg-content2 p-0.5'>
-                <button
-                  type='button'
-                  onClick={() => setPreviewMode('before')}
-                  className={cn(
-                    'rounded px-2 py-1 text-[11px] font-semibold transition-colors',
-                    previewMode === 'before'
-                      ? 'bg-content1 text-foreground shadow-sm'
-                      : 'text-default-500 hover:text-foreground'
-                  )}>
-                  Source
-                </button>
-                <button
-                  type='button'
-                  onClick={() => setPreviewMode('after')}
-                  className={cn(
-                    'rounded px-2 py-1 text-[11px] font-semibold transition-colors',
-                    previewMode === 'after'
-                      ? 'bg-content1 text-foreground shadow-sm'
-                      : 'text-default-500 hover:text-foreground'
-                  )}>
-                  Result
-                </button>
-              </div>
-              <div className='mx-1 h-5 w-px bg-default-200/80' />
-              <label
-                className='flex cursor-pointer select-none items-center gap-2'
-                title='Re-render the preview as you edit variable values'>
-                <span className='text-[11.5px] font-semibold text-default-600'>Live Preview</span>
-                <button
-                  type='button'
-                  onClick={handleLiveModeToggle}
-                  disabled={isFeaturesLoading}
-                  className={cn(
-                    'relative inline-flex h-5 w-9 shrink-0 items-center rounded-md transition-colors duration-200',
-                    liveMode ? 'bg-primary' : 'bg-content2 hover:bg-content3',
-                    isFeaturesLoading && 'cursor-not-allowed opacity-60'
-                  )}
-                  aria-label='Toggle live preview'>
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-[4px] bg-white shadow transition-transform duration-200',
-                      liveMode ? 'translate-x-[18px]' : 'translate-x-0.5'
-                    )}
-                  />
-                </button>
-              </label>
-              <div className='mx-1 h-5 w-px bg-default-200/80' />
-              <div className='flex'>
-                <Button
-                  color='primary'
-                  size='sm'
-                  radius='none'
-                  className='h-8 rounded-l-md border-r border-primary-foreground/20 px-3 text-[11.5px] font-bold'
-                  isLoading={isGenerating || isGeneratingWord}
-                  onPress={generateFormat === 'pdf' ? handleGenerate : handleGenerateWord}
-                  startContent={
-                    !(isGenerating || isGeneratingWord) && <Icon icon='lucide:zap' className='h-3.5 w-3.5' />
-                  }>
-                  Generate{generateFormat === 'word' ? ' Word' : ''}
-                </Button>
-                <Dropdown placement='bottom-end'>
-                  <DropdownTrigger>
-                    <Button
-                      color='primary'
-                      size='sm'
-                      radius='none'
-                      isIconOnly
-                      isDisabled={isGenerating || isGeneratingWord}
-                      className='h-8 w-7 min-w-7 rounded-r-md'>
-                      <Icon icon='lucide:chevron-down' className='h-3.5 w-3.5' />
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu
-                    aria-label='Generate format'
-                    selectionMode='single'
-                    selectedKeys={[generateFormat]}
-                    onAction={key => setGenerateFormat(key as 'pdf' | 'word')}>
-                    <DropdownItem
-                      key='pdf'
-                      startContent={<Icon icon='lucide:zap' className='h-4 w-4 shrink-0 text-primary' />}
-                      description='Test current values — downloads .pdf'>
-                      Generate PDF
-                    </DropdownItem>
-                    <DropdownItem
-                      key='word'
-                      startContent={<Icon icon='lucide:file-down' className='h-4 w-4 shrink-0 text-primary' />}
-                      description='Test current values — downloads .docx'>
-                      Generate Word
-                    </DropdownItem>
-                  </DropdownMenu>
-                </Dropdown>
-              </div>
-            </div>
-          </div>
-
-          {/* Canvas Area */}
-          <div className='no-scrollbar flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto bg-content2/35 p-4'>
-            <div className='w-full max-w-4xl'>
-            {previewMode === 'after' ? (
-              generatedIsZip && generatedZipUrl ? (
-                /* ZIP download card */
-                <div className='flex w-full flex-col items-center justify-center gap-6 py-16'>
-                  <div className='flex h-20 w-20 items-center justify-center rounded-2xl bg-content2'>
-                    <Icon icon='lucide:archive' className='h-10 w-10 text-default-500' />
-                  </div>
-                  <div className='text-center'>
-                    <p className='text-sm font-semibold text-foreground'>ZIP file generated</p>
-                    <p className='mt-1 text-xs text-default-400'>ZIP files cannot be previewed. Download to view.</p>
-                  </div>
-                  <Button
-                    color='primary'
-                    size='sm'
-                    radius='md'
-                    startContent={<Icon icon='lucide:download' className='h-3.5 w-3.5' />}
-                    onPress={() => {
-                      void downloadFileFromUrl(generatedZipUrl, `${uiState.fileName || templateName}.zip`)
-                    }}>
-                    Download ZIP
-                  </Button>
-                </div>
-              ) : generatedUrl ? (
-                /* PDF result in-panel */
-                <div className='w-full transition-all duration-300'>
-                  {liveMode && (
-                    <div className='mb-3 flex items-center gap-2 rounded-md bg-content2/70 px-3 py-2 text-[10.5px] text-default-600 ring-1 ring-default-200/70'>
-                      {isLivePreviewRendering ? (
-                        <Spinner size='sm' color='primary' />
-                      ) : (
-                        <Icon
-                          icon={livePreviewError ? 'lucide:triangle-alert' : 'lucide:check-circle-2'}
-                          className={cn('h-3.5 w-3.5 shrink-0', livePreviewError ? 'text-danger' : 'text-primary')}
-                        />
-                      )}
-                      <span>
-                        {livePreviewError
-                          ? livePreviewError
-                          : isLivePreviewRendering
-                            ? 'Updating live preview...'
-                            : 'Live preview is showing the latest rendered output.'}
-                      </span>
-                    </div>
-                  )}
-                  {liveMode && isLivePreviewRendering && !generatedUrl ? (
-                    <Skeleton className='h-full min-h-[500px] w-full rounded-lg' />
-                  ) : (
-                    <PdfPreview
-                      key={generatedUrl}
-                      file={generatedUrl}
-                      fileName={`${uiState.fileName || templateName}.pdf`}
-                      loading={<Skeleton className='h-full min-h-[500px] w-full' />}
-                      className='flex flex-col gap-4'
-                      width={containerWidth ? containerWidth - 32 : undefined}
-                      onLoadError={refreshPreviewUrl}
-                      isReloading={isPreviewReloading}
-                      onDownloadResult={(url, name) => { void downloadFileFromUrl(url, name) }}
-                    />
-                  )}
-                </div>
-              ) : (
-                /* Result empty state */
-                <div className='flex min-h-[280px] w-full flex-col items-center justify-center p-8 text-center'>
-                  <div className='mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-content2'>
-                    <Icon icon='lucide:zap' className='h-8 w-8 text-default-400' />
-                  </div>
-                  <h3 className='font-semibold text-foreground'>No result yet</h3>
-                  <p className='max-w-xs text-xs text-default-400'>
-                    Press Generate to render and preview the output here.
-                  </p>
-                </div>
-              )
-            ) : /* Source tab */ previewSrc ? (
-              <div className='w-full transition-all duration-300'>
-                {!liveMode && (
-                  <div className='mb-3 flex items-center gap-2 rounded-md bg-content2/70 px-3 py-2 text-[10.5px] text-default-600 ring-1 ring-default-200/70'>
-                    <Icon icon='lucide:info' className='h-3.5 w-3.5 shrink-0 text-default-500' />
-                    <span>
-                      Source preview — variable values won&apos;t appear here. Generate PDF to see rendered output.
-                    </span>
-                  </div>
-                )}
-                {liveMode && (
-                  <div className='mb-3 flex items-center gap-2 rounded-md bg-content2/70 px-3 py-2 text-[10.5px] text-default-600 ring-1 ring-default-200/70'>
-                    {isLivePreviewRendering ? (
-                      <Spinner size='sm' color='primary' />
-                    ) : (
-                      <Icon
-                        icon={livePreviewError ? 'lucide:triangle-alert' : 'lucide:check-circle-2'}
-                        className={cn('h-3.5 w-3.5 shrink-0', livePreviewError ? 'text-danger' : 'text-primary')}
-                      />
-                    )}
-                    <span>
-                      {livePreviewError
-                        ? livePreviewError
-                        : isLivePreviewRendering
-                          ? 'Updating live preview...'
-                          : isLivePreviewResult
-                            ? 'Live preview is showing the latest rendered output.'
-                            : 'Live preview is ready. Edit builder values to render the output.'}
-                    </span>
-                  </div>
-                )}
-                {liveMode && isLivePreviewRendering && !generatedUrl ? (
-                  <Skeleton className='h-full min-h-[500px] w-full rounded-lg' />
-                ) : (
-                  <PdfPreview
-                    key={previewSrc}
-                    file={previewSrc}
-                    fileName={
-                      isLivePreviewResult ? `${templateName}_live_preview.pdf` : `${templateName}_template_source.pdf`
-                    }
-                    loading={<Skeleton className='h-full min-h-[500px] w-full' />}
-                    className='flex flex-col gap-4'
-                    width={containerWidth ? containerWidth - 32 : undefined}
-                    onLoadError={refreshPreviewUrl}
-                    isReloading={isPreviewReloading}
-                    onDownloadResult={(url, name) => { void downloadFileFromUrl(url, name) }}
-                  />
-                )}
-              </div>
-            ) : (
-              <div className='flex min-h-[280px] w-full flex-col items-center justify-center p-8 text-center'>
-                <div className='mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-content2'>
-                  <Icon icon='lucide:file-text' className='h-8 w-8 text-default-500' />
-                </div>
-                <h3 className='font-semibold text-foreground'>No Preview Available</h3>
-                <p className='mt-1 max-w-xs text-sm text-default-600'>
-                  Upload a DOCX template file to see the source preview.
-                </p>
-              </div>
-            )}
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile: FAB to open preview (since preview panel hidden below lg) */}
-        <button
-          onClick={() => setIsExpanded(true)}
-          className='fixed bottom-4 right-4 z-40 flex h-12 items-center gap-2 rounded-lg bg-primary px-4 text-[12px] font-bold text-primary-foreground shadow-lg shadow-primary/30 transition-transform duration-200 hover:scale-105 active:scale-95 lg:hidden'
-          aria-label='Open preview'>
-          <Icon icon='lucide:file-text' className='h-4 w-4' />
-          Preview
-        </button>
-
-        {/* Preview Drawer — accessible from BOTH desktop expand button AND mobile FAB */}
-        <PdfPreviewDrawer
-          isOpen={isExpanded}
-          onClose={() => {
-            setIsExpanded(false)
-            setDrawerFile(null)
-            setLiveMode(false)
-            setPreviewMode('before')
-          }}
-          file={drawerFile || previewSrc || ''}
-          fileName={
-            drawerFile
-              ? `${uiState.fileName || templateName}.pdf`
-              : isLivePreviewResult
-                ? `${templateName}_live_preview.pdf`
-                : `${templateName}_template_source.pdf`
-          }
-        />
-
-        <UpdateFileModal
-          isOpen={isUpdateFileOpen}
-          onOpenChange={setIsUpdateFileOpen}
-          templateType='pdf'
-          isSaving={isSaving}
-          onSubmit={handleUpdateFile}
-        />
-
-        {/* Documentation Modal */}
-        <Modal isOpen={isDocsOpen} onOpenChange={setIsDocsOpen} size='5xl' scrollBehavior='inside'>
-          <ModalContent className='h-[90vh]'>
-            {onClose => (
-              <>
-                <ModalHeader className='flex flex-col gap-1'>Template Documentation</ModalHeader>
-                <ModalBody className='p-0'>
-                  <div className='flex h-full flex-col'>
-                    <div className='w-full border-b border-default-200/50 bg-content2 p-4'>
-                      <div className='grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5'>
-                        {(
-                          [
-                            { id: 'variables', label: 'Variables', icon: 'lucide:type' },
-                            { id: 'tables', label: 'Tables', icon: 'lucide:table' },
-                            { id: 'image', label: 'Images', icon: 'lucide:image' },
-                            { id: 'qrcode', label: 'QR Codes', icon: 'lucide:qr-code' },
-                            { id: 'barcode', label: 'Barcodes', icon: 'lucide:barcode' },
-                            { id: 'settings', label: 'File Settings', icon: 'lucide:settings' }
-                          ] as const
-                        ).map(item => (
-                          <button
-                            key={item.id}
-                            onClick={() => setActiveDocsSection(item.id)}
-                            className={cn(
-                              'flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                              activeDocsSection === item.id
-                                ? 'bg-content3 text-primary'
-                                : 'text-default-600 hover:bg-content2 hover:text-foreground'
-                            )}>
-                            <Icon icon={item.icon} className='h-4 w-4' />
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className='flex-1 overflow-y-auto p-6'>
-                      <div className='prose prose-sm max-w-none'>
-                        {activeDocsSection === 'variables' && <VariablesContent />}
-                        {activeDocsSection === 'tables' && <TablesContent />}
-                        {activeDocsSection === 'image' && <ImagesContent />}
-                        {activeDocsSection === 'qrcode' && (
-                          <div className='space-y-8'>
-                            <QrCodesContent />
-                          </div>
-                        )}
-                        {activeDocsSection === 'barcode' && <BarcodesContent />}
-                        {activeDocsSection === 'settings' && <FileSettingsContent />}
-                      </div>
-                    </div>
-                  </div>
-                </ModalBody>
-                <ModalFooter>
-                  <Button color='primary' onPress={onClose}>
-                    Close
-                  </Button>
-                </ModalFooter>
-              </>
-            )}
-          </ModalContent>
-        </Modal>
-
-        {gateModal}
-      </div>
+      {gateModal}
     </div>
   )
 }
-
-import { Suspense } from 'react'
 
 export default function TemplateSandboxPageWrapper() {
   return (

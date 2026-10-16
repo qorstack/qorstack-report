@@ -38,3 +38,8 @@ next-env.d.ts
 # Ignore artifacts:
 build
 coverage
+
+# Generated from the resolved pdfjs-dist version before builds
+/public/pdfjs/
+/public/pdf.worker.min.mjs
+.env.bak

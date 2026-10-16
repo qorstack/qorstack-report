@@ -10,7 +10,7 @@ const getMethodName = (documentType: CodeGenOptions['documentType']) =>
 
 const getApiUrlExpression = (apiUrl?: string) => {
   const fallback =
-    apiUrl && !apiUrl.includes('__NEXT_PUBLIC_SERVICE__') ? apiUrl : 'http://localhost:8080'
+    apiUrl && !apiUrl.includes('__NEXT_PUBLIC_SERVICE__') ? apiUrl : 'http://localhost:8080/api'
   return `process.env.QORSTACK_API_URL || '${fallback}'`
 }
 
@@ -38,7 +38,7 @@ const api = new QorstackApi({
   baseUrl: ${apiUrl},
   securityData: {
     headers: {
-      'X-API-KEY': process.env.QORSTACK_API_KEY || 'YOUR_API_KEY'
+      'X-API-Key': process.env.QORSTACK_API_KEY || 'YOUR_API_KEY'
     }
   }
 });
@@ -92,26 +92,31 @@ const formatArray = (arr: unknown[], level = 0): string => {
 
 const formatItemAccessor = (col: string) => (canUseBareKey(col) ? `item.${col}` : `item[${JSON.stringify(col)}]`)
 
-const formatTableRowsMap = (table: any, index: number, level: number): string => {
-  const rows = Array.isArray(table.rows) ? table.rows : []
-  const columns = rows.length > 0 ? Object.keys(rows[0]) : []
+// Columns are listed once ({{row:name}} in the template); each row holds the values in that order.
+const getColumns = (table: any): string[] => (Array.isArray(table.columns) ? table.columns : [])
+
+const formatTableRowsMap = (table: any, index: number): string => {
+  const columns = getColumns(table)
   if (columns.length === 0) return '[]'
-  const fieldLines = columns.map(col => `${indent(level + 1)}${formatPropertyKey(col)}: ${formatItemAccessor(col)} ?? ''`)
-  return `${getTableDataName(index)}.map((item, index) => ({\n${fieldLines.join(',\n')}\n${indent(level)}}));`
+  const cells = columns.map(col => `${formatItemAccessor(col)} ?? null`).join(', ')
+  return `${getTableDataName(index)}.map(item => [${cells}]);`
 }
 
 const formatTableDataDeclaration = (table: any, index: number): string => {
   const rowsName = getTableRowsName(index)
   return `// Example fetching data for table ${index + 1} from your service.
 const ${getTableDataName(index)} = await mockService.getExamplesAsync();
-const ${rowsName} = ${formatTableRowsMap(table, index, 0)}`
+const ${rowsName} = ${formatTableRowsMap(table, index)}`
 }
 
 const formatTable = (table: any, index: number, level: number): string => {
   const entries = Object.entries(table).filter(([key, value]) => value !== undefined && !shouldSkipEmptyValue(key, value))
   const lines = entries.map(([key, value]) => {
     if (key === 'rows') {
-      return `${indent(level + 1)}rows: ${getTableRowsName(index)}`
+      return `${indent(level + 1)}rows: ${Array.isArray(value) && value.length ? getTableRowsName(index) : '[]'}`
+    }
+    if (key === 'columns' && Array.isArray(value)) {
+      return `${indent(level + 1)}columns: [${value.map(c => JSON.stringify(c)).join(', ')}]`
     }
     return `${indent(level + 1)}${formatPropertyKey(key)}: ${formatValue(value, level + 1)}`
   })

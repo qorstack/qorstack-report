@@ -201,3 +201,30 @@ public class ProFeatureRequiredException : Exception
         FeatureName = featureName;
     }
 }
+
+/// <summary>
+/// The caller already has the maximum number of unfinished async renders (429). Retry when some have finished.
+/// </summary>
+public class RenderQueueFullException : Exception
+{
+    public RenderQueueFullException(int maxPendingJobs)
+        : base($"You already have {maxPendingJobs} async renders waiting or running. Try again when some have finished.")
+    {
+    }
+}
+
+/// <summary>
+/// The file storage (RustFS / MinIO / S3) cannot be reached. Mapped to 503 with a message that tells
+/// the operator what to check. Deliberately carries no inner exception so it is never masked as a
+/// generic infrastructure error.
+/// </summary>
+public class StorageUnavailableException : Exception
+{
+    public StorageUnavailableException(string endpoint)
+        : base($"Cannot reach file storage at {endpoint} — check STORAGE_ENDPOINT and that the storage container is running.")
+    {
+        Endpoint = endpoint;
+    }
+
+    public string Endpoint { get; }
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { cn } from '@heroui/react'
 
 type Elevation = 1 | 2 | 3
 type Radius = 'lg' | 'xl' | '2xl' | '3xl'
@@ -8,6 +9,7 @@ type Radius = 'lg' | 'xl' | '2xl' | '3xl'
 interface GlassCardProps {
   children: ReactNode
   elevation?: Elevation
+  /** Kept for API compatibility — Press panels are always square. */
   radius?: Radius
   className?: string
 }
@@ -18,15 +20,7 @@ const elevationClass: Record<Elevation, string> = {
   3: 'bg-content3'
 }
 
-const radiusClass: Record<Radius, string> = {
-  lg: 'rounded-lg',
-  xl: 'rounded-xl',
-  '2xl': 'rounded-2xl',
-  '3xl': 'rounded-3xl'
-}
-
-export const GlassCard = ({ children, elevation = 2, radius = 'xl', className }: GlassCardProps) => (
-  <div className={`ring-hairline ${elevationClass[elevation]} ${radiusClass[radius]} ${className ?? ''}`}>
-    {children}
-  </div>
+/** Plain bordered panel (Press). The name is kept so existing imports keep compiling. */
+export const GlassCard = ({ children, elevation = 2, className }: GlassCardProps) => (
+  <div className={cn('border border-divider', elevationClass[elevation], className)}>{children}</div>
 )

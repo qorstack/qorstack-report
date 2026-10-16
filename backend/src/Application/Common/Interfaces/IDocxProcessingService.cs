@@ -17,6 +17,14 @@ public interface IDocxProcessingService
     Task<Stream> ProcessTemplateAsync(Stream templateStream, DocumentProcessingData data, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Processes a Word template with the provided data.
+    /// When <paramref name="optimizeForPdf"/> is true, also applies layout fixes that only matter for
+    /// LibreOffice PDF conversion (Word line-breaking parity, text-box indents, empty header/footer
+    /// line height). Pass false when the DOCX itself is returned to the user.
+    /// </summary>
+    Task<Stream> ProcessTemplateAsync(Stream templateStream, DocumentProcessingData data, bool optimizeForPdf, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Preprocesses a DOCX for preview generation (upload/update).
     /// Only flattens SDTs (Content Controls) — does NOT change fonts.
     /// Use this instead of ProcessTemplateAsync when you want to keep original fonts.

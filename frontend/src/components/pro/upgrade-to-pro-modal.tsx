@@ -15,18 +15,14 @@ type UpgradeToProModalProps = {
   primaryCtaHref?: string
 }
 
-const DEFAULT_FEATURES = [
-  'Instant preview with every edit',
-  'Unlimited cloud renders',
-  'Priority rendering queue'
-]
+const DEFAULT_FEATURES = ['PDF password protection & watermarks', 'Async renders, ZIP output', 'Project export & import']
 
 export const UpgradeToProModal = ({
   isOpen,
   onOpenChange,
-  eyebrow = 'Real-time rendering',
+  eyebrow = 'Pro feature',
   title = 'Upgrade to Pro',
-  description = "Live Preview renders your document in real time as you edit — every keystroke, every variable change. It's a Pro feature because it runs a full cloud render on every change.",
+  description = 'This feature needs a Pro license.',
   features = DEFAULT_FEATURES,
   primaryCtaLabel = 'See Pro Plans',
   primaryCtaHref = '/settings/billing'
@@ -40,9 +36,9 @@ export const UpgradeToProModal = ({
       size='md'
       backdrop='blur'
       classNames={{
-        backdrop: 'z-[200] bg-black/70 backdrop-blur-sm',
+        backdrop: 'z-[200] bg-black/70',
         wrapper: 'z-[201]',
-        base: 'bg-content1 ring-hairline',
+        base: 'border border-divider bg-content1',
         header: 'pb-2',
         body: 'pt-0',
         footer: 'pt-2'
@@ -51,38 +47,36 @@ export const UpgradeToProModal = ({
         {onClose => (
           <>
             <ModalHeader className='flex flex-col gap-2'>
-              <div className='flex h-11 w-11 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/25'>
-                <Icon icon='lucide:zap' className='h-5 w-5 text-primary' />
+              <div className='flex h-11 w-11 items-center justify-center border border-default-300'>
+                <Icon icon='lucide:zap' className='h-5 w-5 text-default-500' />
               </div>
               <div>
-                <h3 className='text-[18px] font-black tracking-tight text-foreground'>{title}</h3>
-                <p className='mt-0.5 text-[11.5px] font-semibold uppercase tracking-widest text-default-500'>
-                  {eyebrow}
-                </p>
+                <p className='text-[13px] font-normal text-default-500'>{eyebrow}</p>
+                <h3 className='mt-1 text-[20px] font-semibold text-foreground'>{title}</h3>
               </div>
             </ModalHeader>
             <ModalBody>
-              <p className='text-[13.5px] leading-relaxed text-default-600'>{description}</p>
-              <ul className='mt-3 flex flex-col gap-2 text-[12.5px] text-default-700'>
+              <p className='text-[14px] leading-relaxed text-default-500'>{description}</p>
+              <ul className='mt-3 flex flex-col gap-2 text-[14px] text-foreground'>
                 {features.map(feature => (
                   <li key={feature} className='flex items-start gap-2'>
-                    <Icon icon='lucide:check-circle-2' className='mt-0.5 h-4 w-4 shrink-0 text-primary' />
+                    <Icon icon='lucide:check-circle-2' className='mt-0.5 h-4 w-4 shrink-0 text-success' />
                     <span>{feature}</span>
                   </li>
                 ))}
               </ul>
             </ModalBody>
             <ModalFooter>
-              <Button variant='light' size='sm' onPress={onClose} className='font-semibold'>
-                Maybe Later
+              <Button variant='light' onPress={onClose} className='h-10 font-medium'>
+                Maybe later
               </Button>
               <Button
-                size='sm'
+                color='primary'
                 onPress={() => {
                   onClose()
                   router.push(primaryCtaHref)
                 }}
-                className='bg-primary font-bold text-primary-foreground hover:bg-primary/90'
+                className='h-10 font-medium'
                 startContent={<Icon icon='lucide:arrow-up-right' className='h-3.5 w-3.5' strokeWidth={3} />}>
                 {primaryCtaLabel}
               </Button>

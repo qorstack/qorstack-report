@@ -67,7 +67,7 @@ public class UploadFontCommandHandler : IRequestHandler<UploadFontCommand, FontD
         // --- New font: upload + insert ---
         var fontId = Guid.NewGuid();
         var fileName = command.File.FileName;
-        var fontBucket = _configuration["Minio:FontBucket"] ?? "fonts";
+        var fontBucket = StorageAreas.Fonts;
         var storageKey = $"{fontId}/{fileName}";
         var meta = ReadFontMeta(fileName);
 

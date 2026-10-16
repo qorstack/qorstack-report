@@ -71,7 +71,7 @@ const renderCellStyle = (cell: CellData, mode: ExcelPreviewMode): React.CSSPrope
 }
 
 const renderCellContent = (cell: CellData, _mode: ExcelPreviewMode): React.ReactNode => {
-  if (!cell.value) return <span className='text-default-300'>—</span>
+  if (!cell.value) return <span className='text-[#B5B0A7]'>—</span>
   return cell.value
 }
 
@@ -129,10 +129,8 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
   if (!url) {
     return (
       <div className='flex h-full flex-col items-center justify-center gap-3 py-20 text-center'>
-        <div className='flex h-14 w-14 items-center justify-center rounded-lg bg-primary/10'>
-          <Icon icon='lucide:file-spreadsheet' className='h-7 w-7 text-primary' />
-        </div>
-        <p className='text-sm font-medium text-default-500'>Generate to preview the Excel output</p>
+        <Icon icon='lucide:file-spreadsheet' className='h-7 w-7 text-default-500' />
+        <p className='text-[14px] text-default-500'>Generate to preview the Excel file</p>
       </div>
     )
   }
@@ -140,8 +138,8 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
   if (isLoading) {
     return (
       <div className='flex flex-col gap-3 p-4'>
-        <Skeleton className='h-8 w-48 rounded-lg' />
-        <Skeleton className='h-64 w-full rounded-lg' />
+        <Skeleton className='h-8 w-48' />
+        <Skeleton className='h-64 w-full' />
       </div>
     )
   }
@@ -150,9 +148,9 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
     return (
       <div className='flex flex-col items-center gap-3 py-16 text-center'>
         <Icon icon='lucide:alert-circle' className='h-8 w-8 text-danger' />
-        <p className='text-sm text-danger'>{error}</p>
-        <Button size='sm' variant='flat' color='danger' onPress={() => window.open(url, '_blank')}>
-          Download Instead
+        <p className='text-[14px] text-danger'>{error}</p>
+        <Button size='sm' variant='bordered' className='border-default-300' onPress={() => window.open(url, '_blank')}>
+          Download instead
         </Button>
       </div>
     )
@@ -163,18 +161,19 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
   return (
     <div className='flex h-full flex-col'>
       {/* Toolbar */}
-      <div className='flex items-center justify-between border-b border-default-200 bg-background px-4 py-2'>
-        <div className='flex items-center gap-1.5'>
-          <Icon icon='lucide:file-spreadsheet' className='h-4 w-4 text-success' />
-          <span className='text-xs font-semibold text-default-600'>{fileName || 'output.xlsx'}</span>
-          <BrandChip tone='primary' size='sm'>
+      <div className='flex items-center justify-between gap-2 border-b border-divider bg-content1 px-3 py-1.5'>
+        <div className='flex min-w-0 items-center gap-2'>
+          <Icon icon='lucide:file-spreadsheet' className='h-4 w-4 shrink-0 text-default-500' />
+          <span className='truncate font-mono text-[12px] text-foreground'>{fileName || 'output.xlsx'}</span>
+          <BrandChip tone='neutral' size='xs' mono>
             {sheets.length} sheet{sheets.length !== 1 ? 's' : ''}
           </BrandChip>
         </div>
         <Button
           size='sm'
-          variant='flat'
-          className='h-7 bg-content3 text-xs font-medium text-default-600'
+          variant='bordered'
+          radius='none'
+          className='h-8 shrink-0 border-default-300 text-[13px] font-medium text-foreground'
           startContent={<Icon icon='lucide:download' className='h-3.5 w-3.5' />}
           onPress={() => window.open(url, '_blank')}>
           Download
@@ -183,17 +182,20 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
 
       {/* Sheet Tabs */}
       {sheets.length > 1 && (
-        <div className='no-scrollbar flex gap-1 overflow-x-auto border-b border-default-200 bg-background px-3 pt-2'>
+        <div role='tablist' aria-label='Sheets' className='no-scrollbar flex overflow-x-auto border-b border-divider bg-content1'>
           {sheets.map((sheet, idx) => (
             <button
               key={sheet.name}
+              type='button'
+              role='tab'
+              aria-selected={activeSheet === idx}
               onClick={() => setActiveSheet(idx)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[13px] transition-colors ${
                 activeSheet === idx
-                  ? 'border-default-200 bg-background text-foreground'
-                  : 'border-transparent bg-content2 text-default-500 hover:text-default-700'
+                  ? 'border-b-foreground text-foreground'
+                  : 'border-b-transparent text-default-500 hover:text-foreground'
               }`}>
-              <Icon icon='lucide:table-2' className='h-3 w-3' />
+              <Icon icon='lucide:table-2' className='h-3.5 w-3.5' />
               {sheet.name}
             </button>
           ))}
@@ -201,18 +203,20 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
       )}
 
       {/* Table — grid borders mimic real Excel cells. In "result" mode only styled cells are shown. */}
-      <div className='flex-1 overflow-auto bg-background p-3'>
+      <div className='flex-1 overflow-auto bg-[repeating-linear-gradient(135deg,#E7E7EA_0_10px,#EDEDF0_10px_20px)] dark:bg-[repeating-linear-gradient(135deg,#0B0B0B_0_10px,#0E0E0E_10px_20px)] p-4'>
         {current ? (
-          <table className='w-full border-collapse border border-default-300 text-xs'>
+          <table className='w-full border-collapse border border-[#D4D4D8] bg-[#FFFFFF] text-[12px] text-[#141414] shadow-[0_16px_40px_-20px_rgba(20,20,20,.35)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,.8)]'>
             <thead className='sticky top-0 z-10'>
               <tr>
-                <th className='w-10 border border-default-300 bg-default-200 px-2 py-1.5 text-center text-[10px] font-bold text-default-500' />
+                <th className='w-10 border border-[#D4D4D8] bg-[#E8E8EB] px-2 py-1.5 text-center font-mono text-[11px] font-bold text-[#52525B]'>
+                  <span className='sr-only'>Row</span>
+                </th>
                 {current.headers.map((h, i) => (
                   // eslint-disable-next-line react/no-array-index-key -- columns are addressed by index (stable, matches spreadsheet)
                   <th
                     key={`h-${i}`}
                     style={renderCellStyle(h, mode)}
-                    className='min-w-[120px] border border-default-300 bg-default-200 px-3 py-1.5 text-left font-semibold text-default-800'>
+                    className='min-w-[120px] border border-[#D4D4D8] bg-[#E8E8EB] px-3 py-1.5 text-left font-semibold text-[#141414]'>
                     {renderCellContent(h, mode)}
                   </th>
                 ))}
@@ -223,15 +227,15 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
                 <tr>
                   <td
                     colSpan={current.headers.length + 1}
-                    className='border border-default-300 p-8 text-center italic text-default-400'>
-                    No data rows
+                    className='border border-[#D4D4D8] p-8 text-center text-[#52525B]'>
+                    No rows
                   </td>
                 </tr>
               ) : (
                 current.rows.map((row, rIdx) => (
                   // eslint-disable-next-line react/no-array-index-key -- row order is stable per load, index is a valid identity here
-                  <tr key={`r-${rIdx}`} className='group hover:bg-content2/70'>
-                    <td className='border border-default-300 bg-default-200 px-2 py-1 text-center text-[10px] font-semibold text-default-500'>
+                  <tr key={`r-${rIdx}`} className='group hover:bg-[#F1F1F3]'>
+                    <td className='border border-[#D4D4D8] bg-[#E8E8EB] px-2 py-1 text-center font-mono text-[11px] font-semibold text-[#52525B]'>
                       {rIdx + 1}
                     </td>
                     {current.headers.map((_, cIdx) => {
@@ -240,7 +244,7 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
                         <td
                           key={`c-${rIdx}-${cIdx}`}
                           style={renderCellStyle(cell, mode)}
-                          className='border border-default-300 px-3 py-1 text-foreground'>
+                          className='border border-[#D4D4D8] px-3 py-1'>
                           {renderCellContent(cell, mode)}
                         </td>
                       )
@@ -251,14 +255,14 @@ const ExcelPreview: React.FC<ExcelPreviewProps> = ({ url, fileName, mode = 'temp
             </tbody>
           </table>
         ) : (
-          <div className='p-8 text-center text-sm text-default-400'>Empty sheet</div>
+          <div className='p-8 text-center text-[14px] text-default-500'>Empty sheet</div>
         )}
       </div>
 
       {/* Footer row count */}
       {current && (
-        <div className='border-t border-default-200 bg-background px-4 py-1.5'>
-          <span className='text-[10px] text-default-400'>
+        <div className='border-t border-divider bg-content1 px-3 py-1.5'>
+          <span className='font-mono text-[12px] text-default-500'>
             {current.rows.length} row{current.rows.length !== 1 ? 's' : ''} · {current.headers.length} column{current.headers.length !== 1 ? 's' : ''}
           </span>
         </div>

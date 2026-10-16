@@ -1592,6 +1592,16 @@
               }
             }
           },
+          "202": {
+            "description": "Queued (async: true, Pro). Poll statusUrl.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPdfAsyncResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "",
             "content": {
@@ -1612,8 +1622,28 @@
               }
             }
           },
+          "403": {
+            "description": "Pro license required (async)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many unfinished async renders for this user (Retry-After header)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1749,6 +1779,16 @@
               }
             }
           },
+          "202": {
+            "description": "Queued (async: true, Pro). Poll statusUrl.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportPdfAsyncResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "",
             "content": {
@@ -1769,8 +1809,28 @@
               }
             }
           },
+          "403": {
+            "description": "Pro license required (async)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many unfinished async renders for this user (Retry-After header)",
             "content": {
               "application/json": {
                 "schema": {
@@ -3042,6 +3102,161 @@
           }
         ]
       }
+    },
+    "/projects/{id}/export": {
+      "get": {
+        "tags": [
+          "Projects"
+        ],
+        "operationId": "GetProjectsExport",
+        "summary": "Export the project as a ZIP (Pro)",
+        "description": "Latest active version of every template, its saved test data and builder images, and uploaded fonts. API keys, members and history are not included.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP file",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
+    },
+    "/projects/{id}/import": {
+      "post": {
+        "tags": [
+          "Projects"
+        ],
+        "operationId": "PostProjectsImport",
+        "summary": "Import a project ZIP (Pro)",
+        "description": "dryRun=true returns the plan without changing anything. New templates are created with the same key, newer versions are added, equal or older versions are skipped.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "guid"
+            }
+          },
+          {
+            "name": "dryRun",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan (dryRun) or result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectImportResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4100,12 +4315,24 @@
               "templateKey": {
                 "type": "string"
               },
+              "templateVersion": {
+                "type": "integer",
+                "format": "int32",
+                "nullable": true,
+                "minimum": 1,
+                "description": "Render this stored version of the template. Omit for the current version."
+              },
               "fileName": {
                 "type": "string",
                 "nullable": true
               },
               "fileType": {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "pdf",
+                  "docx"
+                ],
+                "description": "Output format: pdf (default) or docx"
               },
               "table": {
                 "type": "array",
@@ -4138,11 +4365,33 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "columns": {
+            "type": "array",
+            "description": "Column marker names ({{row:name}}), listed once, in the order of the row values. Unique.",
+            "items": {
+              "type": "string"
+            }
+          },
           "rows": {
             "type": "array",
+            "description": "Rows; each row is an array of cell values in the order of columns, e.g. [[\"A\", 2]]",
             "items": {
-              "type": "object",
-              "additionalProperties": {}
+              "type": "array",
+              "items": {
+                "description": "Cell value: string, number, boolean or null",
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
             }
           },
           "sort": {
@@ -4166,7 +4415,11 @@
               "type": "string"
             }
           }
-        }
+        },
+        "required": [
+          "columns",
+          "rows"
+        ]
       },
       "SortDefinition": {
         "type": "object",
@@ -4176,7 +4429,11 @@
             "type": "string"
           },
           "direction": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
           }
         }
       },
@@ -4186,30 +4443,34 @@
         "additionalProperties": false,
         "properties": {
           "replace": {
-            "type": "object",
+            "type": "array",
+            "description": "Variable replacements ({{variable}}): [{ \"key\": \"customer_name\", \"value\": \"ACME\" }]",
             "nullable": true,
-            "additionalProperties": {
-              "type": "string"
+            "items": {
+              "$ref": "#/components/schemas/KeyValueRequest"
             }
           },
           "image": {
-            "type": "object",
+            "type": "array",
+            "description": "Images for {{image:key}} markers",
             "nullable": true,
-            "additionalProperties": {
+            "items": {
               "$ref": "#/components/schemas/ImageDataRequest"
             }
           },
           "qrcode": {
-            "type": "object",
+            "type": "array",
+            "description": "QR codes for {{qr:key}} markers",
             "nullable": true,
-            "additionalProperties": {
+            "items": {
               "$ref": "#/components/schemas/QrCodeDataRequest"
             }
           },
           "barcode": {
-            "type": "object",
+            "type": "array",
+            "description": "Barcodes for {{barcode:key}} markers",
             "nullable": true,
-            "additionalProperties": {
+            "items": {
               "$ref": "#/components/schemas/BarcodeDataRequest"
             }
           },
@@ -4231,6 +4492,17 @@
           },
           "zipOutput": {
             "type": "boolean"
+          },
+          "async": {
+            "type": "boolean",
+            "description": "Pro: queue the render and return 202 with a job id instead of the file. Poll GET /render/jobs/{jobId} or set webhookUrl."
+          },
+          "webhookUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "With async: true, receives a POST {jobId, status, downloadUrl?, expiresIn?, error?} when the job finishes. Signed with X-Qorstack-Signature when the server has a signing secret."
           }
         }
       },
@@ -4238,6 +4510,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "type": "string",
+            "description": "Image marker name ({{image:key}})"
+          },
           "src": {
             "type": "string"
           },
@@ -4253,7 +4529,13 @@
           },
           "fit": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "enum": [
+              "cover",
+              "contain",
+              "fill"
+            ],
+            "description": "How the image fills its box: cover, contain (default) or fill"
           }
         }
       },
@@ -4261,6 +4543,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "type": "string",
+            "description": "QR marker name ({{qr:key}})"
+          },
           "text": {
             "type": "string"
           },
@@ -4286,6 +4572,10 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "type": "string",
+            "description": "Barcode marker name ({{barcode:key}})"
+          },
           "text": {
             "type": "string"
           },
@@ -4489,12 +4779,16 @@
               "templateKey": {
                 "type": "string"
               },
+              "templateVersion": {
+                "type": "integer",
+                "format": "int32",
+                "nullable": true,
+                "minimum": 1,
+                "description": "Render this stored version of the template. Omit for the current version."
+              },
               "fileName": {
                 "type": "string",
                 "nullable": true
-              },
-              "fileType": {
-                "type": "string"
               },
               "table": {
                 "type": "array",
@@ -4536,17 +4830,19 @@
                 "type": "boolean"
               },
               "generateTotals": {
-                "type": "object",
+                "type": "array",
+                "description": "Totals per column: [{ \"key\": \"amount\", \"value\": \"sum\" }]",
                 "nullable": true,
-                "additionalProperties": {
-                  "type": "string"
+                "items": {
+                  "$ref": "#/components/schemas/KeyValueRequest"
                 }
               },
               "numberFormat": {
-                "type": "object",
+                "type": "array",
+                "description": "Number format per column: [{ \"key\": \"amount\", \"value\": \"#,##0.00\" }]",
                 "nullable": true,
-                "additionalProperties": {
-                  "type": "string"
+                "items": {
+                  "$ref": "#/components/schemas/KeyValueRequest"
                 }
               },
               "conditionalFormat": {
@@ -5355,6 +5651,130 @@
           "updatedDatetime": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "KeyValueRequest": {
+        "type": "object",
+        "description": "Marker name with a text value (replace / generateTotals / numberFormat)",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Marker / column name"
+          },
+          "value": {
+            "type": "string",
+            "description": "Text value"
+          }
+        }
+      },
+      "ExportPdfAsyncResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "description": "pending → processing → success | failed"
+          },
+          "statusUrl": {
+            "type": "string",
+            "nullable": true,
+            "description": "GET this URL to poll the job; it returns a fresh downloadUrl once status is success."
+          }
+        }
+      },
+      "ProjectImportResult": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "sourceProject": {
+            "type": "string",
+            "nullable": true
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportTemplateItem"
+            }
+          },
+          "fonts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportFontItem"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImportTemplateItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "skip"
+            ]
+          },
+          "fromVersion": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "toVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ImportFontItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "skip"
+            ]
+          },
+          "reason": {
+            "type": "string",
             "nullable": true
           }
         }

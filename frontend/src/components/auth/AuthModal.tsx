@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useAppConfig } from '@/hooks/use-app-config'
 import {
   Modal,
   ModalContent,
@@ -35,54 +36,78 @@ const mockUser = {
   password: ''
 }
 
+const PCT_TEXT: Record<'danger' | 'warning' | 'success', string> = {
+  danger: 'text-danger',
+  warning: 'text-warning',
+  success: 'text-success'
+}
+
 // Password Strength Indicator Component
 const PasswordStrengthIndicator = ({ password }: { password: string }) => {
   const passedRules = PASSWORD_RULES.filter(rule => rule.test(password))
   const passedCount = passedRules.length
   const percentage = (passedCount / PASSWORD_RULES.length) * 100
 
-  const getColor = () => {
+  const getColor = (): 'danger' | 'warning' | 'success' => {
     if (passedCount <= 2) return 'danger'
     if (passedCount <= 4) return 'warning'
     return 'success'
   }
 
-  const getColorHex = () => {
-    if (passedCount <= 2) return '#ef4444'
-    if (passedCount <= 4) return '#eab308'
-    return '#22c55e'
-  }
-
   return (
-    <div className='mt-3 rounded-lg border border-default-200 bg-content2 p-4'>
+    <div className='mt-1 border border-divider bg-content2 p-4'>
       <div className='mb-3 flex items-center justify-between'>
-        <span className='text-sm font-semibold text-default-700'>Password Requirements</span>
-        <span className='text-sm font-bold' style={{ color: getColorHex() }}>
-          ({Math.round(percentage)}%)
+        <span className='font-mono text-[12px] uppercase tracking-[0.14em] text-default-500'>
+          Password requirements
         </span>
+        <span className={`font-mono text-[12px] font-bold ${PCT_TEXT[getColor()]}`}>{Math.round(percentage)}%</span>
       </div>
 
-      <Progress aria-label='Password strength' value={percentage} color={getColor()} className='mb-3' size='sm' />
+      <Progress
+        aria-label='Password strength'
+        value={percentage}
+        color={getColor()}
+        className='mb-3'
+        size='sm'
+        radius='none'
+      />
 
-      <div className='grid gap-1.5'>
+      <ul className='grid gap-1.5'>
         {PASSWORD_RULES.map(rule => {
           const passed = rule.test(password)
           return (
-            <div key={rule.key} className='flex items-center gap-2'>
-              <div
-                className={`flex h-4 w-4 items-center justify-center rounded-full text-xs transition-colors ${
-                  passed ? 'bg-success text-white' : 'border border-default-300 bg-content1'
-                }`}>
-                {passed && <Icon icon='lucide:check' className='h-3 w-3' />}
-              </div>
-              <span className={`text-xs ${passed ? 'text-success' : 'text-default-500'}`}>{rule.label}</span>
-            </div>
+            <li key={rule.key} className='flex items-center gap-2'>
+              <Icon
+                icon={passed ? 'lucide:check' : 'lucide:minus'}
+                aria-hidden='true'
+                className={`h-3.5 w-3.5 shrink-0 ${passed ? 'text-success' : 'text-default-500'}`}
+              />
+              <span className={`text-[12px] ${passed ? 'text-success' : 'text-default-500'}`}>
+                {rule.label}
+                <span className='sr-only'>{passed ? ' — met' : ' — not met'}</span>
+              </span>
+            </li>
           )
         })}
-      </div>
+      </ul>
     </div>
   )
 }
+
+const INPUT_CLASSNAMES = {
+  label: 'text-[13px] font-medium text-foreground',
+  inputWrapper:
+    'bg-content2 border-default-300 data-[hover=true]:border-default-500 group-data-[focus=true]:border-primary group-data-[focus=true]:shadow-[inset_3px_0_0_#F2271C]',
+  errorMessage: 'text-[12px]'
+}
+
+const FieldError = ({ message }: { message?: string }) =>
+  message ? (
+    <span className='flex items-center gap-1.5 text-danger'>
+      <Icon icon='lucide:circle-alert' aria-hidden='true' className='h-3.5 w-3.5 shrink-0' />
+      {message}
+    </span>
+  ) : null
 
 const isPasswordValid = (password: string) => {
   return PASSWORD_RULES.every(rule => rule.test(password))
@@ -114,29 +139,25 @@ const PasswordInput = ({
     value={value}
     onValueChange={onChange}
     isInvalid={!!error}
-    errorMessage={error}
+    errorMessage={<FieldError message={error} />}
     endContent={
-      <button type='button' onClick={onToggle} tabIndex={-1} className='text-default-400 hover:text-default-600'>
-        <Icon icon={show ? 'lucide:eye-off' : 'lucide:eye'} className='h-5 w-5' />
+      <button
+        type='button'
+        onClick={onToggle}
+        aria-label={show ? 'Hide password' : 'Show password'}
+        aria-pressed={show}
+        className='text-default-500 transition-colors hover:text-foreground'>
+        <Icon icon={show ? 'lucide:eye-off' : 'lucide:eye'} className='h-4 w-4' />
       </button>
     }
-    classNames={{
-      inputWrapper:
-        'bg-content1 border-default-200 data-[hover=true]:border-primary-300 group-data-[focus=true]:border-primary-500'
-    }}
+    classNames={INPUT_CLASSNAMES}
   />
 )
 
 const AuthModal = () => {
-  const {
-    isAuthModalOpen,
-    closeAuthModal,
-    authView,
-    setAuthView,
-    login,
-    loginWithGoogle,
-    startRegistration
-  } = useAuth()
+  const { githubClientId } = useAppConfig()
+  const { isAuthModalOpen, closeAuthModal, authView, setAuthView, login, loginWithGoogle, startRegistration } =
+    useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -185,7 +206,7 @@ const AuthModal = () => {
   }
 
   const handleGithubLogin = () => {
-    const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID
+    const clientId = githubClientId
     if (!clientId) {
       addToast({ title: 'Configuration Error', description: 'GitHub Client ID is missing', color: 'danger' })
       return
@@ -257,20 +278,23 @@ const AuthModal = () => {
       isOpen={isAuthModalOpen}
       onOpenChange={open => !open && closeAuthModal()}
       size='md'
-      backdrop='blur'
+      backdrop='opaque'
       placement='center'
       classNames={{
-        base: 'border border-default-100 shadow-xl bg-content1',
-        header: 'border-b border-default-100 py-4',
+        base: 'border border-default-300 bg-content1 shadow-[0_24px_60px_-24px_rgba(20,20,20,.3)] dark:shadow-[0_24px_60px_-24px_rgba(0,0,0,.8)]',
+        header: 'border-b border-divider py-5',
         body: 'py-6',
-        footer: 'border-t border-default-100 py-4'
+        footer: 'border-t border-divider py-4'
       }}>
       <ModalContent>
         {() => (
           <>
-            <ModalHeader className='flex flex-col gap-1 text-center'>
-              <h2 className='text-xl font-bold text-foreground'>{titleMap[authView]}</h2>
-              <p className='text-sm font-normal text-default-500'>{subtitleMap[authView]}</p>
+            <ModalHeader className='flex flex-col gap-2'>
+              <span className='font-mono text-[12px] font-normal uppercase tracking-[0.16em] text-default-500'>
+                {authView === 'login' ? 'Sign in' : 'Register'}
+              </span>
+              <h2 className='press-display text-[28px] text-foreground'>{titleMap[authView]}</h2>
+              <p className='text-[14px] font-normal text-default-500'>{subtitleMap[authView]}</p>
             </ModalHeader>
 
             <ModalBody>
@@ -280,23 +304,23 @@ const AuthModal = () => {
                   <form id='login-form' onSubmit={handleLoginSubmit} className='flex flex-col gap-4'>
                     <Button
                       variant='bordered'
-                      startContent={<Icon icon='flat-color-icons:google' className='h-5 w-5' />}
-                      className='font-medium text-default-700'
+                      startContent={<Icon icon='flat-color-icons:google' aria-hidden='true' className='h-4 w-4' />}
+                      className='h-11 border-default-300 font-semibold uppercase tracking-[0.04em] text-foreground data-[hover=true]:border-foreground'
                       onPress={() => handleGoogleLogin()}>
                       Continue with Google
                     </Button>
 
                     <Button
                       variant='bordered'
-                      startContent={<Icon icon='mdi:github' className='h-5 w-5' />}
-                      className='font-medium text-default-700'
+                      startContent={<Icon icon='mdi:github' aria-hidden='true' className='h-4 w-4' />}
+                      className='h-11 border-default-300 font-semibold uppercase tracking-[0.04em] text-foreground data-[hover=true]:border-foreground'
                       onPress={() => handleGithubLogin()}>
                       Continue with GitHub
                     </Button>
 
-                    <div className='flex items-center gap-2'>
+                    <div className='flex items-center gap-3' aria-hidden='true'>
                       <Divider className='flex-1' />
-                      <span className='text-xs uppercase text-default-400'>Or</span>
+                      <span className='font-mono text-[11px] uppercase tracking-[0.16em] text-default-500'>Or</span>
                       <Divider className='flex-1' />
                     </div>
 
@@ -306,20 +330,23 @@ const AuthModal = () => {
                       variant='bordered'
                       labelPlacement='outside'
                       value={email}
-                      onValueChange={v => { setEmail(v); setErrors(e => ({ ...e, email: undefined })) }}
-                      isInvalid={!!errors.email}
-                      errorMessage={errors.email}
-                      classNames={{
-                        inputWrapper:
-                          'bg-content1 border-default-200 data-[hover=true]:border-primary-300 group-data-[focus=true]:border-primary-500'
+                      onValueChange={v => {
+                        setEmail(v)
+                        setErrors(e => ({ ...e, email: undefined }))
                       }}
+                      isInvalid={!!errors.email}
+                      errorMessage={<FieldError message={errors.email} />}
+                      classNames={INPUT_CLASSNAMES}
                     />
 
                     <PasswordInput
                       label='Password'
                       placeholder='Enter your password'
                       value={password}
-                      onChange={v => { setPassword(v); setErrors(e => ({ ...e, password: undefined })) }}
+                      onChange={v => {
+                        setPassword(v)
+                        setErrors(e => ({ ...e, password: undefined }))
+                      }}
                       show={showPassword}
                       onToggle={() => setShowPassword(!showPassword)}
                       error={errors.password}
@@ -336,13 +363,13 @@ const AuthModal = () => {
                       variant='bordered'
                       labelPlacement='outside'
                       value={email}
-                      onValueChange={v => { setEmail(v); setErrors(e => ({ ...e, email: undefined })) }}
-                      isInvalid={!!errors.email}
-                      errorMessage={errors.email}
-                      classNames={{
-                        inputWrapper:
-                          'bg-content1 border-default-200 data-[hover=true]:border-primary-300 group-data-[focus=true]:border-primary-500'
+                      onValueChange={v => {
+                        setEmail(v)
+                        setErrors(e => ({ ...e, email: undefined }))
                       }}
+                      isInvalid={!!errors.email}
+                      errorMessage={<FieldError message={errors.email} />}
+                      classNames={INPUT_CLASSNAMES}
                     />
 
                     <PasswordInput
@@ -388,7 +415,8 @@ const AuthModal = () => {
               {authView === 'login' && (
                 <Button
                   color='primary'
-                  className='w-full font-bold shadow-lg shadow-primary/20'
+                  size='lg'
+                  className='w-full font-bold uppercase tracking-[0.04em]'
                   type='submit'
                   form='login-form'
                   onPress={handleLogin}
@@ -400,7 +428,8 @@ const AuthModal = () => {
               {authView === 'register' && (
                 <Button
                   color='primary'
-                  className='w-full font-bold shadow-lg shadow-primary/20'
+                  size='lg'
+                  className='w-full font-bold uppercase tracking-[0.04em]'
                   type='submit'
                   form='register-form'
                   onPress={handleRegister}
@@ -410,14 +439,14 @@ const AuthModal = () => {
                 </Button>
               )}
 
-              <div className='text-center text-sm text-default-500'>
+              <div className='text-center text-[14px] text-default-500'>
                 {authView === 'login' && (
                   <>
                     Don&apos;t have an account?{' '}
                     <Link
                       as='button'
                       onPress={() => setAuthView('register')}
-                      className='cursor-pointer font-bold text-primary'>
+                      className='cursor-pointer font-semibold text-foreground underline decoration-primary decoration-2 underline-offset-4 hover:text-primary'>
                       Register
                     </Link>
                   </>
@@ -428,7 +457,7 @@ const AuthModal = () => {
                     <Link
                       as='button'
                       onPress={() => setAuthView('login')}
-                      className='cursor-pointer font-bold text-primary'>
+                      className='cursor-pointer font-semibold text-foreground underline decoration-primary decoration-2 underline-offset-4 hover:text-primary'>
                       Login
                     </Link>
                   </>

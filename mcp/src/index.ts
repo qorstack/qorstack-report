@@ -7,7 +7,7 @@
  * without reverse-engineering the REST API.
  *
  * Configuration (environment variables):
- *   QORSTACK_API_URL   Base URL of the Qorstack Report API (default http://localhost:8080)
+ *   QORSTACK_API_URL   Base URL of the Qorstack Report API (default http://localhost:8080/api; /api is appended if missing)
  *   QORSTACK_API_KEY   API key for authentication (sent as the X-API-Key header). Required.
  *
  * Transport: stdio (the standard for locally-launched MCP servers).
@@ -16,7 +16,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 
-const API_URL = (process.env.QORSTACK_API_URL ?? 'http://localhost:8080').replace(/\/+$/, '')
+const API_BASE = (process.env.QORSTACK_API_URL ?? 'http://localhost:8080/api').replace(/\/+$/, '')
+// v2: the API is under /api on the same port as the web UI; accept v1-style URLs too.
+const API_URL = API_BASE.endsWith('/api') ? API_BASE : `${API_BASE}/api`
 const API_KEY = process.env.QORSTACK_API_KEY ?? ''
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -84,14 +86,69 @@ server.registerTool(
   }
 )
 
+// Keyed items: every entry names the template marker it fills via "key".
+const keyField = z.string().describe('Marker name in the template, e.g. "logo" for {{image:logo}}')
+const cellValue = z.union([z.string(), z.number(), z.boolean(), z.null()])
+const columnName = z.string().describe('A name listed in "columns"')
+
 const generateInput = {
   templateKey: z.string().describe('The stored template key to render'),
+  templateVersion: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe('Render this stored version of the template (omit for the current version)'),
   fileName: z.string().optional().describe('Output file name without extension (a UUID is used if omitted)'),
-  replace: z.record(z.string(), z.string()).optional().describe('Simple variable substitution: { "placeholder": "value" }'),
-  table: z.array(z.record(z.string(), z.any())).optional().describe('Table data: [{ rows: [...], sort?, repeatHeader? }]'),
-  image: z.record(z.string(), z.any()).optional().describe('Image injection, keyed by placeholder'),
-  qrcode: z.record(z.string(), z.any()).optional().describe('QR codes, keyed by placeholder'),
-  barcode: z.record(z.string(), z.any()).optional().describe('Barcodes, keyed by placeholder')
+  replace: z
+    .array(z.object({ key: z.string(), value: z.string() }))
+    .optional()
+    .describe('Variable substitution: [{ "key": "customer_name", "value": "ACME" }]'),
+  table: z
+    .array(
+      z
+        .object({
+          columns: z
+            .array(z.string())
+            .describe('Column marker names listed once, e.g. ["item", "qty"] for {{row:item}} / {{row:qty}}'),
+          rows: z
+            .array(z.array(cellValue))
+            .describe('Rows; each row is an array of values in "columns" order, e.g. [["Widget", 2]]'),
+          sort: z
+            .array(z.object({ field: columnName, direction: z.enum(['asc', 'desc']) }))
+            .optional()
+            .describe('Sort rows: [{ "field": "qty", "direction": "desc" }]'),
+          verticalMerge: z.array(columnName).optional().describe('Merge equal adjacent values: ["group"]'),
+          collapse: z.array(columnName).optional().describe('Group rows by column: ["category"]')
+        })
+        .passthrough()
+    )
+    .optional()
+    .describe('Tables in document order: [{ "columns": ["item", "qty"], "rows": [["Widget", 2]], "sort"?, "repeatHeader"? }]'),
+  image: z
+    .array(z.object({ key: keyField }).passthrough())
+    .optional()
+    .describe('Images: [{ "key": "logo", "src": "https://… or base64", "width"?, "height"?, "fit"? }]'),
+  qrcode: z
+    .array(z.object({ key: keyField }).passthrough())
+    .optional()
+    .describe('QR codes: [{ "key": "payment", "text": "…", "size"? }]'),
+  barcode: z
+    .array(z.object({ key: keyField }).passthrough())
+    .optional()
+    .describe('Barcodes: [{ "key": "sku", "text": "…", "format"? }]'),
+  async: z
+    .boolean()
+    .optional()
+    .describe(
+      'Pro only. Queue the render instead of waiting: returns { jobId, status: "pending", statusUrl }. ' +
+        'Then call qorstack_get_job until status is "success" (downloadUrl) or "failed" (errorMessage). Use for large documents.'
+    ),
+  webhookUrl: z
+    .string()
+    .url()
+    .optional()
+    .describe('Pro, with async only. Public https URL that receives POST { jobId, status, downloadUrl?, error? } when the job finishes')
 }
 
 /** Drop undefined keys so the request body only carries what the caller provided. */
@@ -102,7 +159,7 @@ server.registerTool(
   'qorstack_generate_pdf',
   {
     title: 'Generate PDF/DOCX from template',
-    description: 'Render a stored Word template to PDF (or DOCX) by merging JSON data. Returns a job id and a downloadUrl.',
+    description: 'Render a stored Word template to PDF (or DOCX) by merging JSON data. Returns a job id and a downloadUrl, or with async: true (Pro) a queued job to poll with qorstack_get_job.',
     inputSchema: {
       ...generateInput,
       fileType: z.enum(['pdf', 'docx']).default('pdf').describe('Output format')
@@ -121,12 +178,9 @@ server.registerTool(
 server.registerTool(
   'qorstack_generate_excel',
   {
-    title: 'Generate Excel/PDF from template',
-    description: 'Render a stored Excel (.xlsx) template by merging JSON data. Output as xlsx or pdf. Returns a job id and a downloadUrl.',
-    inputSchema: {
-      ...generateInput,
-      fileType: z.enum(['xlsx', 'pdf']).default('xlsx').describe('Output format')
-    }
+    title: 'Generate Excel from template',
+    description: 'Render a stored Excel (.xlsx) template by merging JSON data. Output is .xlsx (Excel in, Excel out). Returns a job id and a downloadUrl, or with async: true (Pro) a queued job to poll with qorstack_get_job.',
+    inputSchema: generateInput
   },
   async (args): Promise<ToolResult> => {
     try {
@@ -142,7 +196,7 @@ server.registerTool(
   'qorstack_get_job',
   {
     title: 'Get render job',
-    description: 'Get the status and result (downloadUrl, errorMessage) of a render job by its id.',
+    description: 'Get the status of a render job by id: pending → processing → success (fresh downloadUrl) | failed (errorMessage). Poll this after a generate call with async: true.',
     inputSchema: { jobId: z.string().describe('The render job id returned by a generate tool') }
   },
   async ({ jobId }): Promise<ToolResult> => {

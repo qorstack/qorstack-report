@@ -1,6 +1,6 @@
 {
   "name": "qorstack-report-sdk",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -32,7 +32,14 @@
   "devDependencies": {
     "@types/node": "^25.2.1",
     "nswag": "^14.6.3",
-    "swagger-typescript-api": "^13.2.16",
+    "swagger-typescript-api": "13.12.2",
     "typescript": "^5.9.3"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "pnpm": {
+    "overrides": {
+      "axios": "1.20.0",
+      "defu": "6.1.5"
+    }
   }
 }

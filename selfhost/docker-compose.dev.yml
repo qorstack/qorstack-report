@@ -1,0 +1,15 @@
+# Local development override — used by `make infra-up` (with the repo-root .env).
+# Runs only the infrastructure (postgres, RustFS, font-syncer, Gotenberg) and publishes their ports to
+# localhost so `make dev` (dotnet watch + next dev) can reach them. The app container is not started.
+#
+#   docker compose -f selfhost/docker-compose.yml -f selfhost/docker-compose.dev.yml --env-file .env \
+#     up -d postgres rustfs font-syncer gotenberg
+services:
+  rustfs:
+    ports:
+      - "9000:9000"   # S3 API      → STORAGE_ENDPOINT=localhost:9000
+      - "9001:9001"   # web console → http://localhost:9001
+
+  gotenberg:
+    ports:
+      - "3001:3000"   # → GOTENBERG_URL=http://localhost:3001 (3000 is the web dev server)

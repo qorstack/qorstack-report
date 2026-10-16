@@ -1,32 +1,45 @@
-import React, { useState, useContext } from 'react'
-import { Button, Input, Checkbox, Select, SelectItem, Accordion, AccordionItem, Chip, cn } from '@heroui/react'
+import React, { useState } from 'react'
+import {
+  Input,
+  Checkbox,
+  Select,
+  SelectItem,
+  Accordion,
+  AccordionItem,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalHeader,
+  cn
+} from '@heroui/react'
 import Icon from '@/components/icon'
-import { SortDefinition } from '@/api/generated/main-service/apiGenerated'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  rectSortingStrategy,
-  horizontalListSortingStrategy,
-  useSortable
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
+import type { BuilderSortDefinition as SortDefinition } from '@/types/pdf-sandbox'
+import { arrayMove } from '@dnd-kit/sortable'
 import {
   ExcelTableItem,
   ConditionalFormatConfig,
   ConditionalFormatRule,
   SplitToSheetsConfig
 } from '@/types/excel-sandbox'
-import { formatKey, handleEnterKey, EmptyState, ExpandToggle, CheckboxCard, ColumnHeader } from '@/components/pdf/SandboxInputs'
+import {
+  handleEnterKey,
+  EmptyState,
+  ExpandToggle,
+  CheckboxCard,
+  ColumnHeader,
+  StatusDot,
+  SummaryBar,
+  tableReadiness
+} from '@/components/pdf/SandboxInputs'
+import { BrandChip } from '@/components/ui/BrandChip'
+import {
+  AddButton,
+  MonoLabel,
+  fieldClasses,
+  rowFieldClasses,
+  rowRemoveButton,
+  rowSelectClasses
+} from '@/components/template-editor/field-styles'
 
 // Re-export shared types and sections from PDF SandboxInputs
 export {
@@ -43,66 +56,6 @@ export {
 } from '@/components/pdf/SandboxInputs'
 export type { ReplaceItem, ImageItem, QrCodeItem, BarcodeItem } from '@/components/pdf/SandboxInputs'
 
-// --- DnD Helpers (mirrored from PDF SandboxInputs) ---
-
-// Context lets DragHandle pick up listeners from its enclosing SortableItem
-// without prop drilling — only the handle icon initiates a drag.
-type UseSortableReturn = ReturnType<typeof useSortable>
-interface DragHandleCtx {
-  listeners: UseSortableReturn['listeners']
-  setActivatorRef: UseSortableReturn['setActivatorNodeRef']
-}
-const DragHandleContext = React.createContext<DragHandleCtx | null>(null)
-
-const DragHandle = () => {
-  const ctx = useContext(DragHandleContext)
-  return (
-    <div
-      ref={ctx?.setActivatorRef}
-      {...ctx?.listeners}
-      className='flex cursor-grab items-center text-default-300 hover:text-default-500 active:cursor-grabbing'>
-      <Icon icon='lucide:grip-vertical' className='h-4 w-4' />
-    </div>
-  )
-}
-
-const SortableItem = ({ id, children, className }: { id: string; children: React.ReactNode; className?: string }) => {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id
-  })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 10 : undefined
-  }
-  return (
-    <DragHandleContext.Provider value={{ listeners, setActivatorRef: setActivatorNodeRef }}>
-      <div ref={setNodeRef} style={style} {...attributes} className={className}>
-        {children}
-      </div>
-    </DragHandleContext.Provider>
-  )
-}
-
-const SortableHeaderItem = ({
-  id,
-  children,
-  className
-}: {
-  id: string
-  children: React.ReactNode
-  className?: string
-}) => {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id })
-  const style = { transform: CSS.Transform.toString(transform), transition }
-  return (
-    <th ref={setNodeRef} style={style} {...attributes} {...listeners} className={className}>
-      {children}
-    </th>
-  )
-}
-
 // =====================================================================================
 // Advanced Excel field editors (generateTotals / numberFormat / conditionalFormat / splitToSheets)
 // Kept inline because they're only used inside ExcelTableEditor.
@@ -113,21 +66,33 @@ const cleanCol = (col: string | null | undefined) => (col == null ? '' : String(
 // --- Shared row / control styling — mirrors PDF ReplacementsSection so the
 // Excel sandbox reads in the same visual language as PDF Variables. ---
 
-const rowShell = (filled: boolean) =>
-  cn(
-    'group flex items-center gap-1.5 rounded-lg border-l-[3px] px-1.5 py-1 transition-colors duration-200',
-    // Filled = complete (brand-tint). Empty = neutral gray (clearly distinct).
-    filled ? 'builder-complete-row hover:bg-content2/60' : 'builder-empty-row border-l-transparent'
-  )
+// Filled/empty state is shown by a StatusDot inside the row, not by colored borders.
+const rowShell = (_filled: boolean) => 'group flex items-center gap-2 py-0.5 transition-colors duration-150'
 
-const fieldInputClasses = {
-  inputWrapper: 'builder-field border h-8 min-h-0 px-2.5 rounded-md transition-all duration-200'
-}
+const fieldInputClasses = rowFieldClasses
 
-const fieldSelectTrigger = 'builder-field border h-8 min-h-0 px-2.5 rounded-md transition-all duration-200'
+const deleteRowBtn = rowRemoveButton
 
-const deleteRowBtn =
-  'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-300/45 opacity-70 transition-all duration-200 hover:bg-danger/10 hover:text-danger-500 hover:opacity-100'
+const chipBase = 'flex shrink-0 items-center gap-1 whitespace-nowrap px-1 py-1 text-[12px]'
+const okChip = cn(chipBase, 'text-default-500')
+const attentionChip = cn(chipBase, 'text-default-400')
+
+const EditorHeader: React.FC<{ title: string; hint?: string; action?: React.ReactNode }> = ({ title, hint, action }) => (
+  <div className='flex items-start justify-between gap-3'>
+    <div>
+      <MonoLabel>{title}</MonoLabel>
+      {hint && <p className='mt-1 text-[13px] text-default-500'>{hint}</p>}
+    </div>
+    {action}
+  </div>
+)
+
+/** Columns come from the file — there is nothing to pick until the sheet has {{row:...}} markers. */
+const NO_COLUMNS_HINT = 'No columns yet. Add {{row:name}} markers to a row of your sheet, then use Replace file.'
+
+const EmptyHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className='border border-dashed border-divider px-3 py-2.5 text-[13px] text-default-500'>{children}</p>
+)
 
 // Summary bar — filled/empty counts + filter toggle + jump-to-next-empty.
 interface RowSummaryProps {
@@ -150,30 +115,33 @@ const RowSummary: React.FC<RowSummaryProps> = ({
   if (total === 0) return null
   const empty = total - filled
   return (
-    <div className='mb-2 flex items-center justify-between gap-2 px-1'>
-      <div className='flex items-center gap-2 text-[11px] font-semibold'>
-        <span className='text-default-600'>
+    <div className='flex flex-wrap items-center justify-between gap-2'>
+      <div className='flex items-center gap-2 text-[13px]'>
+        <span className='text-default-500'>
           {filled}/{total} {itemLabel}
         </span>
-        <span className='text-default-400/40'>·</span>
+        <span aria-hidden className='text-default-400'>
+          ·
+        </span>
         {empty > 0 ? (
           <button
             type='button'
             onClick={onToggleEmptyOnly}
+            aria-pressed={showEmptyOnly}
             className={cn(
-              'flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-200',
+              'flex items-center gap-1.5 border px-1.5 py-0.5 transition-colors duration-150',
               showEmptyOnly
-                ? 'builder-attention-chip'
-                : 'builder-attention-text hover:bg-[var(--builder-attention-chip-bg)]'
+                ? 'border-default-300 text-foreground'
+                : 'border-transparent text-default-500 hover:border-default-300 hover:text-foreground'
             )}
-            title={showEmptyOnly ? 'Show all' : 'Filter empty only'}>
-            <span className='builder-attention-dot h-1.5 w-1.5 rounded-full' />
+            title={showEmptyOnly ? 'Show all' : 'Show empty only'}>
+            <StatusDot filled={false} />
             {empty} empty
             {showEmptyOnly && <Icon icon='lucide:x' className='h-3 w-3' />}
           </button>
         ) : (
-          <span className='flex items-center gap-1 text-primary'>
-            <Icon icon='lucide:check' className='h-3 w-3' />
+          <span className='flex items-center gap-1.5 text-default-500'>
+            <StatusDot filled />
             All filled
           </span>
         )}
@@ -182,10 +150,10 @@ const RowSummary: React.FC<RowSummaryProps> = ({
         <button
           type='button'
           onClick={onJumpNextEmpty}
-          className='flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold text-default-500 transition-colors duration-200 hover:bg-content2 hover:text-foreground'
-          title='Focus next empty entry'>
+          className='flex items-center gap-1 px-1 py-0.5 text-[13px] text-default-500 transition-colors duration-150 hover:text-foreground'
+          title='Go to next empty entry'>
           Next empty
-          <Icon icon='lucide:arrow-down' className='h-3 w-3' />
+          <Icon icon='lucide:arrow-down' className='h-3.5 w-3.5' />
         </button>
       )}
     </div>
@@ -234,20 +202,12 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
   }
 
   return (
-    <div className='flex flex-col gap-1.5'>
-      <div className='flex items-center justify-between'>
-        <div>
-          <span className='text-xs font-semibold text-default-700'>Conditional Formatting</span>
-          <p className='text-[11px] text-default-500'>Apply cell colors when values match a rule.</p>
-        </div>
-        <Button
-          size='sm'
-          variant='flat'
-          className='h-7 min-w-0 bg-content2 px-2 text-xs font-semibold text-default-700 hover:bg-content3'
-          onPress={addConfig}>
-          + Field
-        </Button>
-      </div>
+    <div className='flex flex-col gap-2.5'>
+      <EditorHeader
+        title='Color rules'
+        hint='Color cells when their value matches a rule.'
+        action={<AddButton onPress={addConfig}>Add rule</AddButton>}
+      />
 
       <RowSummary
         total={configs.length}
@@ -259,7 +219,7 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
       />
 
       {configs.length === 0 ? (
-        <p className='text-[11px] italic text-default-500'>No rules yet.</p>
+        <EmptyHint>No color rules yet.</EmptyHint>
       ) : (
         <div className='flex flex-col gap-1'>
           {configs
@@ -268,19 +228,20 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
             .map(({ cfg, ci }) => {
               const hasField = !!cfg.field
               return (
-                <div key={ci} className={cn(rowShell(hasField), 'flex-col items-stretch gap-2 py-1.5')}>
+                <div key={ci} className={cn(rowShell(hasField), 'flex-col items-stretch gap-2 border-b border-divider py-2')}>
                   <div className='flex items-center gap-1.5'>
-                    <Icon icon='lucide:paintbrush' className='h-3.5 w-3.5 shrink-0 text-default-400' />
+                    <StatusDot filled={hasField} />
+                    <Icon icon='lucide:paintbrush' className='h-4 w-4 shrink-0 text-default-500' />
                     <Select
                       id={`cf-field-${ci}`}
                       size='sm'
-                      variant='flat'
+                      variant='bordered'
                       aria-label='Field'
-                      placeholder='Select column...'
+                      placeholder='Choose column'
                       selectedKeys={cfg.field ? [cfg.field] : []}
                       onChange={e => updateConfig(ci, { field: e.target.value })}
                       className='flex-1'
-                      classNames={{ trigger: fieldSelectTrigger }}>
+                      classNames={rowSelectClasses}>
                       {columns.map(col => (
                         <SelectItem key={cleanCol(col)} textValue={cleanCol(col)}>
                           {cleanCol(col)}
@@ -290,30 +251,31 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
                     <button
                       type='button'
                       onClick={() => removeConfig(ci)}
-                      title='Remove field'
+                      title='Remove color rule'
+                      aria-label='Remove color rule'
                       className={deleteRowBtn}>
                       <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
                     </button>
                   </div>
 
-                  <div className='flex flex-col gap-1 pl-5'>
+                  <div className='flex flex-col gap-2 pl-6'>
                     {cfg.rules.map((rule, ri) => (
-                      <div key={ri} className='grid grid-cols-1 gap-1.5 rounded-md bg-content2/30 p-1.5 sm:grid-cols-6'>
+                      <div key={ri} className='grid grid-cols-1 gap-2 border border-divider p-2 sm:grid-cols-6'>
                         <Select
                           size='sm'
-                          variant='flat'
-                          aria-label='operator'
+                          variant='bordered'
+                          aria-label='Condition'
                           selectedKeys={rule.operator ? [rule.operator] : ['=']}
                           onChange={e => updateRule(ci, ri, { operator: e.target.value })}
                           className='sm:col-span-2'
-                          classNames={{ trigger: fieldSelectTrigger }}>
+                          classNames={rowSelectClasses}>
                           {CF_OPERATORS.map(op => (
                             <SelectItem key={op}>{op}</SelectItem>
                           ))}
                         </Select>
                         <Input
                           size='sm'
-                          variant='flat'
+                          variant='bordered'
                           placeholder='Value'
                           value={String(rule.value ?? '')}
                           onValueChange={v => updateRule(ci, ri, { value: v })}
@@ -322,7 +284,7 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
                         />
                         <Input
                           size='sm'
-                          variant='flat'
+                          variant='bordered'
                           type='color'
                           aria-label='Font color'
                           value={rule.fontColor || '#000000'}
@@ -331,7 +293,7 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
                         />
                         <Input
                           size='sm'
-                          variant='flat'
+                          variant='bordered'
                           type='color'
                           aria-label='Background color'
                           value={rule.backgroundColor || '#FFFFFF'}
@@ -340,39 +302,35 @@ const ConditionalFormatEditor: React.FC<ConditionalFormatEditorProps> = ({ colum
                         />
                         <div className='flex items-center gap-3 sm:col-span-6'>
                           <Checkbox
+                            color='default'
                             isSelected={!!rule.bold}
                             onValueChange={b => updateRule(ci, ri, { bold: b })}
                             size='sm'>
-                            <span className='text-xs'>Bold</span>
+                            <span className='text-[13px]'>Bold</span>
                           </Checkbox>
                           <Checkbox
+                            color='default'
                             isSelected={!!rule.italic}
                             onValueChange={b => updateRule(ci, ri, { italic: b })}
                             size='sm'>
-                            <span className='text-xs'>Italic</span>
+                            <span className='text-[13px]'>Italic</span>
                           </Checkbox>
-                          <Button
-                            size='sm'
-                            variant='light'
-                            color='danger'
-                            className='ml-auto h-7 min-w-0 px-2 text-xs'
-                            onPress={() => {
+                          <button
+                            type='button'
+                            className='ml-auto text-[13px] text-default-500 transition-colors hover:text-danger'
+                            onClick={() => {
                               const next = [...configs]
                               next[ci] = { ...next[ci], rules: next[ci].rules.filter((_, idx) => idx !== ri) }
                               commit(next)
                             }}>
-                            Remove rule
-                          </Button>
+                            Remove condition
+                          </button>
                         </div>
                       </div>
                     ))}
-                    <Button
-                      size='sm'
-                      variant='flat'
-                      className='h-7 min-w-0 self-start px-2 text-xs'
-                      onPress={() => updateConfig(ci, { rules: [...cfg.rules, {}] })}>
-                      + Add rule
-                    </Button>
+                    <AddButton className='self-start' onPress={() => updateConfig(ci, { rules: [...cfg.rules, {}] })}>
+                      Add condition
+                    </AddButton>
                   </div>
                 </div>
               )
@@ -391,21 +349,23 @@ interface SplitToSheetsEditorProps {
 const SplitToSheetsEditor: React.FC<SplitToSheetsEditorProps> = ({ value, onChange }) => {
   const enabled = !!value
   return (
-    <div className='flex flex-col gap-1.5'>
-      <div className='flex items-center justify-between'>
-        <span className='text-xs font-semibold text-default-700'>Split to Sheets</span>
-        <Checkbox size='sm' isSelected={enabled} onValueChange={on => onChange(on ? { field: '' } : undefined)}>
-          <span className='text-xs'>Enabled</span>
-        </Checkbox>
-      </div>
-      <span className='text-[11px] text-default-400'>Creates one sheet per distinct value of the field.</span>
+    <div className='flex flex-col gap-2.5'>
+      <EditorHeader
+        title='Split into sheets'
+        hint='Create one sheet for each different value of a field.'
+        action={
+          <Checkbox color='default' size='sm' isSelected={enabled} onValueChange={on => onChange(on ? { field: '' } : undefined)}>
+            <span className='text-[13px]'>On</span>
+          </Checkbox>
+        }
+      />
       {enabled && (
         <div className='grid grid-cols-1 gap-2 sm:grid-cols-2'>
           <Input
             size='sm'
-            variant='flat'
-            radius='sm'
-            label='Group by Field'
+            variant='bordered'
+            classNames={fieldClasses}
+            label='Split by field'
             labelPlacement='outside'
             placeholder='e.g. region'
             value={value?.field ?? ''}
@@ -413,9 +373,9 @@ const SplitToSheetsEditor: React.FC<SplitToSheetsEditorProps> = ({ value, onChan
           />
           <Input
             size='sm'
-            variant='flat'
-            radius='sm'
-            label='Template Sheet (optional)'
+            variant='bordered'
+            classNames={fieldClasses}
+            label='Sheet to copy (optional)'
             labelPlacement='outside'
             placeholder='Sheet name to clone'
             value={value?.templateSheet ?? ''}
@@ -458,21 +418,16 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
   }
 
   return (
-    <div className='flex flex-col gap-2'>
-      <div className='flex items-center justify-between'>
-        <div>
-          <span className='text-xs font-semibold text-default-700'>Generate Totals</span>
-          <p className='text-[11px] text-default-500'>Append a totals row below the table.</p>
-        </div>
-        <Button
-          size='sm'
-          variant='flat'
-          className='h-7 min-w-0 bg-content2 px-2 text-xs font-semibold text-default-700 hover:bg-content3'
-          isDisabled={colOptions.length === 0}
-          onPress={() => commit([...entries, ['', 'sum']])}>
-          + Add
-        </Button>
-      </div>
+    <div className='flex flex-col gap-2.5'>
+      <EditorHeader
+        title='Totals row'
+        hint='Add a totals row below the table.'
+        action={
+          colOptions.length > 0 ? (
+            <AddButton onPress={() => commit([...entries, ['', 'sum']])}>Add total</AddButton>
+          ) : undefined
+        }
+      />
 
       <RowSummary
         total={entries.length}
@@ -483,9 +438,9 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
       />
 
       {entries.length === 0 ? (
-        <p className='text-[11px] italic text-default-500'>No totals configured.</p>
+        <EmptyHint>{colOptions.length === 0 ? NO_COLUMNS_HINT : 'No totals yet.'}</EmptyHint>
       ) : (
-        <div className='flex flex-col gap-0.5'>
+        <div className='flex flex-col gap-1.5'>
           {entries
             .map((entry, idx) => ({ entry, idx }))
             .filter(({ entry }) => !showEmptyOnly || !entry[0])
@@ -494,13 +449,14 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
               const hasField = !!field
               return (
                 <div key={idx} className={rowShell(hasField)}>
-                  <Icon icon='lucide:sigma' className='h-3.5 w-3.5 shrink-0 text-default-400/70' />
+                  <StatusDot filled={hasField} />
+                  <Icon icon='lucide:sigma' className='h-4 w-4 shrink-0 text-default-500' />
                   <Select
                     id={`totals-col-${idx}`}
                     size='sm'
-                    variant='flat'
+                    variant='bordered'
                     aria-label='Column'
-                    placeholder='Select column...'
+                    placeholder='Choose column'
                     selectedKeys={field ? [field] : []}
                     onChange={e => {
                       const next = [...entries] as [string, string][]
@@ -508,14 +464,14 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
                       commit(next)
                     }}
                     className='flex-1'
-                    classNames={{ trigger: fieldSelectTrigger }}>
+                    classNames={rowSelectClasses}>
                     {colOptions.map(col => (
                       <SelectItem key={col}>{col}</SelectItem>
                     ))}
                   </Select>
                   <Select
                     size='sm'
-                    variant='flat'
+                    variant='bordered'
                     aria-label='Function'
                     selectedKeys={[func || 'sum']}
                     onChange={e => {
@@ -524,7 +480,7 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
                       commit(next)
                     }}
                     className='w-24 shrink-0'
-                    classNames={{ trigger: fieldSelectTrigger }}>
+                    classNames={rowSelectClasses}>
                     {TOTAL_FUNCTIONS.map(f => (
                       <SelectItem key={f}>{f.toUpperCase()}</SelectItem>
                     ))}
@@ -533,6 +489,7 @@ const GenerateTotalsEditor: React.FC<GenerateTotalsEditorProps> = ({ columns, va
                     type='button'
                     onClick={() => commit(entries.filter((_, i) => i !== idx))}
                     title='Remove'
+                    aria-label='Remove'
                     className={deleteRowBtn}>
                     <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
                   </button>
@@ -582,21 +539,16 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
   }
 
   return (
-    <div className='flex flex-col gap-2'>
-      <div className='flex items-center justify-between'>
-        <div>
-          <span className='text-xs font-semibold text-default-700'>Number Format</span>
-          <p className='text-[11px] text-default-500'>Apply an Excel format string to a column.</p>
-        </div>
-        <Button
-          size='sm'
-          variant='flat'
-          className='h-7 min-w-0 bg-content2 px-2 text-xs font-semibold text-default-700 hover:bg-content3'
-          isDisabled={colOptions.length === 0}
-          onPress={() => commit([...entries, ['', '']])}>
-          + Add
-        </Button>
-      </div>
+    <div className='flex flex-col gap-2.5'>
+      <EditorHeader
+        title='Number format'
+        hint='Show a column as money, percent, date and more.'
+        action={
+          colOptions.length > 0 ? (
+            <AddButton onPress={() => commit([...entries, ['', '']])}>Add format</AddButton>
+          ) : undefined
+        }
+      />
 
       <RowSummary
         total={entries.length}
@@ -607,9 +559,9 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
       />
 
       {entries.length === 0 ? (
-        <p className='text-[11px] italic text-default-500'>No formats configured.</p>
+        <EmptyHint>{colOptions.length === 0 ? NO_COLUMNS_HINT : 'No formats yet.'}</EmptyHint>
       ) : (
-        <div className='flex flex-col gap-0.5'>
+        <div className='flex flex-col gap-1.5'>
           {entries
             .map((entry, idx) => ({ entry, idx }))
             .filter(({ entry }) => !showEmptyOnly || !entry[0] || !entry[1])
@@ -618,13 +570,14 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
               const hasField = !!field && !!fmt
               return (
                 <div key={idx} className={rowShell(hasField)}>
-                  <Icon icon='lucide:hash' className='h-3.5 w-3.5 shrink-0 text-default-400/70' />
+                  <StatusDot filled={hasField} />
+                  <Icon icon='lucide:hash' className='h-4 w-4 shrink-0 text-default-500' />
                   <Select
                     id={`nf-col-${idx}`}
                     size='sm'
-                    variant='flat'
+                    variant='bordered'
                     aria-label='Column'
-                    placeholder='Select column...'
+                    placeholder='Choose column'
                     selectedKeys={field ? [field] : []}
                     onChange={e => {
                       const next = [...entries] as [string, string][]
@@ -632,16 +585,16 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
                       commit(next)
                     }}
                     className='flex-1'
-                    classNames={{ trigger: fieldSelectTrigger }}>
+                    classNames={rowSelectClasses}>
                     {colOptions.map(col => (
                       <SelectItem key={col}>{col}</SelectItem>
                     ))}
                   </Select>
                   <Select
                     size='sm'
-                    variant='flat'
+                    variant='bordered'
                     aria-label='Format'
-                    placeholder='Format...'
+                    placeholder='Format'
                     selectedKeys={fmt ? [fmt] : []}
                     onChange={e => {
                       const next = [...entries] as [string, string][]
@@ -649,12 +602,12 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
                       commit(next)
                     }}
                     className='w-44 shrink-0'
-                    classNames={{ trigger: fieldSelectTrigger }}>
+                    classNames={rowSelectClasses}>
                     {NUMBER_FORMAT_EXAMPLES.map(ex => (
                       <SelectItem key={ex.value} textValue={ex.value}>
                         <div className='flex items-center justify-between gap-2'>
-                          <span className='font-mono text-xs'>{ex.value}</span>
-                          <span className='text-[10px] text-default-500'>{ex.label}</span>
+                          <span className='font-mono text-[12px]'>{ex.value}</span>
+                          <span className='text-[12px] text-default-500'>{ex.label}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -663,6 +616,7 @@ const NumberFormatEditor: React.FC<NumberFormatEditorProps> = ({ columns, value,
                     type='button'
                     onClick={() => commit(entries.filter((_, i) => i !== idx))}
                     title='Remove'
+                    aria-label='Remove'
                     className={deleteRowBtn}>
                     <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
                   </button>
@@ -679,64 +633,30 @@ const ExcelTableEditor = ({
   item,
   index,
   onUpdate,
-  onDelete
+  errors
 }: {
   item: ExcelTableItem
   index: number
   onUpdate: (i: ExcelTableItem) => void
-  onDelete: () => void
+  errors?: Record<string, string>
 }) => {
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  )
-
-  const [expanded, setExpanded] = useState(false)
-  const [optionsExpanded, setOptionsExpanded] = useState<Set<string>>(new Set(['options']))
-  const [lastAddedCol, setLastAddedCol] = useState<string | null>(null)
-
-  const handleAddCol = () => {
-    // Generate next available default name: column_1, column_2, ...
-    let n = item.columns.length + 1
-    let formatted = formatKey(`column_${n}`, 'table')
-    while (item.columns.includes(formatted)) {
-      n++
-      formatted = formatKey(`column_${n}`, 'table')
-    }
-    onUpdate({ ...item, columns: [...item.columns, formatted] })
-    setLastAddedCol(formatted)
-  }
-
-  const handleDeleteCol = (colName: string) => {
-    // Also strip the data from existing rows for consistency
-    const newRows = item.rows.map(row => {
-      if (!(colName in row)) return row
-      const { [colName]: _removed, ...rest } = row
-      return rest
-    })
-    onUpdate({ ...item, columns: item.columns.filter(c => c !== colName), rows: newRows })
-  }
-
-  const handleRenameCol = (oldCol: string, newColName: string) => {
-    if (oldCol === newColName) return
-    const newColumns = item.columns.map(c => (c === oldCol ? newColName : c))
-    const newRows = item.rows.map(row => {
-      if (!(oldCol in row)) return row
-      const { [oldCol]: val, ...rest } = row
-      return { ...rest, [newColName]: val }
-    })
-    onUpdate({ ...item, columns: newColumns, rows: newRows })
-    setLastAddedCol(newColName)
-  }
-
-  const handleColDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = item.columns.indexOf(active.id as string)
-      const newIndex = item.columns.indexOf(over.id as string)
-      onUpdate({ ...item, columns: arrayMove(item.columns, oldIndex, newIndex) })
-    }
-  }
+  const [fullscreen, setFullscreen] = useState(false)
+  const readiness = tableReadiness(item)
+  const rowErrors: Record<number, string> = {}
+  Object.entries(errors ?? {}).forEach(([k, v]) => {
+    if (k.startsWith(`${item.id}-row-`)) rowErrors[Number(k.slice(`${item.id}-row-`.length))] = v
+  })
+  const tableError = errors?.[item.id]
+  const tableName = `Table ${index + 1}`
+  const columnNames = item.columns.map(cleanCol).join(', ')
+  const dataLabel =
+    item.rows.length === 0
+      ? 'No test rows'
+      : readiness.emptyCells > 0
+        ? `${readiness.emptyCells} empty ${readiness.emptyCells === 1 ? 'cell' : 'cells'}`
+        : 'Test data filled'
+  const [expanded, setExpanded] = useState(true)
+  const [optionsExpanded, setOptionsExpanded] = useState<Set<string>>(new Set())
 
   const addRow = () => {
     // Pre-populate keys in column order so saved payload preserves the right sequence
@@ -762,133 +682,94 @@ const ExcelTableEditor = ({
     onUpdate({ ...item, rows: arrayMove(item.rows, from, to) })
   }
 
-  // Always show at least 1 sort row (virtual default if none saved yet)
-  const displaySort: SortDefinition[] = item.sort?.length ? item.sort : [{ field: '', direction: '' } as SortDefinition]
+  const displaySort: SortDefinition[] = item.sort ?? []
 
-  const updateSortEntry = (idx: number, patch: Partial<SortDefinition>) => {
-    const base = item.sort?.length ? item.sort : [{ field: '', direction: '' } as SortDefinition]
-    onUpdate({ ...item, sort: base.map((s, i) => (i === idx ? { ...s, ...patch } : s)) })
-  }
+  const updateSortEntry = (idx: number, patch: Partial<SortDefinition>) =>
+    onUpdate({ ...item, sort: displaySort.map((s, i) => (i === idx ? { ...s, ...patch } : s)) })
 
-  const removeSortEntry = (idx: number) => {
-    const base = item.sort?.length ? item.sort : [{ field: '', direction: '' } as SortDefinition]
-    onUpdate({ ...item, sort: base.filter((_, i) => i !== idx) })
-  }
+  const removeSortEntry = (idx: number) => onUpdate({ ...item, sort: displaySort.filter((_, i) => i !== idx) })
 
-  return (
-    <div className='flex w-full flex-col gap-3'>
-      {/* Header — mirrors PDF rowHeaderStrip */}
-      <div className='flex items-center gap-1.5 rounded-lg px-1.5 py-1.5 transition-colors duration-200'>
-        <DragHandle />
-        <div
-          className='builder-field var-token-text flex h-8 w-[200px] shrink-0 cursor-default items-center rounded-md border px-2.5'
-          title={`Table ${index + 1}`}>
-          <span className='truncate'>{`{{table:${index + 1}}}`}</span>
-        </div>
-        <div className='flex flex-1 items-center justify-end gap-2'>
-          <div className='hidden items-center gap-1.5 sm:flex'>
-            <span
-              className={cn(
-                'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium',
-                item.columns.length > 0 ? 'bg-content2/30 text-default-500' : 'builder-attention-chip'
-              )}
-              title={item.columns.length === 0 ? 'Needs at least one column' : undefined}>
-              <Icon icon='lucide:columns-3' className='h-3 w-3' />
-              {item.columns.length} {item.columns.length === 1 ? 'col' : 'cols'}
-            </span>
-            <span
-              className={cn(
-                'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[10.5px] font-medium',
-                item.rows.length > 0 ? 'bg-content2/30 text-default-500' : 'builder-attention-chip'
-              )}
-              title={item.rows.length === 0 ? 'Needs at least one row' : undefined}>
-              <Icon icon='lucide:rows-3' className='h-3 w-3' />
-              {item.rows.length} {item.rows.length === 1 ? 'row' : 'rows'}
-            </span>
-          </div>
-          <div className='flex items-center gap-0.5'>
-            <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
-            <button
-              data-skip-enter='true'
-              onClick={onDelete}
-              title='Remove'
-              className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-default-300/45 opacity-70 transition-all duration-200 hover:bg-danger/10 hover:text-danger-500 hover:opacity-100'>
-              <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {expanded && (
-      <div className='builder-detail-panel mb-1.5 ml-[22px] mr-1.5 mt-0.5 flex flex-col gap-3 rounded-md p-3'>
-      {/* Columns header — matches PDF TableEditorBody pattern */}
-      <div className='flex items-center justify-between gap-2'>
-        <span className='text-[10.5px] font-semibold uppercase tracking-widest text-default-500/70'>
-          Columns · {item.columns.length}
-        </span>
-        <Button
-          size='sm'
-          variant='flat'
-          radius='md'
-          onPress={handleAddCol}
-          className='h-7 gap-1 bg-content2 px-2.5 text-[11px] font-semibold text-default-700 hover:bg-content3'
-          startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' strokeWidth={2.5} />}>
-          Add Column
-        </Button>
-      </div>
+  const renderBody = (isFull: boolean) => (
+    <div className={cn('flex flex-col gap-4', !isFull && 'border-t border-divider p-4')}>
+      <MonoLabel>
+        {item.columns.length} {item.columns.length === 1 ? 'column' : 'columns'} · {item.rows.length}{' '}
+        {item.rows.length === 1 ? 'row' : 'rows'}
+      </MonoLabel>
+      {item.columns.length === 0 && (
+        <p className='text-[13px] text-default-500'>
+          This table has no columns. Put <code className='font-mono text-foreground'>{'{{row:name}}'}</code> markers in a
+          row of your sheet, then use Replace file.
+        </p>
+      )}
 
       {/* Grid */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColDragEnd}>
-        <SortableContext items={item.columns} strategy={horizontalListSortingStrategy}>
-          <div className='overflow-x-auto rounded-lg border border-default-200/70 bg-content1'>
-            <div className='max-h-48 overflow-y-auto'>
+          <div
+            className={cn(
+              'overflow-auto border border-divider bg-content1',
+              isFull ? 'max-h-[calc(100vh-240px)]' : 'max-h-80'
+            )}>
+            <div>
               <table className='w-full text-left text-sm'>
-                <thead className='sticky top-0 z-10 border-b border-default-200 bg-content2/80 font-medium text-default-600'>
+                <thead className='sticky top-0 z-10 border-b border-divider bg-content2'>
                   <tr>
                     {item.columns.map(col => (
-                      <SortableHeaderItem key={col} id={col} className='min-w-[120px] border-l p-1.5'>
-                        <ColumnHeader
-                          col={col}
-                          itemId={item.id}
-                          columns={item.columns}
-                          onRename={handleRenameCol}
-                          onDelete={handleDeleteCol}
-                          autoFocus={lastAddedCol === col}
-                        />
-                      </SortableHeaderItem>
+                      <th key={col} className='min-w-[140px] border-l border-divider p-1.5 first:border-l-0'>
+                        <ColumnHeader col={col} />
+                      </th>
                     ))}
-                    <th className='w-10 border-l p-2' />
+                    <th className='w-[104px] border-l border-divider p-2'>
+                      <span className='sr-only'>Row actions</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {item.rows.map((row, rIdx) => (
-                    <tr key={rIdx} className='group border-b border-default-200/70 hover:bg-content2/70'>
+                    <tr
+                      key={rIdx}
+                      id={`table-${item.id}-row-${rIdx}`}
+                      title={rowErrors[rIdx]}
+                      className={cn(
+                        'group border-b border-divider hover:bg-content2',
+                        rowErrors[rIdx] && 'bg-danger/10 outline outline-1 -outline-offset-1 outline-danger'
+                      )}>
                       {item.columns.map(col => (
-                        <td key={col} className='border-l p-1'>
+                        <td key={col} className='border-l border-divider p-0 first:border-l-0'>
                           <input
-                            className='w-full rounded bg-transparent px-2 py-1 text-[12px] text-foreground outline-none transition-colors placeholder:text-default-400/50 focus:bg-content2/70'
+                            aria-label={`Row ${rIdx + 1} ${cleanCol(col)}`}
+                            className='h-9 w-full bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-default-400 focus:bg-content2 focus:shadow-[inset_0_0_0_1px_hsl(var(--heroui-default-500))]'
                             value={row[col] ?? ''}
                             onChange={e => updateRow(rIdx, col, e.target.value)}
                             onKeyDown={handleEnterKey}
                           />
                         </td>
                       ))}
-                      <td className='border-l p-1 text-center'>
-                        <div className='flex items-center justify-center gap-0.5'>
+                      <td className='border-l border-divider p-0 text-center'>
+                        <div className='flex h-9 items-center justify-center'>
                           <button
+                            type='button'
                             onClick={() => moveRow(rIdx, rIdx - 1)}
                             disabled={rIdx === 0}
-                            className='text-default-300 hover:text-primary disabled:opacity-30'>
-                            <Icon icon='lucide:chevron-up' className='h-3.5 w-3.5' />
+                            title='Move row up'
+                            aria-label={`Move row ${rIdx + 1} up`}
+                            className='flex h-9 w-8 items-center justify-center text-default-500 hover:text-foreground disabled:opacity-30'>
+                            <Icon icon='lucide:chevron-up' className='h-4 w-4' />
                           </button>
                           <button
+                            type='button'
                             onClick={() => moveRow(rIdx, rIdx + 1)}
                             disabled={rIdx === item.rows.length - 1}
-                            className='text-default-300 hover:text-primary disabled:opacity-30'>
-                            <Icon icon='lucide:chevron-down' className='h-3.5 w-3.5' />
+                            title='Move row down'
+                            aria-label={`Move row ${rIdx + 1} down`}
+                            className='flex h-9 w-8 items-center justify-center text-default-500 hover:text-foreground disabled:opacity-30'>
+                            <Icon icon='lucide:chevron-down' className='h-4 w-4' />
                           </button>
-                          <button onClick={() => deleteRow(rIdx)} className='text-default-300 hover:text-danger'>
-                            <Icon icon='lucide:x' className='h-3.5 w-3.5' />
+                          <button
+                            type='button'
+                            onClick={() => deleteRow(rIdx)}
+                            title='Remove row'
+                            aria-label={`Remove row ${rIdx + 1}`}
+                            className='flex h-9 w-8 items-center justify-center text-default-500 hover:text-danger'>
+                            <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
                           </button>
                         </div>
                       </td>
@@ -898,29 +779,22 @@ const ExcelTableEditor = ({
                     <tr>
                       <td
                         colSpan={item.columns.length + 1}
-                        className='py-5 text-center text-xs italic text-default-400'>
-                        No data rows yet
+                        className='py-5 text-center text-[13px] text-default-500'>
+                        No rows yet
                       </td>
                     </tr>
                   )}
-                  <tr className='border-t border-default-200'>
-                    <td colSpan={item.columns.length + 1} className='p-1'>
-                      <Button
-                        size='sm'
-                        variant='flat'
-                        onPress={addRow}
-                        className='w-full bg-content1 text-xs text-default-500 hover:bg-content2'
-                        startContent={<Icon icon='lucide:plus' className='h-3.5 w-3.5' />}>
-                        Add Row
-                      </Button>
+                  <tr>
+                    <td colSpan={item.columns.length + 1} className='p-1.5'>
+                      <AddButton onPress={addRow} fullWidth>
+                        Add row
+                      </AddButton>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
           </div>
-        </SortableContext>
-      </DndContext>
 
       {/* Excel Options */}
       <Accordion
@@ -933,21 +807,21 @@ const ExcelTableEditor = ({
           key='options'
           aria-label='Excel Options'
           title={
-            <div className='flex items-center gap-2 text-xs font-semibold text-default-700'>
-              <Icon icon='lucide:settings-2' className='h-3.5 w-3.5 text-primary' />
-              Excel Table Options
+            <div className='flex items-center gap-2 text-[13px] font-medium text-default-500'>
+              <Icon icon='lucide:settings-2' className='h-4 w-4' />
+              Excel table options
             </div>
           }
           className='px-0'
-          classNames={{ title: 'text-xs', content: 'pt-2 pb-2' }}>
-          <div className='flex flex-col gap-4 rounded-lg bg-content1/40 p-3 shadow-[inset_0_0_0_1px_var(--hairline-soft)]'>
+          classNames={{ trigger: 'py-2', content: 'pt-1 pb-2' }}>
+          <div className='flex flex-col gap-5 pt-1'>
             {/* Boolean toggles — 3 items in a 3-col grid */}
-            <div className='grid grid-cols-2 gap-2 sm:grid-cols-3'>
+            <div className='grid grid-cols-1 gap-2 sm:grid-cols-3'>
               {(
                 [
-                  { key: 'freezeHeader', label: 'Freeze Header', icon: 'lucide:lock' },
-                  { key: 'autoFilter', label: 'Auto Filter', icon: 'lucide:filter' },
-                  { key: 'autoFitColumns', label: 'Auto-fit Cols', icon: 'lucide:columns-3' }
+                  { key: 'freezeHeader', label: 'Freeze header', icon: 'lucide:lock' },
+                  { key: 'autoFilter', label: 'Filter buttons', icon: 'lucide:filter' },
+                  { key: 'autoFitColumns', label: 'Fit column width', icon: 'lucide:columns-3' }
                 ] as const
               ).map(({ key, label, icon }) => (
                 <CheckboxCard
@@ -985,40 +859,38 @@ const ExcelTableEditor = ({
             <SplitToSheetsEditor value={item.splitToSheets} onChange={v => onUpdate({ ...item, splitToSheets: v })} />
 
             {/* Sort */}
-            <div className='flex flex-col gap-2 border-t border-default-100 pt-4'>
-              <div className='flex items-center justify-between'>
-                <div className='flex items-center gap-1.5'>
-                  <Icon icon='lucide:arrow-up-down' className='h-3.5 w-3.5 text-primary' />
-                  <span className='text-xs font-semibold text-default-700'>Sort</span>
-                </div>
-                <Button
-                  size='sm'
-                  variant='flat'
-                  onPress={() =>
-                    onUpdate({
-                      ...item,
-                      sort: [...(item.sort || []), { field: '', direction: 'asc' } as SortDefinition]
-                    })
-                  }
-                  className='h-7 min-w-0 bg-content2 px-2 text-xs font-semibold text-default-700 hover:bg-content3'>
-                  + Add
-                </Button>
-              </div>
-              <div className='flex flex-col gap-0.5'>
+            <div className='flex flex-col gap-2.5 border-t border-divider pt-4'>
+              <EditorHeader
+                title='Sort rows'
+                action={
+                  <AddButton
+                    onPress={() =>
+                      onUpdate({
+                        ...item,
+                        sort: [...(item.sort || []), { field: '', direction: 'asc' } as SortDefinition]
+                      })
+                    }>
+                    Add sort
+                  </AddButton>
+                }
+              />
+              <div className='flex flex-col gap-1.5'>
+                {displaySort.length === 0 && <EmptyHint>Rows keep the order you enter them.</EmptyHint>}
                 {displaySort.map((rule, idx) => {
                   const hasField = !!rule.field && !!rule.direction
                   return (
                     <div key={idx} className={rowShell(hasField)}>
-                      <Icon icon='lucide:list-ordered' className='h-3.5 w-3.5 shrink-0 text-default-400/70' />
+                      <StatusDot filled={hasField} />
+                      <Icon icon='lucide:list-ordered' className='h-4 w-4 shrink-0 text-default-500' />
                       <Select
                         aria-label='Sort Column'
-                        placeholder='Select column...'
+                        placeholder='Choose column'
                         selectedKeys={rule.field ? [rule.field] : []}
                         onChange={e => updateSortEntry(idx, { field: e.target.value })}
                         size='sm'
-                        variant='flat'
+                        variant='bordered'
                         className='flex-1'
-                        classNames={{ trigger: fieldSelectTrigger }}>
+                        classNames={rowSelectClasses}>
                         {item.columns.map(col => (
                           <SelectItem key={cleanCol(col)} textValue={cleanCol(col)}>
                             {cleanCol(col)}
@@ -1031,16 +903,17 @@ const ExcelTableEditor = ({
                         selectedKeys={rule.direction ? [rule.direction] : []}
                         onChange={e => updateSortEntry(idx, { direction: e.target.value })}
                         size='sm'
-                        variant='flat'
+                        variant='bordered'
                         className='w-32 shrink-0'
-                        classNames={{ trigger: fieldSelectTrigger }}>
+                        classNames={rowSelectClasses}>
                         <SelectItem key='asc'>Ascending</SelectItem>
                         <SelectItem key='desc'>Descending</SelectItem>
                       </Select>
                       <button
                         type='button'
                         onClick={() => removeSortEntry(idx)}
-                        title='Remove'
+                        title='Remove sort'
+                        aria-label='Remove sort'
                         className={deleteRowBtn}>
                         <Icon icon='lucide:trash-2' className='h-3.5 w-3.5' />
                       </button>
@@ -1051,36 +924,28 @@ const ExcelTableEditor = ({
             </div>
 
             {/* Vertical Merge & Collapse */}
-            <div className='flex flex-col gap-2 border-t border-default-100 pt-4'>
-              <div className='flex items-center gap-1.5'>
-                <Icon icon='lucide:network' className='h-3.5 w-3.5 text-primary' />
-                <span className='text-xs font-semibold text-default-700'>Vertical Merge & Collapse</span>
-              </div>
+            <div className='flex flex-col gap-2.5 border-t border-divider pt-4'>
+              <EditorHeader title='Merge & group' />
               <div className='grid grid-cols-1 gap-3 xl:grid-cols-2'>
                 <Select
-                  label='Vertical Merge'
-                  placeholder='Select columns...'
+                  label='Merge same values'
+                  placeholder='Choose columns'
                   selectionMode='multiple'
                   selectedKeys={new Set(item.verticalMerge || [])}
                   onSelectionChange={keys => onUpdate({ ...item, verticalMerge: Array.from(keys) as string[] })}
                   size='sm'
-                  variant='flat'
+                  variant='bordered'
                   isMultiline
                   renderValue={items => (
                     <div className='flex flex-wrap gap-1 py-1'>
                       {items.map(i => (
-                        <Chip
-                          key={i.key}
-                          size='sm'
-                          variant='flat'
-                          color='primary'
-                          className='h-5 text-[11px] font-medium'>
+                        <BrandChip key={i.key} tone='neutral' size='xs'>
                           {i.textValue}
-                        </Chip>
+                        </BrandChip>
                       ))}
                     </div>
                   )}
-                  classNames={{ trigger: fieldSelectTrigger }}>
+                  classNames={rowSelectClasses}>
                   {item.columns.map(col => (
                     <SelectItem key={cleanCol(col)} textValue={cleanCol(col)}>
                       {cleanCol(col)}
@@ -1088,29 +953,24 @@ const ExcelTableEditor = ({
                   ))}
                 </Select>
                 <Select
-                  label='Data Collapsing'
-                  placeholder='Select columns...'
+                  label='Group rows by'
+                  placeholder='Choose columns'
                   selectionMode='multiple'
                   selectedKeys={new Set(item.collapse || [])}
                   onSelectionChange={keys => onUpdate({ ...item, collapse: Array.from(keys) as string[] })}
                   size='sm'
-                  variant='flat'
+                  variant='bordered'
                   isMultiline
                   renderValue={items => (
                     <div className='flex flex-wrap gap-1 py-1'>
                       {items.map(i => (
-                        <Chip
-                          key={i.key}
-                          size='sm'
-                          variant='flat'
-                          color='primary'
-                          className='h-5 text-[11px] font-medium'>
+                        <BrandChip key={i.key} tone='neutral' size='xs'>
                           {i.textValue}
-                        </Chip>
+                        </BrandChip>
                       ))}
                     </div>
                   )}
-                  classNames={{ trigger: fieldSelectTrigger }}>
+                  classNames={rowSelectClasses}>
                   {item.columns.map(col => (
                     <SelectItem key={cleanCol(col)} textValue={cleanCol(col)}>
                       {cleanCol(col)}
@@ -1122,8 +982,57 @@ const ExcelTableEditor = ({
           </div>
         </AccordionItem>
       </Accordion>
+    </div>
+  )
+
+  return (
+    <div className='flex w-full flex-col'>
+      <div className='flex items-center gap-2 py-1.5 pl-1.5 pr-1.5'>
+        <StatusDot filled={readiness.dataFilled} />
+        <span className='min-w-0 flex-1 truncate text-[13px] text-foreground' title={columnNames || tableName}>
+          <span className='font-medium'>{tableName}</span>
+          {columnNames && <span className='ml-2 font-mono text-[12px] text-default-500'>{columnNames}</span>}
+        </span>
+        <div className='flex shrink-0 items-center gap-1'>
+          <span className={readiness.structureOk ? okChip : attentionChip}>
+            <Icon icon='lucide:columns-3' className='h-3 w-3' />
+            {readiness.structureOk
+              ? `${item.columns.length} ${item.columns.length === 1 ? 'column' : 'columns'}`
+              : 'No columns'}
+          </span>
+          <span className={readiness.dataFilled ? okChip : attentionChip}>
+            <Icon icon='lucide:rows-3' className='h-3 w-3' />
+            {dataLabel}
+          </span>
+          <button
+            type='button'
+            data-skip-enter='true'
+            onClick={() => setFullscreen(true)}
+            title='Open the table in a large view'
+            aria-label={`Expand table ${index + 1}`}
+            className='flex h-8 w-8 items-center justify-center border border-transparent text-default-500 transition-colors hover:border-default-300 hover:text-foreground'>
+            <Icon icon='lucide:maximize-2' className='h-4 w-4' />
+          </button>
+          <ExpandToggle expanded={expanded} onToggle={() => setExpanded(v => !v)} />
+        </div>
       </div>
-      )}
+      {tableError && <p className='px-2 pb-2 text-[12px] text-danger'>{tableError}</p>}
+
+      {expanded && !fullscreen && renderBody(false)}
+
+      <Modal isOpen={fullscreen} onOpenChange={setFullscreen} size='full' radius='none' scrollBehavior='inside'>
+        <ModalContent className='border border-divider bg-content1'>
+          {() => (
+            <>
+              <ModalHeader className='flex items-center gap-3 border-b border-divider'>
+                <span className='text-[14px] font-medium text-foreground'>{tableName}</span>
+                <span className='text-[13px] font-normal text-default-500'>{dataLabel}</span>
+              </ModalHeader>
+              <ModalBody className='py-4'>{renderBody(true)}</ModalBody>
+            </>
+          )}
+        </ModalContent>
+      </Modal>
     </div>
   )
 }
@@ -1132,53 +1041,55 @@ const ExcelTableEditor = ({
 interface ExcelTablesSectionProps {
   items: ExcelTableItem[]
   onChange: (items: ExcelTableItem[]) => void
+  errors?: Record<string, string>
 }
 
-export const ExcelTablesSection: React.FC<ExcelTablesSectionProps> = ({ items, onChange }) => {
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
+export const ExcelTablesSection: React.FC<ExcelTablesSectionProps> = ({ items, onChange, errors }) => {
+  const [showMissingOnly, setShowMissingOnly] = useState(false)
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (over && active.id !== over.id) {
-      const oldIndex = items.findIndex(i => i.id === active.id)
-      const newIndex = items.findIndex(i => i.id === over.id)
-      onChange(arrayMove(items, oldIndex, newIndex))
-    }
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon='lucide:table'
+        title='No tables in this file'
+        hint='Put {{row:name}} markers in a row of your sheet, then use Replace file. The table shows up here for test rows.'
+      />
+    )
   }
 
+  // Same summary as the Word editor: how many tables still need test data, with a filter.
+  const isMissing = (t: ExcelTableItem) => !tableReadiness(t).dataFilled
+  const missing = items.filter(isMissing).length
+  const noStructure = items.filter(t => !tableReadiness(t).structureOk).length
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-      <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
-        {items.length > 0 ? (
-          <div className='flex flex-col gap-2'>
-            {items.map((item, index) => {
-              const configured = item.columns.length > 0 && item.rows.length > 0
-              return (
-                <SortableItem
-                  key={item.id}
-                  id={item.id}
-                  className={cn(
-                    'flex flex-col rounded-lg border-l-[3px] p-3 transition-colors duration-200',
-                    configured ? 'builder-complete-row' : 'builder-empty-row border-l-transparent'
-                  )}>
-                  <ExcelTableEditor
-                    item={item}
-                    index={index}
-                    onUpdate={u => onChange(items.map(x => (x.id === item.id ? u : x)))}
-                    onDelete={() => onChange(items.filter(x => x.id !== item.id))}
-                  />
-                </SortableItem>
-              )
-            })}
-          </div>
-        ) : (
-          <EmptyState
-            icon='lucide:table'
-            title='No tables added yet'
-            hint='Add a data table to populate from structured data.'
-          />
+    <>
+      <SummaryBar
+        left={
+          noStructure > 0
+            ? `${items.length - noStructure}/${items.length} with columns`
+            : `${items.length - missing}/${items.length} with test data`
+        }
+        missing={missing}
+        missingLabel='need test data'
+        doneLabel='All tables have test data'
+        showMissingOnly={showMissingOnly}
+        onToggleMissingOnly={() => setShowMissingOnly(v => !v)}
+      />
+      <div className='flex flex-col gap-2'>
+        {items.map((item, index) =>
+          showMissingOnly && !isMissing(item) ? null : (
+            <div key={item.id} id={`row-${item.id}`} className='flex flex-col border-b border-divider'>
+              <ExcelTableEditor
+                item={item}
+                index={index}
+                onUpdate={u => onChange(items.map(x => (x.id === item.id ? u : x)))}
+                errors={errors}
+              />
+            </div>
+          )
         )}
-      </SortableContext>
-    </DndContext>
+      </div>
+    </>
   )
 }

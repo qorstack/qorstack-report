@@ -17,27 +17,29 @@ namespace QorstackReportService.Infrastructure.Data;
 ///     "Schema": "public",                    // defaults to "public" if omitted
 ///     "MigrationPaths": ["database/oss"]
 ///   }
+///
+/// Runs in StartAsync, so the host waits for it: other hosted services (render worker, storage, fonts)
+/// and Kestrel start only after the schema is current. A failure stops startup.
 /// </summary>
-public class DatabaseMigrationService : BackgroundService
+public class DatabaseMigrationService : IHostedService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
     private readonly ILogger<DatabaseMigrationService> _logger;
-    private readonly IHostApplicationLifetime _appLifetime;
 
     public DatabaseMigrationService(
         IServiceProvider serviceProvider,
         IConfiguration configuration,
-        ILogger<DatabaseMigrationService> logger,
-        IHostApplicationLifetime appLifetime)
+        ILogger<DatabaseMigrationService> logger)
     {
         _serviceProvider = serviceProvider;
         _configuration = configuration;
         _logger = logger;
-        _appLifetime = appLifetime;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async Task StartAsync(CancellationToken stoppingToken)
     {
         var schema = DatabaseSchema.Name;
         _logger.LogInformation("[Database] Migration starting (schema: {Schema})...", schema);
@@ -67,10 +69,8 @@ public class DatabaseMigrationService : BackgroundService
             // Safety check: prevent accidentally migrating into a schema that already
             // contains tables from another system (wrong-config protection).
             if (!await IsMigrationSafeAsync(conn, schema, stoppingToken))
-            {
-                _appLifetime.StopApplication();
-                return;
-            }
+                throw new InvalidOperationException(
+                    $"[Database] Migration aborted: schema '{schema}' has tables but no __migration_history (see the message above)");
 
             await EnsureMigrationTableAsync(conn, schema, stoppingToken);
 
@@ -219,12 +219,15 @@ public class DatabaseMigrationService : BackgroundService
     }
 
     /// <summary>
-    /// Upserts the admin user from Admin:Email / Admin:Password config on every startup.
+    /// Syncs the system admin (users.is_system_admin) from Admin:Email / Admin:Password on every startup,
+    /// so changing the env vars and restarting changes the admin's login. The config is the source of
+    /// truth: a password changed in the UI is reset on the next start. The row keeps its id, so the
+    /// admin's projects and templates follow an email change.
     /// Set via Admin__Email / Admin__Password env vars or Admin:Email / Admin:Password in appsettings.
     /// </summary>
     private async Task SeedAdminUserAsync(NpgsqlConnection conn, string schema, CancellationToken ct)
     {
-        var email = _configuration["Admin:Email"];
+        var email = _configuration["Admin:Email"]?.Trim();
         var password = _configuration["Admin:Password"];
 
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
@@ -233,78 +236,78 @@ public class DatabaseMigrationService : BackgroundService
             return;
         }
 
-        var hasher = new PasswordHasher<User>();
-        var hash = hasher.HashPassword(new User(), password);
-
-        // Clean up any duplicate SYSTEM_INIT rows from older buggy seeders (keep oldest).
-        var cleanupSql = $"""
-            DELETE FROM {schema}.users
-            WHERE created_by = 'SYSTEM_INIT'
-              AND id NOT IN (
-                  SELECT id FROM {schema}.users
-                  WHERE created_by = 'SYSTEM_INIT'
-                  ORDER BY id
-                  LIMIT 1
-              );
-            """;
-        await using (var cleanup = new NpgsqlCommand(cleanupSql, conn))
-        {
-            var removed = await cleanup.ExecuteNonQueryAsync(ct);
-            if (removed > 0)
-                _logger.LogWarning("[Database] Removed {Count} duplicate SYSTEM_INIT admin row(s)", removed);
-        }
-
-        // Find the seeded admin (if any).
-        object? existingAdminId;
+        // Current system admin (if any).
+        Guid? adminId = null;
+        string? currentEmail = null, currentHash = null, currentStatus = null;
         await using (var find = new NpgsqlCommand(
-            $"SELECT id FROM {schema}.users WHERE created_by = 'SYSTEM_INIT' LIMIT 1", conn))
+            $"SELECT id, email, password_hash, status FROM {schema}.users WHERE is_system_admin LIMIT 1", conn))
+        await using (var reader = await find.ExecuteReaderAsync(ct))
         {
-            existingAdminId = await find.ExecuteScalarAsync(ct);
+            if (await reader.ReadAsync(ct))
+            {
+                adminId = reader.GetGuid(0);
+                currentEmail = reader.GetString(1);
+                currentHash = reader.IsDBNull(2) ? null : reader.GetString(2);
+                currentStatus = reader.IsDBNull(3) ? null : reader.GetString(3);
+            }
         }
 
-        // Block if target email belongs to a DIFFERENT (non-admin) user — never overwrite real users.
+        // Never take over another user's account.
         await using (var conflictCmd = new NpgsqlCommand(
-            $"SELECT id FROM {schema}.users WHERE email = @email AND created_by <> 'SYSTEM_INIT' LIMIT 1", conn))
+            $"SELECT id FROM {schema}.users WHERE lower(email) = lower(@email) AND NOT is_system_admin LIMIT 1", conn))
         {
             conflictCmd.Parameters.AddWithValue("email", email);
-            var conflictingId = await conflictCmd.ExecuteScalarAsync(ct);
-            if (conflictingId is not null)
+            if (await conflictCmd.ExecuteScalarAsync(ct) is not null)
             {
                 _logger.LogWarning(
-                    "[Database] Admin seed skipped — email '{Email}' is already taken by another user", email);
+                    "[Database] Admin sync skipped — email '{Email}' already belongs to another user", email);
                 return;
             }
         }
 
-        if (existingAdminId is not null)
+        var hasher = new PasswordHasher<User>();
+
+        if (adminId is not null)
         {
-            // Update the existing admin row (rename email + reset password).
+            var emailChanged = !string.Equals(currentEmail, email, StringComparison.Ordinal);
+            var passwordChanged = currentHash is null
+                || hasher.VerifyHashedPassword(new User(), currentHash, password) == PasswordVerificationResult.Failed;
+            var inactive = currentStatus != "active";
+
+            if (!emailChanged && !passwordChanged && !inactive)
+            {
+                _logger.LogInformation("[Database] System admin is up to date: {Email}", email);
+                return;
+            }
+
             await using var upd = new NpgsqlCommand(
                 $"""
                 UPDATE {schema}.users
-                SET email = @email, password_hash = @hash, status = 'active'
+                SET email = @email, password_hash = @hash, status = 'active',
+                    updated_by = 'SYSTEM_INIT', updated_datetime = now()
                 WHERE id = @id;
                 """, conn);
             upd.Parameters.AddWithValue("email", email);
-            upd.Parameters.AddWithValue("hash", hash);
-            upd.Parameters.AddWithValue("id", existingAdminId);
+            upd.Parameters.AddWithValue("hash", passwordChanged ? hasher.HashPassword(new User(), password) : currentHash!);
+            upd.Parameters.AddWithValue("id", adminId.Value);
             await upd.ExecuteNonQueryAsync(ct);
 
-            _logger.LogInformation("[Database] Admin user updated from config: {Email}", email);
+            _logger.LogInformation(
+                "[Database] System admin synced from config: {Email} (email changed: {EmailChanged}, password changed: {PasswordChanged})",
+                email, emailChanged, passwordChanged);
             return;
         }
 
-        // No admin yet — insert a new one.
         await using var ins = new NpgsqlCommand(
             $"""
-            INSERT INTO {schema}.users (email, password_hash, first_name, last_name, status, created_by)
-            VALUES (@email, @hash, 'Admin', 'User', 'active', 'SYSTEM_INIT');
+            INSERT INTO {schema}.users (email, password_hash, first_name, last_name, status, created_by, is_system_admin)
+            VALUES (@email, @hash, 'Admin', 'User', 'active', 'SYSTEM_INIT', true);
             """, conn);
         ins.Parameters.AddWithValue("email", email);
-        ins.Parameters.AddWithValue("hash", hash);
+        ins.Parameters.AddWithValue("hash", hasher.HashPassword(new User(), password));
         await ins.ExecuteNonQueryAsync(ct);
 
-        _logger.LogInformation("[Database] Admin user created: {Email}", email);
+        _logger.LogInformation("[Database] System admin created: {Email}", email);
     }
 
     /// <summary>

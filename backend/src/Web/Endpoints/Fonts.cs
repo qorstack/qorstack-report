@@ -5,13 +5,14 @@ using QorstackReportService.Application.Fonts.Models;
 using QorstackReportService.Application.Fonts.Commands.UploadFont;
 using QorstackReportService.Application.Fonts.Queries.GetFontById;
 using QorstackReportService.Application.Fonts.Queries.GetFonts;
+using QorstackReportService.Application.Fonts.Queries.GetFontStatus;
 using QorstackReportService.Web.Infrastructure;
 
 namespace QorstackReportService.Web.Endpoints;
 
 public class Fonts : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/fonts")
             .WithTags("Fonts")
@@ -33,6 +34,12 @@ public class Fonts : EndpointGroupBase
             .WithSummary("List all fonts (global)")
             .WithDescription("Returns all active fonts available to every project.")
             .Produces<List<FontSummaryDto>>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapGet("/status", GetStatus)
+            .WithSummary("Sync status of uploaded fonts")
+            .WithDescription("For each uploaded font: \"ready\" (the renderer can use it), \"syncing\" (stored, still being copied to the renderer) or \"error\" (missing from storage).")
+            .Produces<List<FontStatusDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
         group.MapGet("/{fontId:guid}", GetById)
@@ -70,6 +77,9 @@ public class Fonts : EndpointGroupBase
         var result = await sender.Send(command);
         return Results.Created($"/fonts/{result.Id}", result);
     }
+
+    private static async Task<IResult> GetStatus(ISender sender) =>
+        Results.Ok(await sender.Send(new GetFontStatusQuery()));
 
     private static async Task<IResult> GetAll(
         ISender sender,

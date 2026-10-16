@@ -8,7 +8,8 @@ const src = resolve(repoRoot, 'selfhost')
 const publicDest = resolve(__dirname, '..', 'public', 'selfhost')
 const generatedDest = resolve(__dirname, '..', 'src', 'generated')
 
-const files = ['docker-compose.yml', '.env.example']
+// init.sh + migrate-storage.sh are served as plain downloads (not embedded).
+const files = ['docker-compose.yml', '.env.example', 'init.sh', 'migrate-storage.sh', 'docker-compose.minio.yml', 'docker-compose.external-s3.yml']
 
 if (!existsSync(publicDest)) mkdirSync(publicDest, { recursive: true })
 if (!existsSync(generatedDest)) mkdirSync(generatedDest, { recursive: true })
@@ -24,7 +25,8 @@ for (const f of files) {
     continue
   }
   copyFileSync(from, to)
-  contents[f] = readFileSync(from, 'utf8')
+  // A Windows checkout has CRLF; content shown and copied on the site must be LF (bash, YAML).
+  contents[f] = readFileSync(from, 'utf8').replace(/\r\n/g, '\n')
   console.log(`[sync-selfhost-public] static: public/selfhost/${f}`)
 }
 

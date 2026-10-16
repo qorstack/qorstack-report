@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useMemo, ReactNode, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '@/api/generated/main-service'
-import { ProfileDto, GoogleLoginRequest, GithubLoginRequest } from '@/api/generated/main-service/apiGenerated'
+import { ProfileDto, GoogleLoginRequest } from '@/api/generated/main-service/apiGenerated'
 import { addToast } from '@heroui/react'
 import Cookies from 'js-cookie'
 
@@ -17,7 +17,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
   loginWithGoogle: (data: GoogleLoginRequest) => Promise<void>
-  loginWithGithub: (data: GithubLoginRequest) => Promise<void>
+  /** Exchanges GitHub's one-time OAuth code on the backend (POST /api/auth/github/exchange). Throws on failure. */
+  loginWithGithub: (code: string) => Promise<void>
   logout: () => void
   // Modal Control
   isAuthModalOpen: boolean
@@ -27,6 +28,7 @@ interface AuthContextType {
   setAuthView: (view: AuthView) => void
   // Registration
   startRegistration: (email: string, password: string, firstName?: string, lastName?: string) => Promise<void>
+  /** Throws on failure. */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   refreshUser: () => Promise<void>
   navigateHome: () => Promise<void>
@@ -112,17 +114,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }
 
-  const loginWithGithub = async (data: GithubLoginRequest) => {
-    try {
-      await api.auth.githubLoginCreate(data)
-      Cookies.set(AUTH_COOKIE_NAME, 'true', { expires: 7 })
-      await refreshUser()
-      await navigateHome()
-      setIsAuthModalOpen(false)
-    } catch (error) {
-      console.error('Github login failed:', error)
-      addToast({ title: 'Login Failed', description: 'Failed to login with Github', color: 'danger' })
-    }
+  /** Throws on failure so the callback page can show an error instead of spinning. */
+  const loginWithGithub = async (code: string) => {
+    await api.instance.post('/auth/github/exchange', { code })
+    Cookies.set(AUTH_COOKIE_NAME, 'true', { expires: 7 })
+    await refreshUser()
+    await navigateHome()
+    setIsAuthModalOpen(false)
   }
 
   const logout = async () => {
@@ -165,14 +163,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }
 
+  /** Throws on failure; the caller shows the result. */
   const changePassword = async (currentPassword: string, newPassword: string) => {
-    try {
-      await api.auth.changePasswordCreate({ oldPassword: currentPassword, newPassword })
-      addToast({ title: 'Password Changed', description: 'Your password has been successfully updated', color: 'success' })
-    } catch (error) {
-      console.error('Change password failed:', error)
-      addToast({ title: 'Change Password Failed', description: 'Failed to update password', color: 'danger' })
-    }
+    await api.auth.changePasswordCreate({ oldPassword: currentPassword, newPassword })
   }
 
   const value = useMemo(() => ({

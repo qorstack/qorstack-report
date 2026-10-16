@@ -13,7 +13,7 @@ const getMethodName = (documentType: CodeGenOptions['documentType']) =>
 
 const resolveBaseUrl = (apiUrl?: string) => {
   if (apiUrl && !apiUrl.includes('__NEXT_PUBLIC_SERVICE__')) return apiUrl
-  return 'http://localhost:8080'
+  return 'http://localhost:8080/api'
 }
 
 const getTableDataName = (index: number) => `table${index + 1}Data`
@@ -54,11 +54,12 @@ const formatPrimitive = (value: unknown): string => {
   return csString(String(value))
 }
 
-const formatStringDictionary = (dict: Record<string, unknown>): string => {
-  const entries = Object.entries(dict)
-  if (entries.length === 0) return 'new Dictionary<string, string>()'
-  const inner = entries.map(([k, v]) => `{ ${csString(k)}, ${formatPrimitive(v)} }`).join(',\n')
-  return `new Dictionary<string, string>\n{\n${indentBlock(inner)}\n}`
+const formatKeyValueList = (items: Array<{ key: string; value: unknown }>): string => {
+  if (!items || items.length === 0) return 'new List<KeyValueRequest>()'
+  const inner = items
+    .map(i => `new KeyValueRequest { Key = ${csString(i.key)}, Value = ${csString(i.value ?? '')} }`)
+    .join(',\n')
+  return `new List<KeyValueRequest>\n{\n${indentBlock(inner)}\n}`
 }
 
 const formatStringList = (arr: string[]): string => {
@@ -66,23 +67,10 @@ const formatStringList = (arr: string[]): string => {
   return `new List<string> { ${arr.map(csString).join(', ')} }`
 }
 
-const formatRow = (row: Record<string, unknown>): string => {
-  const entries = Object.entries(row)
-  if (entries.length === 0) return 'new Dictionary<string, object>()'
-  const inner = entries.map(([k, v]) => `{ ${csString(k)}, ${formatPrimitive(v)} }`).join(',\n')
-  return `new Dictionary<string, object>\n{\n${indentBlock(inner)}\n}`
-}
-
-const formatRowsList = (rows: Array<Record<string, unknown>>): string => {
-  if (!rows || rows.length === 0) return 'new List<IDictionary<string, object>>()'
-  const items = rows.map(formatRow).join(',\n')
-  return `new List<IDictionary<string, object>>\n{\n${indentBlock(items)}\n}`
-}
-
 const formatSortList = (arr: Array<{ field: string; direction: string }>): string => {
   if (!arr || arr.length === 0) return 'new List<SortDefinition>()'
   const items = arr
-    .map((s) => `new SortDefinition { Field = ${csString(s.field)}, Direction = ${csString(s.direction)} }`)
+    .map((s) => `new SortDefinition { Field = ${csString(s.field)}, Direction = SortDefinitionDirection.${pascal(s.direction || 'asc')} }`)
     .join(',\n')
   return `new List<SortDefinition>\n{\n${indentBlock(items)}\n}`
 }
@@ -122,13 +110,18 @@ const formatConditionalFormats = (configs: Array<Record<string, unknown>>): stri
   return `new List<ConditionalFormatConfigRequest>\n{\n${indentBlock(items)}\n}`
 }
 
+// Columns are listed once ({{row:name}} in the template); each row holds the values in that order.
+const getColumns = (table: any): string[] => (Array.isArray(table.columns) ? table.columns : [])
+
 const formatTableRowsMap = (table: any, index: number): string => {
-  const rows = Array.isArray(table.rows) ? table.rows : []
-  const columns = rows.length > 0 ? Object.keys(rows[0]) : []
-  if (columns.length === 0) return 'new List<IDictionary<string, object>>()'
-  const entries = columns.map(col => `{ ${csString(col)}, ${formatItemAccessor(col)} ?? "" }`).join(',\n')
-  return `${getTableDataName(index)}.Select((item, index) => (IDictionary<string, object>)new Dictionary<string, object>\n{\n${indentBlock(entries)}\n}).ToList();`
+  const columns = getColumns(table)
+  if (columns.length === 0) return 'new List<ICollection<object>>();'
+  const cells = columns.map(col => formatItemAccessor(col)).join(', ')
+  return `${getTableDataName(index)}.Select(item => (ICollection<object>)new List<object> { ${cells} }).ToList();`
 }
+
+// SDK enums: "docx" → Docx, "desc" → Desc, "cover" → Cover
+const pascal = (value: string) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
 
 const formatTableDataDeclaration = (table: any, index: number): string => {
   return `// Example fetching data for table ${index + 1} from your service.
@@ -138,6 +131,7 @@ var ${getTableRowsName(index)} = ${formatTableRowsMap(table, index)}`
 
 const formatTableItem = (table: any, tableType: string, index: number): string => {
   const props: string[] = []
+  if (getColumns(table).length) props.push(`Columns = ${formatStringList(getColumns(table))}`)
   if (Array.isArray(table.rows) && table.rows.length) props.push(`Rows = ${getTableRowsName(index)}`)
   if (Array.isArray(table.sort) && table.sort.length) props.push(`Sort = ${formatSortList(table.sort)}`)
   if (Array.isArray(table.verticalMerge) && table.verticalMerge.length)
@@ -151,32 +145,32 @@ const formatTableItem = (table: any, tableType: string, index: number): string =
   if (typeof table.repeatHeader === 'boolean') props.push(`RepeatHeader = ${table.repeatHeader}`)
   // Excel-only fields
   if (typeof table.outline === 'boolean') props.push(`Outline = ${table.outline}`)
-  if (table.generateTotals && Object.keys(table.generateTotals).length)
-    props.push(`GenerateTotals = ${formatStringDictionary(table.generateTotals)}`)
-  if (table.numberFormat && Object.keys(table.numberFormat).length)
-    props.push(`NumberFormat = ${formatStringDictionary(table.numberFormat)}`)
+  if (Array.isArray(table.generateTotals) && table.generateTotals.length)
+    props.push(`GenerateTotals = ${formatKeyValueList(table.generateTotals)}`)
+  if (Array.isArray(table.numberFormat) && table.numberFormat.length)
+    props.push(`NumberFormat = ${formatKeyValueList(table.numberFormat)}`)
   if (Array.isArray(table.conditionalFormat) && table.conditionalFormat.length)
     props.push(`ConditionalFormat = ${formatConditionalFormats(table.conditionalFormat)}`)
   if (table.splitToSheets?.field) {
     const stProps: string[] = [`Field = ${csString(table.splitToSheets.field)}`]
     if (table.splitToSheets.templateSheet) stProps.push(`TemplateSheet = ${csString(table.splitToSheets.templateSheet)}`)
-    props.push(`SplitToSheets = ${formatObject('SplitToSheetsConfig', stProps)}`)
+    props.push(`SplitToSheets = ${formatObject('SplitToSheetsConfigRequest', stProps)}`)
   }
   if (table.excelTableStyle) props.push(`ExcelTableStyle = ${csString(table.excelTableStyle)}`)
   return formatObject(tableType, props)
 }
 
 const formatImage = (data: any): string => {
-  const props: string[] = []
+  const props: string[] = [`Key = ${csString(data.key)}`]
   if (data.src !== undefined) props.push(`Src = ${csString(data.src)}`)
   if (data.width !== undefined) props.push(`Width = ${data.width}`)
   if (data.height !== undefined) props.push(`Height = ${data.height}`)
-  if (data.fit !== undefined) props.push(`Fit = ${csString(data.fit)}`)
+  if (data.fit) props.push(`Fit = ImageDataRequestFit.${pascal(String(data.fit))}`)
   return formatObject('ImageDataRequest', props)
 }
 
 const formatQr = (data: any): string => {
-  const props: string[] = []
+  const props: string[] = [`Key = ${csString(data.key)}`]
   if (data.text !== undefined) props.push(`Text = ${csString(data.text)}`)
   if (data.size !== undefined) props.push(`Size = ${data.size}`)
   if (data.color !== undefined) props.push(`Color = ${csString(data.color)}`)
@@ -186,7 +180,7 @@ const formatQr = (data: any): string => {
 }
 
 const formatBarcode = (data: any): string => {
-  const props: string[] = []
+  const props: string[] = [`Key = ${csString(data.key)}`]
   if (data.text !== undefined) props.push(`Text = ${csString(data.text)}`)
   if (data.format !== undefined) props.push(`Format = ${csString(data.format)}`)
   if (data.width !== undefined) props.push(`Width = ${data.width}`)
@@ -197,35 +191,29 @@ const formatBarcode = (data: any): string => {
   return formatObject('BarcodeDataRequest', props)
 }
 
-const formatTypedDictionary = (
-  dict: Record<string, any>,
-  valueType: string,
-  formatter: (v: any) => string
-): string => {
-  const entries = Object.entries(dict)
-  if (entries.length === 0) return `new Dictionary<string, ${valueType}>()`
-  const items = entries.map(([k, v]) => `{ ${csString(k)}, ${formatter(v)} }`).join(',\n')
-  return `new Dictionary<string, ${valueType}>\n{\n${indentBlock(items)}\n}`
+const formatTypedList = (items: any[], itemType: string, formatter: (v: any) => string): string => {
+  if (!items || items.length === 0) return `new List<${itemType}>()`
+  return `new List<${itemType}>\n{\n${indentBlock(items.map(formatter).join(',\n'))}\n}`
 }
 
 const formatRequest = (data: any, requestType: string, tableType: string): string => {
   const props: string[] = []
   if (data.templateKey !== undefined) props.push(`TemplateKey = ${csString(data.templateKey)}`)
   if (data.fileName !== undefined) props.push(`FileName = ${csString(data.fileName)}`)
-  if (data.fileType !== undefined) props.push(`FileType = ${csString(data.fileType)}`)
+  if (data.fileType) props.push(`FileType = PdfFromTemplateRequestFileType.${pascal(String(data.fileType))}`)
   if (typeof data.zipOutput === 'boolean') props.push(`ZipOutput = ${data.zipOutput}`)
-  if (data.replace && Object.keys(data.replace).length)
-    props.push(`Replace = ${formatStringDictionary(data.replace)}`)
+  if (Array.isArray(data.replace) && data.replace.length)
+    props.push(`Replace = ${formatKeyValueList(data.replace)}`)
   if (Array.isArray(data.table) && data.table.length) {
     const items = data.table.map((t: any, index: number) => formatTableItem(t, tableType, index)).join(',\n')
     props.push(`Table = new List<${tableType}>\n{\n${indentBlock(items)}\n}`)
   }
-  if (data.image && Object.keys(data.image).length)
-    props.push(`Image = ${formatTypedDictionary(data.image, 'ImageDataRequest', formatImage)}`)
-  if (data.qrcode && Object.keys(data.qrcode).length)
-    props.push(`Qrcode = ${formatTypedDictionary(data.qrcode, 'QrCodeDataRequest', formatQr)}`)
-  if (data.barcode && Object.keys(data.barcode).length)
-    props.push(`Barcode = ${formatTypedDictionary(data.barcode, 'BarcodeDataRequest', formatBarcode)}`)
+  if (Array.isArray(data.image) && data.image.length)
+    props.push(`Image = ${formatTypedList(data.image, 'ImageDataRequest', formatImage)}`)
+  if (Array.isArray(data.qrcode) && data.qrcode.length)
+    props.push(`Qrcode = ${formatTypedList(data.qrcode, 'QrCodeDataRequest', formatQr)}`)
+  if (Array.isArray(data.barcode) && data.barcode.length)
+    props.push(`Barcode = ${formatTypedList(data.barcode, 'BarcodeDataRequest', formatBarcode)}`)
   if (data.pdfPassword) {
     const pw = data.pdfPassword
     const pwProps: string[] = []

@@ -26,7 +26,7 @@ remains fully functional on its own.
 | Thai / custom fonts, REST API, SDKs                |           ✅           |        ✅        |
 | Projects, RBAC, API keys, history                  |           ✅           |        ✅        |
 | Self-host, modify, commercial use                  |           ✅           |        ✅        |
-| Live Preview auto-render                           |           —            |        ✅        |
+| Live Preview auto-render                           |           ✅           |        ✅        |
 | PDF password protection                            |           —            |        ✅        |
 | PDF watermark                                      |           —            |        ✅        |
 | Export / download results as ZIP                   |           —            |        ✅        |

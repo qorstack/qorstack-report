@@ -94,7 +94,7 @@ public class GetTemplatesWithPaginationQueryHandler : IRequestHandler<GetTemplat
             .ToListAsync(cancellationToken);
 
         // Get presigned URLs for active versions with preview files
-        var templateBucket = _configuration["Minio:TemplateBucket"] ?? "templates";
+        var templateBucket = StorageAreas.Templates;
         foreach (var item in items)
         {
             if (item.ActiveVersion != null && !string.IsNullOrEmpty(item.ActiveVersion.PreviewFilePath))

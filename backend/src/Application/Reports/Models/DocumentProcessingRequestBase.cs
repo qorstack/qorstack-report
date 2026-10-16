@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using QorstackReportService.Application.Common.JsonConverters;
 using QorstackReportService.Application.Common.Models;
@@ -11,28 +12,45 @@ namespace QorstackReportService.Application.Reports.Models;
 public abstract class DocumentProcessingRequestBase
 {
     /// <summary>
-    /// Simple variable replacements ({{variable}} markers)
+    /// Simple variable replacements ({{variable}} markers): <c>[{ "key": "customer_name", "value": "ACME" }]</c>.
     /// </summary>
     [JsonPropertyName("replace")]
-    public Dictionary<string, string>? Replace { get; set; }
+    [KeyedList("replace")]
+    public List<KeyValueRequest>? Replace { get; set; }
 
     /// <summary>
-    /// Image data for image markers ({{image:name}})
+    /// Image data for image markers ({{image:name}}): <c>[{ "key": "logo", "src": "..." }]</c>.
     /// </summary>
     [JsonPropertyName("image")]
-    public Dictionary<string, ImageDataRequest>? Image { get; set; }
+    [KeyedList("image")]
+    public List<ImageDataRequest>? Image { get; set; }
 
     /// <summary>
-    /// QR code data for QR markers ({{qr:name}})
+    /// QR code data for QR markers ({{qr:name}}): <c>[{ "key": "payment", "text": "..." }]</c>.
     /// </summary>
     [JsonPropertyName("qrcode")]
-    public Dictionary<string, QrCodeDataRequest>? QrCode { get; set; }
+    [KeyedList("qrcode")]
+    public List<QrCodeDataRequest>? QrCode { get; set; }
 
     /// <summary>
-    /// Barcode data for barcode markers ({{barcode:name}})
+    /// Barcode data for barcode markers ({{barcode:name}}): <c>[{ "key": "sku", "text": "..." }]</c>.
     /// </summary>
     [JsonPropertyName("barcode")]
-    public Dictionary<string, BarcodeDataRequest>? Barcode { get; set; }
+    [KeyedList("barcode")]
+    public List<BarcodeDataRequest>? Barcode { get; set; }
+
+    /// <summary>
+    /// Pro: queue the render and return 202 with a job id instead of waiting for the file.
+    /// Poll <c>GET /render/jobs/{jobId}</c> or pass <see cref="WebhookUrl"/>.
+    /// </summary>
+    [JsonPropertyName("async")]
+    public bool Async { get; set; }
+
+    /// <summary>
+    /// Optional with <c>async: true</c>: an http(s) URL that receives a POST when the job finishes.
+    /// </summary>
+    [JsonPropertyName("webhookUrl")]
+    public string? WebhookUrl { get; set; }
 
     /// <summary>
     /// Wrap the output file in a .zip archive before returning the download URL
@@ -42,23 +60,44 @@ public abstract class DocumentProcessingRequestBase
 }
 
 /// <summary>
-/// Request DTO for table data
+/// Request DTO for table data. Column names are listed once; each row holds the values in that order:
+/// <c>{ "columns": ["item", "qty"], "rows": [["A", 2], ["B", 3]] }</c>.
 /// </summary>
 public class TableDataRequest
 {
-    [JsonPropertyName("rows")]
-    public List<Dictionary<string, object>> Rows { get; set; } = new();
+    /// <summary>
+    /// Column marker names ({{row:name}} in the template), in the order of the row values. Unique, non-empty.
+    /// </summary>
+    [JsonPropertyName("columns")]
+    [ArrayOnly("table.columns")]
+    public List<string> Columns { get; set; } = new();
 
+    /// <summary>
+    /// Table rows; each row is an array of cell values (string, number, boolean or null) in <c>columns</c> order.
+    /// </summary>
+    [JsonPropertyName("rows")]
+    [ArrayOnly("table.rows")]
+    public List<List<JsonElement>> Rows { get; set; } = new();
+
+    /// <summary>
+    /// Sort rows before rendering: <c>[{ "field": "date", "direction": "desc" }]</c>.
+    /// </summary>
     [JsonPropertyName("sort")]
-    [JsonConverter(typeof(SortDefinitionConverter))]
+    [ArrayOnly("table.sort")]
     public List<SortDefinition>? Sort { get; set; }
 
+    /// <summary>
+    /// Columns whose equal adjacent values are merged vertically: <c>["group"]</c>.
+    /// </summary>
     [JsonPropertyName("verticalMerge")]
-    [JsonConverter(typeof(StringOrArrayConverter))]
+    [ArrayOnly("table.verticalMerge")]
     public List<string>? VerticalMerge { get; set; }
 
+    /// <summary>
+    /// Columns to group (collapse) rows by: <c>["category"]</c>.
+    /// </summary>
     [JsonPropertyName("collapse")]
-    [JsonConverter(typeof(StringOrArrayConverter))]
+    [ArrayOnly("table.collapse")]
     public List<string>? Collapse { get; set; }
 }
 
@@ -97,11 +136,19 @@ public class ExcelTableDataRequest : TableDataRequest
     [JsonPropertyName("outline")]
     public bool Outline { get; set; }
 
+    /// <summary>
+    /// Totals per column: <c>[{ "key": "amount", "value": "sum" }]</c>
+    /// </summary>
     [JsonPropertyName("generateTotals")]
-    public Dictionary<string, string>? GenerateTotals { get; set; }
+    [KeyedList("table.generateTotals")]
+    public List<KeyValueRequest>? GenerateTotals { get; set; }
 
+    /// <summary>
+    /// Number format per column: <c>[{ "key": "amount", "value": "#,##0.00" }]</c>
+    /// </summary>
     [JsonPropertyName("numberFormat")]
-    public Dictionary<string, string>? NumberFormat { get; set; }
+    [KeyedList("table.numberFormat")]
+    public List<KeyValueRequest>? NumberFormat { get; set; }
 
     [JsonPropertyName("conditionalFormat")]
     public List<ConditionalFormatConfigRequest>? ConditionalFormat { get; set; }
@@ -152,8 +199,12 @@ public class SplitToSheetsConfigRequest
 /// <summary>
 /// Request DTO for image data
 /// </summary>
-public class ImageDataRequest
+public class ImageDataRequest : IKeyedRequestItem
 {
+    /// <summary>Image marker name ({{image:key}})</summary>
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = string.Empty;
+
     [JsonPropertyName("src")]
     public string Src { get; set; } = string.Empty;
 
@@ -170,8 +221,12 @@ public class ImageDataRequest
 /// <summary>
 /// Request DTO for QR code data
 /// </summary>
-public class QrCodeDataRequest
+public class QrCodeDataRequest : IKeyedRequestItem
 {
+    /// <summary>QR marker name ({{qr:key}})</summary>
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = string.Empty;
+
     [JsonPropertyName("text")]
     public string Text { get; set; } = string.Empty;
 
@@ -191,8 +246,12 @@ public class QrCodeDataRequest
 /// <summary>
 /// Request DTO for barcode data
 /// </summary>
-public class BarcodeDataRequest
+public class BarcodeDataRequest : IKeyedRequestItem
 {
+    /// <summary>Barcode marker name ({{barcode:key}})</summary>
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = string.Empty;
+
     [JsonPropertyName("text")]
     public string Text { get; set; } = string.Empty;
 

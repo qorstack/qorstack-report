@@ -10,10 +10,12 @@ public class DefaultFeatureFlagService : IFeatureFlagService
 {
     public bool PdfPasswordProtection => false;
     public bool PdfWatermark => false;
-    public bool LivePreview => false;
+    public bool LivePreview => true;
     public bool ProjectMembers => true;
     public int MaxTemplateVersions => 1;
     public bool CustomTemplateKey => true;
     public bool DownloadAsZip => false;
     public bool AutoDetectVariables => true;
+    public bool AsyncRender => false;
+    public bool ProjectTransfer => false;
 }

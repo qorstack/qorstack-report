@@ -2,7 +2,9 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using QorstackReportService.Application.Common.Models;
 using QorstackReportService.Application.DTOs;
+using QorstackReportService.Application.Reports.Commands;
 using QorstackReportService.Application.Reports.Commands.ExportPdf;
+using QorstackReportService.Application.Reports.Commands.QueueRender;
 using QorstackReportService.Application.Reports.Commands.ExportExcel;
 using QorstackReportService.Application.Reports.Commands.RenderWithSandboxPayload;
 using QorstackReportService.Application.Reports.Models;
@@ -10,6 +12,8 @@ using QorstackReportService.Application.Reports.Queries.GetReportJobById;
 using QorstackReportService.Application.Reports.Queries.GetReportJobsWithPagination;
 using QorstackReportService.Web.Infrastructure;
 using System.Text.Json.Nodes;
+using FluentValidation.Results;
+using QorstackReportService.Application.Common.Exceptions;
 using System.Security.Claims;
 
 namespace QorstackReportService.Web.Endpoints;
@@ -19,21 +23,27 @@ namespace QorstackReportService.Web.Endpoints;
 /// </summary>
 public class Render : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/render")
             .WithTags("Render")
             .RequireAuthorization();
 
         // Template-based Word/PDF generation
+        var bodyLimit = new RenderBodySizeLimit(app.ServiceProvider.GetRequiredService<IConfiguration>());
+
         group.MapPost("/word/template", RenderTemplatePdf)
             .BuildSwaggerSdk()
+            .WithMetadata(bodyLimit)
             .Produces<ExportPdfUrlResponse>(StatusCodes.Status200OK)
+            .Produces<ExportPdfAsyncResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Render Word/PDF from stored template (returns link)")
-            .WithDescription("Render a PDF or DOCX using a stored template. Supports variable replacement, tables, images, QR codes, and barcodes. Returns download link.");
+            .WithDescription("Render a PDF or DOCX from a stored Word template. Supports variable replacement, tables, images, QR codes and barcodes. Set templateVersion to render an older stored version. Returns a download link (200), or with \"async\": true (Pro) a job to poll (202).");
 
         // Template-based PDF generation using sandbox payload
         group.MapPost("/word/template-sandbox/{templateKey}", RenderTemplateSandboxPdf)
@@ -47,12 +57,16 @@ public class Render : EndpointGroupBase
         // Excel template-based generation
         group.MapPost("/excel/template", RenderTemplateExcel)
             .BuildSwaggerSdk()
+            .WithMetadata(bodyLimit)
             .Produces<ExportExcelUrlResponse>(StatusCodes.Status200OK)
+            .Produces<ExportPdfAsyncResponse>(StatusCodes.Status202Accepted)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Render Excel from stored template (returns link)")
-            .WithDescription("Render an Excel file using a stored .xlsx template. Supports variable replacement, tables, images, QR codes, and barcodes. Can output as .xlsx or convert to PDF. Returns download link.");
+            .WithDescription("Render an .xlsx file from a stored .xlsx template (Excel in, Excel out). Supports variable replacement, tables, images, QR codes and barcodes. Set templateVersion to render an older stored version. Returns a download link (200), or with \"async\": true (Pro) a job to poll (202).");
 
         // Job management endpoints
         group.MapGet("/jobs", GetJobs)
@@ -68,6 +82,14 @@ public class Render : EndpointGroupBase
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .WithSummary("Get render job by ID")
             .WithDescription("Get details of a specific render job by its ID.");
+    }
+
+    /// <summary>ZIP output is a Pro feature (flag DownloadAsZip).</summary>
+    private static bool RequireZipFeature(HttpContext httpContext, bool zipOutput)
+    {
+        if (zipOutput && !httpContext.RequestServices.GetRequiredService<QorstackReportService.Application.Common.Interfaces.IFeatureFlagService>().DownloadAsZip)
+            throw new QorstackReportService.Application.Common.Exceptions.ProFeatureRequiredException("ZIP output");
+        return zipOutput;
     }
 
     #region Template-based PDF Endpoints
@@ -105,13 +127,17 @@ public class Render : EndpointGroupBase
             UserId = userId.Value,
             TemplateKey = request.TemplateKey,
             Async = false,
-            Data = MapToDocumentProcessingData(request, request.Table),
-            FileType = request.FileType,
+            TemplateVersion = request.TemplateVersion,
+            Data = RenderRequestMapper.ToDocumentProcessingData(request, httpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<RenderLimits>>().Value),
+            FileType = request.FileType.ToLowerInvariant(),
             FileName = request.FileName,
-            ZipOutput = request.ZipOutput,
-            PdfPassword = MapToPdfPasswordOptions(request.PdfPassword),
-            Watermark = MapToPdfWatermarkOptions(request.Watermark)
+            ZipOutput = RequireZipFeature(httpContext, request.ZipOutput),
+            PdfPassword = RenderRequestMapper.ToPdfPasswordOptions(request.PdfPassword),
+            Watermark = RenderRequestMapper.ToPdfWatermarkOptions(request.Watermark)
         };
+
+        if (request.Async)
+            return await QueueAsync(sender, command, request.WebhookUrl);
 
         var result = await sender.Send(command);
 
@@ -188,7 +214,7 @@ public class Render : EndpointGroupBase
             TemplateKey = templateKey,
             Async = false,
             FileName = fileName,
-            ZipOutput = zipOutput,
+            ZipOutput = RequireZipFeature(httpContext, zipOutput),
             SandboxPayload = request
         };
 
@@ -242,12 +268,22 @@ public class Render : EndpointGroupBase
             UserId = userId.Value,
             TemplateKey = request.TemplateKey,
             Async = false,
-            Data = MapToDocumentProcessingData(request, request.Table),
-            ZipOutput = request.ZipOutput,
+            TemplateVersion = request.TemplateVersion,
+            Data = RenderRequestMapper.ToDocumentProcessingData(request, httpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<RenderLimits>>().Value),
+            ZipOutput = RequireZipFeature(httpContext, request.ZipOutput),
             FileName = request.FileName,
-            IsSandbox = true,
-            SandboxGeneratePdfPreview = !request.ZipOutput
+            // The builder renders the current version and keeps its sandbox (payload + preview PDF) up to date.
+            // A request for an older version must not overwrite that.
+            // Only the logged-in builder keeps the template's saved test data up to date; API-key callers
+            // (integrations) must never overwrite it.
+            IsSandbox = request.TemplateVersion is null && !request.Async
+                && httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.AuthenticationMethod)?.Value != "ApiKey",
+            SandboxGeneratePdfPreview = request.TemplateVersion is null && !request.ZipOutput && !request.Async
+                && httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.AuthenticationMethod)?.Value != "ApiKey"
         };
+
+        if (request.Async)
+            return await QueueAsync(sender, command, request.WebhookUrl);
 
         var result = await sender.Send(command);
 
@@ -274,6 +310,13 @@ public class Render : EndpointGroupBase
     }
 
     #endregion
+
+    /// <summary>Pro: queue the render and answer 202 with the job to poll.</summary>
+    private static async Task<IResult> QueueAsync(ISender sender, IRenderJobCommand command, string? webhookUrl)
+    {
+        var queued = await sender.Send(new QueueRenderCommand { Render = command, WebhookUrl = webhookUrl });
+        return Results.Accepted(queued.StatusUrl, queued);
+    }
 
     #region Job Management Endpoints
 
@@ -333,163 +376,16 @@ public class Render : EndpointGroupBase
     }
 
     #endregion
-
-    #region Helper Methods
-
-    private static DocumentProcessingData MapToDocumentProcessingData(DocumentProcessingRequestBase? request, IEnumerable<TableDataRequest>? tables = null)
-    {
-        if (request == null)
-        {
-            return new DocumentProcessingData();
-        }
-
-        var data = new DocumentProcessingData
-        {
-            Replace = request.Replace?.ToDictionary(k => k.Key, k => (string?)k.Value) ?? new Dictionary<string, string?>()
-            // Condition removed
-        };
-
-        // Map tables (Index-based)
-        if (tables != null)
-        {
-            data.Table = tables.Select(tableRequest =>
-            {
-                var td = new TableData
-                {
-                    Rows = tableRequest.Rows.Select(row =>
-                        row.ToDictionary(k => k.Key, v => (object?)v.Value)
-                    ).ToList(),
-                    Sort = tableRequest.Sort,
-                    VerticalMergeFields = tableRequest.VerticalMerge,
-                    CollapseFields = tableRequest.Collapse,
-                };
-
-                if (tableRequest is WordTableDataRequest wt)
-                {
-                    td.RepeatHeader = wt.RepeatHeader;
-                }
-                else if (tableRequest is ExcelTableDataRequest et)
-                {
-                    td.AutoFilter = et.AutoFilter;
-                    td.FreezeHeader = et.FreezeHeader;
-                    td.AutoFitColumns = et.AutoFitColumns;
-                    td.AsExcelTable = et.AsExcelTable;
-                    td.ExcelTableStyle = et.ExcelTableStyle;
-                    td.Outline = et.Outline;
-                    td.GenerateTotals = et.GenerateTotals;
-                    td.NumberFormat = et.NumberFormat;
-                    td.ConditionalFormat = et.ConditionalFormat?.Select(cf => new ConditionalFormatConfig
-                    {
-                        Field = cf.Field,
-                        Rules = cf.Rules.Select(r => new ConditionalFormatRule
-                        {
-                            Value = r.Value,
-                            Operator = r.Operator,
-                            FontColor = r.FontColor,
-                            BackgroundColor = r.BackgroundColor,
-                            Bold = r.Bold,
-                            Italic = r.Italic
-                        }).ToList()
-                    }).ToList();
-                    td.SplitToSheets = et.SplitToSheets != null
-                        ? new SplitToSheetsConfig
-                        {
-                            Field = et.SplitToSheets.Field,
-                            TemplateSheet = et.SplitToSheets.TemplateSheet
-                        }
-                        : null;
-                }
-
-                return td;
-            }).ToList();
-        }
-
-        // Map images
-        if (request.Image != null)
-        {
-            foreach (var (key, imageRequest) in request.Image)
-            {
-                data.Image[key] = new ImageData
-                {
-                    Src = imageRequest.Src,
-                    Width = imageRequest.Width,
-                    Height = imageRequest.Height,
-                    ObjectFit = imageRequest.Fit ?? "contain"
-                };
-            }
-        }
-
-        // Map QR codes
-        if (request.QrCode != null)
-        {
-            foreach (var (key, qrRequest) in request.QrCode)
-            {
-                data.Qrcode[key] = new QrCodeData
-                {
-                    Text = qrRequest.Text,
-                    Size = qrRequest.Size,
-                    Color = qrRequest.Color,
-                    BackgroundColor = qrRequest.BackgroundColor,
-                    Logo = qrRequest.Logo
-                };
-            }
-        }
-
-        // Map barcodes
-        if (request.Barcode != null)
-        {
-            foreach (var (key, barcodeRequest) in request.Barcode)
-            {
-                data.Barcode[key] = new BarcodeData
-                {
-                    Text = barcodeRequest.Text,
-                    Format = barcodeRequest.Format,
-                    Width = barcodeRequest.Width,
-                    Height = barcodeRequest.Height,
-                    IncludeText = barcodeRequest.IncludeText,
-                    Color = barcodeRequest.Color,
-                    BackgroundColor = barcodeRequest.BackgroundColor
-                };
-            }
-        }
-
-        return data;
-    }
-
-    private static PdfPasswordOptions? MapToPdfPasswordOptions(PdfPasswordRequest? request)
-    {
-        if (request == null) return null;
-
-        return new PdfPasswordOptions
-        {
-            UserPassword = request.UserPassword,
-            OwnerPassword = request.OwnerPassword,
-            RestrictPrinting = request.RestrictPrinting,
-            RestrictCopying = request.RestrictCopying,
-            RestrictModifying = request.RestrictModifying
-        };
-    }
-
-    private static PdfWatermarkOptions? MapToPdfWatermarkOptions(PdfWatermarkRequest? request)
-    {
-        if (request == null) return null;
-
-        return new PdfWatermarkOptions
-        {
-            Text = request.Text,
-            FontSize = request.FontSize,
-            FontFamily = request.FontFamily,
-            FontWeight = request.FontWeight,
-            FontItalic = request.FontItalic,
-            Color = request.Color,
-            Opacity = request.Opacity,
-            Rotation = request.Rotation,
-            PositionX = request.PositionX,
-            PositionY = request.PositionY,
-            Pages = request.Pages
-        };
-    }
-
-    #endregion
 }
 
+/// <summary>Request body limit for render POSTs from Render:MaxBodyMb (env RENDER_MAX_BODY_MB, default 30, 0 = unlimited).</summary>
+internal sealed class RenderBodySizeLimit : Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata
+{
+    public RenderBodySizeLimit(IConfiguration configuration)
+    {
+        var mb = configuration.GetValue($"{RenderLimits.SectionName}:{nameof(RenderLimits.MaxBodyMb)}", RenderLimits.Default.MaxBodyMb);
+        MaxRequestBodySize = mb > 0 ? mb * 1024L * 1024L : null;
+    }
+
+    public long? MaxRequestBodySize { get; }
+}

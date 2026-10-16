@@ -13,7 +13,7 @@ public interface IFeatureFlagService
     /// <summary>Whether PDF watermarking is available (requires Pro license).</summary>
     bool PdfWatermark { get; }
 
-    /// <summary>Whether automatic live preview rendering is available (requires Pro license).</summary>
+    /// <summary>Whether automatic live preview rendering is available (free in every edition).</summary>
     bool LivePreview { get; }
 
     /// <summary>Whether project members and invitations are available.</summary>
@@ -30,4 +30,10 @@ public interface IFeatureFlagService
 
     /// <summary>Whether auto-detection of template variables is available.</summary>
     bool AutoDetectVariables { get; }
+
+    /// <summary>Pro: "async": true on render requests (queued jobs, polling, webhooks).</summary>
+    bool AsyncRender { get; }
+
+    /// <summary>Export / import a whole project as a ZIP (Pro).</summary>
+    bool ProjectTransfer { get; }
 }

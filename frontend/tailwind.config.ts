@@ -2,83 +2,79 @@ import type { Config } from 'tailwindcss'
 import { heroui } from '@heroui/react'
 
 // =============================================================================
-// 🎨 THEME CONFIGURATION - EDIT COLORS HERE
-// To change the look and feel, edit these hex codes.
-// These changes apply instantly across the platform.
+// THEME — "Press" design system (dark-only, black + signal red, square corners)
+// Source of truth: agents/frontend-design/design-all.md
 // =============================================================================
 
-// Product accent (used sparingly for CTAs, focus, selected states)
-const brandPrimaryLight = '#0A1942'
-const brandPrimaryDark = '#F2F4F8'
+// Brand
+// `red` is the bright accent (crop marks, large display words, focus rings).
+// `redAction` fills buttons that carry white text: #C92820 keeps white text at ~5.5:1 (WCAG AA).
+const red = '#F2271C'
+const redAction = '#C92820'
+const redActionHover = '#B0211A'
 
-// Light Mode Settings - neutral graphite canvas with subtle blue-gray layering
-const lightBackground = '#F7F8FB'
-const lightSurface = '#FFFFFF'
-const lightText = '#101828'
+// Surfaces (darkest → lightest)
+const ink = '#F4F1EC' // primary text
+const bg = '#070707'
+// Each step is visibly different so page → panel → card → raised read as separate layers.
+const surface1 = '#101010'
+const surface2 = '#171717'
+const surface3 = '#202020'
+const surface4 = '#2A2A2A'
 
-// Dark Mode Settings - graphite black, lifted enough to avoid a crushed UI
-const darkBackground = '#08090C'
-const darkSurface = '#121417'
-const darkText = '#F4F7FB'
+// Status — kept visibly different from the brand red (errors are pink-crimson + icon)
+const colorSuccess = '#3DDC84'
+const colorWarning = '#FFB020'
+const colorDanger = '#FF4D6D'
 
-// System Colors
-const colorSuccess = '#34C759'
-const colorWarning = '#FF9500'
-const colorDanger = '#FF3B30'
-
-const themeLight = {
-  colors: {
-    default: {
-      DEFAULT: lightSurface,
-      foreground: lightText
-    },
-    primary: {
-      DEFAULT: brandPrimaryLight,
-      foreground: '#FFFFFF'
-    },
-    secondary: {
-      DEFAULT: '#FDB913',
-      foreground: '#1B0B2E'
-    },
-    success: { DEFAULT: colorSuccess, foreground: '#FFFFFF' },
-    warning: { DEFAULT: colorWarning, foreground: '#FFFFFF' },
-    danger: { DEFAULT: colorDanger, foreground: '#FFFFFF' },
-    background: lightBackground,
-    foreground: lightText,
-    content1: lightSurface,
-    content2: '#F3F5F9',
-    content3: '#E6EBF2',
-    content4: '#D4DCE8',
-    focus: brandPrimaryLight,
-    overlay: 'rgba(0, 0, 0, 0.4)'
-  }
+const neutral = {
+  50: '#0F0F0F',
+  100: '#181818',
+  200: '#2A2826',
+  300: '#3A3835',
+  400: '#8C8882', // ≥4.5:1 on bg — safe for helper text
+  500: '#A9A59F',
+  600: '#C2BEB8',
+  700: '#D8D4CE',
+  800: '#E8E5E0',
+  900: ink,
+  DEFAULT: '#2A2826',
+  foreground: ink
 }
 
-const themeDark = {
+const redScale = {
+  50: '#1F0605',
+  100: '#3A0B08',
+  200: '#6B120D',
+  300: '#A8130C',
+  400: '#D81E14',
+  500: red,
+  600: redActionHover,
+  700: '#FF6B5F',
+  800: '#FF9B92',
+  900: '#FFD2CD',
+  DEFAULT: redAction,
+  foreground: '#FFFFFF'
+}
+
+const pressTheme = {
   colors: {
-    default: {
-      DEFAULT: darkSurface,
-      foreground: darkText
-    },
-    primary: {
-      DEFAULT: brandPrimaryDark,
-      foreground: '#08090C'
-    },
-    secondary: {
-      DEFAULT: '#FDB913',
-      foreground: '#1B0B2E'
-    },
-    success: { DEFAULT: colorSuccess, foreground: '#0B0E14' },
-    warning: { DEFAULT: colorWarning, foreground: '#0B0E14' },
-    danger: { DEFAULT: colorDanger, foreground: '#0B0E14' },
-    background: darkBackground,
-    foreground: darkText,
-    content1: darkSurface,
-    content2: '#1A1D22',
-    content3: '#2A2E35',
-    content4: '#3A4049',
-    focus: brandPrimaryDark,
-    overlay: 'rgba(11, 14, 20, 0.6)'
+    default: neutral,
+    primary: redScale,
+    secondary: { DEFAULT: ink, foreground: bg },
+    success: { DEFAULT: colorSuccess, foreground: bg },
+    warning: { DEFAULT: colorWarning, foreground: bg },
+    danger: { DEFAULT: colorDanger, foreground: bg },
+    background: bg,
+    // 500 is HeroUI's input placeholder colour: dimmer than helper text so it never reads as a typed value.
+    foreground: { DEFAULT: ink, 500: '#6B6762' },
+    content1: surface1,
+    content2: surface2,
+    content3: surface3,
+    content4: surface4,
+    divider: '#2A2826',
+    focus: red,
+    overlay: 'rgba(0, 0, 0, 0.72)'
   }
 }
 
@@ -109,7 +105,7 @@ const config: Config = {
           base: '#D1D1D6',
           muted: '#8E8E93',
           subtle: '#636366',
-          accent: brandPrimaryDark,
+          accent: red,
           ok: colorSuccess
         },
         surface: {
@@ -121,20 +117,24 @@ const config: Config = {
         },
         'token-filled': 'var(--token-filled)'
       },
+      // Square system: every rounded-* utility is 0 except rounded-full (avatars, dots)
       borderRadius: {
-        sm: '3px',
-        DEFAULT: '6px',
-        md: '6px',
-        lg: '8px',
-        xl: '10px',
-        '2xl': '12px',
-        '3xl': '16px',
-        '4xl': '20px'
+        none: '0',
+        sm: '0',
+        DEFAULT: '0',
+        md: '0',
+        lg: '0',
+        xl: '0',
+        '2xl': '0',
+        '3xl': '0',
+        '4xl': '0'
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'sans-serif'],
-        headline: ['var(--font-manrope)', 'var(--font-space-grotesk)', 'sans-serif'],
-        label: ['var(--font-space-grotesk)', 'var(--font-inter)', 'sans-serif'],
+        sans: ['var(--font-archivo)', 'var(--font-anuphan)', 'system-ui', 'sans-serif'],
+        headline: ['var(--font-archivo)', 'var(--font-anuphan)', 'system-ui', 'sans-serif'],
+        label: ['var(--font-jetbrains-mono)', 'ui-monospace', 'monospace'],
+        mono: ['var(--font-jetbrains-mono)', 'ui-monospace', 'monospace'],
+        thai: ['var(--font-anuphan)', 'sans-serif'],
         prompt: ['var(--font-prompt)', 'sans-serif'],
         sarabun: ['var(--font-sarabun)', 'sans-serif'],
         sriracha: ['var(--font-sriracha)', 'cursive'],
@@ -153,8 +153,8 @@ const config: Config = {
         ambient: '0px 10px 30px rgba(15, 23, 42, 0.08)',
         'ambient-sm': '0px 4px 14px rgba(15, 23, 42, 0.06)',
         'ambient-lg': '0px 24px 54px rgba(15, 23, 42, 0.16)',
-        glow: `0 0 24px ${brandPrimaryDark}40`,
-        'glow-blue': `0 0 24px ${brandPrimaryDark}40`,
+        glow: `0 0 24px ${red}55`,
+        'glow-blue': `0 0 24px ${red}55`,
         // Airbnb single elevation tier
         lift: 'rgba(15, 23, 42, 0.06) 0 0 0 1px, rgba(15, 23, 42, 0.06) 0 8px 18px 0, rgba(15, 23, 42, 0.08) 0 18px 36px -18px'
       },
@@ -198,9 +198,9 @@ const config: Config = {
     heroui({
       layout: {
         radius: {
-          small: '6px',
-          medium: '10px',
-          large: '14px'
+          small: '0px',
+          medium: '0px',
+          large: '0px'
         },
         boxShadow: {
           small: '0px 1px 2px rgba(15, 23, 42, 0.05)',
@@ -208,16 +208,17 @@ const config: Config = {
           large: '0px 22px 48px rgba(15, 23, 42, 0.16)'
         },
         borderWidth: {
-          small: '0.5px', // iOS hairline borders
+          small: '1px',
           medium: '1px',
           large: '2px'
         },
         disabledOpacity: '0.5'
       },
       addCommonColors: true,
+      // Dark only — the site has a single theme.
+      defaultTheme: 'dark',
       themes: {
-        light: themeLight,
-        dark: themeDark
+        dark: pressTheme
       }
     })
   ]

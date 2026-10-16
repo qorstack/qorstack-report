@@ -18,12 +18,13 @@ using QorstackReportService.Application.Auth.Commands.RevokeToken;
 using QorstackReportService.Application.Auth.Models;
 using QorstackReportService.Web.Infrastructure;
 using System.Security.Claims;
+using System.Net.Http.Json;
 
 namespace QorstackReportService.Web.Endpoints;
 
 public class Auth : EndpointGroupBase
 {
-    public override void Map(WebApplication app)
+    public override void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/auth")
              .WithTags("Auth");
@@ -44,8 +45,11 @@ public class Auth : EndpointGroupBase
         group.MapPost("/google-login", GoogleLogin)
              .Produces(StatusCodes.Status200OK);
 
-        group.MapPost("/github-login", GithubLogin)
-             .Produces(StatusCodes.Status200OK);
+        // The browser only sends GitHub's one-time code; the backend exchanges it with GitHub and
+        // reads the profile itself, so a client can never claim someone else's GitHub id.
+        group.MapPost("/github/exchange", GithubExchange)
+             .Produces(StatusCodes.Status200OK)
+             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         group.MapPost("/gitlab-login", GitlabLogin)
              .Produces(StatusCodes.Status200OK);
@@ -154,9 +158,51 @@ public class Auth : EndpointGroupBase
         return Results.Ok();
     }
 
-    public async Task<IResult> GithubLogin(ISender sender, [FromBody] GithubLoginRequest request, IConfiguration config, HttpContext context, ILogger<Auth> logger)
+    public record GithubExchangeRequest(string Code);
+
+    public async Task<IResult> GithubExchange(ISender sender, [FromBody] GithubExchangeRequest request, IConfiguration config,
+        IHttpClientFactory httpFactory, HttpContext context, ILogger<Auth> logger)
     {
-        var result = await sender.Send(new GithubLoginCommand(request.GithubId, request.Email, request.Name, request.AvatarUrl));
+        var clientId = config["GitHub:ClientId"];
+        var clientSecret = config["GitHub:ClientSecret"];
+        if (string.IsNullOrWhiteSpace(request?.Code))
+            return Results.BadRequest(new { message = "code is required" });
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            return Results.BadRequest(new { message = "GitHub login is not configured (GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET)." });
+
+        var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(15);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("QorstackReport");
+        http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+
+        using var tokenResponse = await http.PostAsync("https://github.com/login/oauth/access_token",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = clientId, ["client_secret"] = clientSecret, ["code"] = request.Code
+            }));
+        var tokenJson = await tokenResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        if (!tokenJson.TryGetProperty("access_token", out var tokenProp) || tokenProp.GetString() is not { Length: > 0 } accessToken)
+        {
+            logger.LogWarning("GitHub code exchange failed: {Status}", tokenResponse.StatusCode);
+            return Results.BadRequest(new { message = "GitHub did not accept the login code. Please try again." });
+        }
+
+        http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        var user = await http.GetFromJsonAsync<System.Text.Json.JsonElement>("https://api.github.com/user");
+        var githubId = user.GetProperty("id").GetRawText();
+        var name = user.TryGetProperty("name", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String ? n.GetString() : user.GetProperty("login").GetString();
+        var avatar = user.TryGetProperty("avatar_url", out var av) ? av.GetString() : null;
+        var email = user.TryGetProperty("email", out var em) && em.ValueKind == System.Text.Json.JsonValueKind.String ? em.GetString() : null;
+        if (string.IsNullOrEmpty(email))
+        {
+            var emails = await http.GetFromJsonAsync<System.Text.Json.JsonElement>("https://api.github.com/user/emails");
+            foreach (var e in emails.EnumerateArray())
+                if (e.GetProperty("primary").GetBoolean() && e.GetProperty("verified").GetBoolean()) { email = e.GetProperty("email").GetString(); break; }
+        }
+        if (string.IsNullOrEmpty(email))
+            return Results.BadRequest(new { message = "Your GitHub account has no verified email address." });
+
+        var result = await sender.Send(new GithubLoginCommand(githubId, email, name ?? email, avatar ?? string.Empty));
 
         var expiryMinutes = double.Parse(config["Jwt:ExpiryMinutes"] ?? "15", System.Globalization.CultureInfo.InvariantCulture);
         var refreshTokenExpiryDays = double.Parse(config["Jwt:RefreshTokenExpiryDays"] ?? "7", System.Globalization.CultureInfo.InvariantCulture);
