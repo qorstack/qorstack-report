@@ -44,7 +44,7 @@ if (packageJson.author) {
 
 if (packageJson.repository && packageJson.repository.url) {
     console.log(`Syncing repository url...`);
-    csprojContent = updateTag(csprojContent, 'RepositoryUrl', packageJson.repository.url);
+    csprojContent = updateTag(csprojContent, 'RepositoryUrl', packageJson.repository.url.replace(/^git\+/, ''));
 }
 
 if (packageJson.license) {

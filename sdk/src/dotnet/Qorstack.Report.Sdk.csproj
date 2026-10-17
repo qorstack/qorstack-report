@@ -6,14 +6,20 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>1.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>Qorstack</Authors>
     <Description>Qorstack Report SDK for Node.js and .NET</Description>
     <PackageId>Qorstack.Report.Sdk</PackageId>
     <PackageTags>qorstack;report;sdk;pdf;word</PackageTags>
-    <RepositoryUrl>https://github.com/qorstack/qorstack-report</RepositoryUrl>
+    <RepositoryUrl>https://github.com/qorstack/qorstack-report.git</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/qorstack/qorstack-report</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

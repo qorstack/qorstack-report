@@ -906,6 +906,34 @@ export interface ExportPdfAsyncResponse {
   statusUrl?: string | null;
 }
 
+export interface ProjectImportResult {
+  dryRun?: boolean;
+  applied?: boolean;
+  sourceProject?: string | null;
+  /** @format date-time */
+  exportedAt?: string | null;
+  templates?: ImportTemplateItem[];
+  fonts?: ImportFontItem[];
+  warnings?: string[];
+}
+
+export interface ImportTemplateItem {
+  key?: string;
+  name?: string;
+  action?: "create" | "update" | "skip";
+  /** @format int32 */
+  fromVersion?: number | null;
+  /** @format int32 */
+  toVersion?: number;
+  reason?: string | null;
+}
+
+export interface ImportFontItem {
+  name?: string;
+  action?: "create" | "update" | "skip";
+  reason?: string | null;
+}
+
 export type QueryParamsType = Record<string | number, any>;
 export type ResponseFormat = keyof Omit<Body, "body" | "bodyUsed">;
 

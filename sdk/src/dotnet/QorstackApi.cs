@@ -91,7 +91,6 @@ namespace Qorstack.Report.Sdk
             {
                 using (var request_ = new System.Net.Http.HttpRequestMessage())
                 {
-
                     var json_ = Newtonsoft.Json.JsonConvert.SerializeObject(request, JsonSerializerSettings);
                     var content_ = new System.Net.Http.StringContent(json_);
                     content_.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json");
@@ -187,6 +186,16 @@ namespace Qorstack.Report.Sdk
                             throw new ApiException<ProblemDetails>("A server side error occurred.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
+                        if (status_ == 429)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApiException<ProblemDetails>("Too many unfinished async renders for this user (Retry-After header)", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
                         {
                             var responseData_ = response_.Content == null ? null : await ReadAsStringAsync(response_.Content, cancellationToken).ConfigureAwait(false);
                             throw new ApiException("The HTTP status code of the response was not expected (" + status_ + ").", status_, responseData_, headers_, null);
@@ -225,7 +234,6 @@ namespace Qorstack.Report.Sdk
             {
                 using (var request_ = new System.Net.Http.HttpRequestMessage())
                 {
-
                     var json_ = Newtonsoft.Json.JsonConvert.SerializeObject(request, JsonSerializerSettings);
                     var content_ = new System.Net.Http.StringContent(json_);
                     content_.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse("application/json");
@@ -319,6 +327,16 @@ namespace Qorstack.Report.Sdk
                                 throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
                             }
                             throw new ApiException<ProblemDetails>("A server side error occurred.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 429)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApiException<ProblemDetails>("Too many unfinished async renders for this user (Retry-After header)", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
                         {
@@ -2419,6 +2437,101 @@ namespace Qorstack.Report.Sdk
     }
 
     [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ProjectImportResult
+    {
+
+        [Newtonsoft.Json.JsonProperty("dryRun", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool DryRun { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("applied", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public bool Applied { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("sourceProject", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string SourceProject { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("exportedAt", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.DateTimeOffset? ExportedAt { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("templates", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.ICollection<ImportTemplateItem> Templates { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("fonts", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.ICollection<ImportFontItem> Fonts { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("warnings", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public System.Collections.Generic.ICollection<string> Warnings { get; set; }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ImportTemplateItem
+    {
+
+        [Newtonsoft.Json.JsonProperty("key", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Key { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("action", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public ImportTemplateItemAction Action { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("fromVersion", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int? FromVersion { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("toVersion", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public int ToVersion { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason { get; set; }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class ImportFontItem
+    {
+
+        [Newtonsoft.Json.JsonProperty("name", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Name { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("action", Required = Newtonsoft.Json.Required.DisallowNull, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        [Newtonsoft.Json.JsonConverter(typeof(Newtonsoft.Json.Converters.StringEnumConverter))]
+        public ImportFontItemAction Action { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("reason", Required = Newtonsoft.Json.Required.Default, NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore)]
+        public string Reason { get; set; }
+
+        private System.Collections.Generic.IDictionary<string, object> _additionalProperties;
+
+        [Newtonsoft.Json.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
     public enum PdfFromTemplateRequestFileType
     {
 
@@ -2454,6 +2567,36 @@ namespace Qorstack.Report.Sdk
 
         [System.Runtime.Serialization.EnumMember(Value = @"fill")]
         Fill = 2,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum ImportTemplateItemAction
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"create")]
+        Create = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"update")]
+        Update = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"skip")]
+        Skip = 2,
+
+    }
+
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public enum ImportFontItemAction
+    {
+
+        [System.Runtime.Serialization.EnumMember(Value = @"create")]
+        Create = 0,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"update")]
+        Update = 1,
+
+        [System.Runtime.Serialization.EnumMember(Value = @"skip")]
+        Skip = 2,
 
     }
 

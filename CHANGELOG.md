@@ -15,6 +15,12 @@ and the project aims to follow [Semantic Versioning](https://semver.org/).
 
 - `og:site_name` is the product name (was "Qorstack Report Engine").
 
+### SDK
+
+- **SDK 2.1.0** (NuGet `Qorstack.Report.Sdk`, npm `qorstack-report-sdk`) — SDK versions now match the
+  server version. Regenerated from the API spec: async-limit `429` is a typed error, and the NuGet package
+  ships its README. No breaking changes from SDK 1.0.
+
 ## [2.0.0] — 2026-10-14
 
 Upgrade guide: README › [Upgrading to v2](README.md#upgrading-to-v2).

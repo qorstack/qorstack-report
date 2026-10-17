@@ -1,6 +1,6 @@
 {
   "name": "qorstack-report-sdk",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -11,8 +11,9 @@
     "prebuild": "pnpm sync-config",
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
+    "gen:swagger": "bash ../backend/gen-swagger-sdk.sh && node -e \"require('fs').copyFileSync('../backend/swagger-sdk.json','src/qorstack-swagger.json')\"",
     "gen:nodejs": "swagger-typescript-api generate -p ../backend/swagger-sdk.json -o ./src/nodejs --name QorstackApi.ts",
-    "gen:dotnet": "nswag openapi2csclient /input:../backend/swagger-sdk.json /output:src/dotnet/QorstackApi.cs /namespace:Qorstack.Report.Sdk /ClassName:QorstackApi",
+    "gen:dotnet": "nswag openapi2csclient /input:../backend/swagger-sdk.json /output:src/dotnet/QorstackApi.cs /namespace:Qorstack.Report.Sdk /ClassName:QorstackApi && node scripts/fix-dotnet.js",
     "gen:all": "pnpm gen:nodejs && pnpm gen:dotnet"
   },
   "keywords": [
@@ -27,7 +28,7 @@
   "description": "Qorstack Report SDK for Node.js and .NET",
   "repository": {
     "type": "git",
-    "url": "https://github.com/qorstack/qorstack-report"
+    "url": "git+https://github.com/qorstack/qorstack-report.git"
   },
   "devDependencies": {
     "@types/node": "^25.2.1",

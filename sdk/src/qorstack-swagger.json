@@ -2633,6 +2633,96 @@
             "description": "GET this URL to poll the job; it returns a fresh downloadUrl once status is success."
           }
         }
+      },
+      "ProjectImportResult": {
+        "type": "object",
+        "properties": {
+          "dryRun": {
+            "type": "boolean"
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "sourceProject": {
+            "type": "string",
+            "nullable": true
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportTemplateItem"
+            }
+          },
+          "fonts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportFontItem"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ImportTemplateItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "skip"
+            ]
+          },
+          "fromVersion": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "toVersion": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ImportFontItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "skip"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        }
       }
     },
     "securitySchemes": {
