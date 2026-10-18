@@ -109,7 +109,7 @@ export const HeadTabs = <T extends string>({
   /** Tighter padding for heads that also carry actions (the preview head). */
   compact?: boolean
 }) => (
-  <div role='tablist' aria-label={ariaLabel} className={cn('flex items-center gap-1', compact ? 'px-2' : 'px-3')}>
+  <div role='tablist' aria-label={ariaLabel} className={cn('flex shrink-0 items-center gap-1', compact ? 'px-2' : 'px-3')}>
     {items.map(item => {
       const selected = item.id === active
       return (
@@ -285,8 +285,8 @@ export const AutoPreviewSwitch: React.FC<{
       thumb: 'group-data-[selected=true]:bg-background',
       label: 'text-[13px] text-default-500'
     }}>
-    <span className='hidden whitespace-nowrap 2xl:inline'>Auto-preview</span>
-    <span className='whitespace-nowrap 2xl:hidden'>Auto</span>
+    {/* Label only when the preview head has room (see .preview-head in globals.css); the switch has a tooltip. */}
+    <span className='ph-wide-640 whitespace-nowrap'>Auto-preview</span>
   </Switch>
 )
 
@@ -435,7 +435,7 @@ export const DownloadResultButton: React.FC<{
   onPress: () => void
   label?: string
   iconOnly?: boolean
-  /** Icon only until 2xl, then the label (for heads that share a row with other actions). */
+  /** Icon only until the preview head is wide enough for the label (see .preview-head in globals.css). */
   compact?: boolean
   className?: string
 }> = ({ onPress, label = 'Download', iconOnly, compact, className }) => {
@@ -449,7 +449,7 @@ export const DownloadResultButton: React.FC<{
         onPress={onPress}
         className={cn(secondaryBtn, 'min-w-10 px-3', className)}
         startContent={<Icon icon='lucide:download' className='h-4 w-4 shrink-0' />}>
-        <span className='hidden 2xl:inline'>{label}</span>
+        <span className='ph-wide-860'>{label}</span>
       </Button>
     )
   }

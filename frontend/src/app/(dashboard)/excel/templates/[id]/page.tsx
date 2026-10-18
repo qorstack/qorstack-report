@@ -1073,8 +1073,9 @@ const ExcelSandboxPage = () => {
 
   const previewPanel = (
     <BuilderPanel className='h-full'>
-      {/* One row: view tabs | auto-preview | download + generate (labels collapse to icons on narrow panels). */}
-      <PanelHead className='flex-nowrap gap-1 pr-2'>
+      {/* One row: view tabs | auto-preview | download + generate. Labels collapse by the panel's own width;
+          on a very narrow panel the actions wrap to a second row instead of overlapping. */}
+      <PanelHead className='preview-head gap-1 pr-2'>
         <HeadTabs
           compact
           ariaLabel='Preview view'

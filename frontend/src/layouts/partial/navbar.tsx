@@ -87,7 +87,13 @@ const Navbar = ({ maxWidth, onSearchNavigate }: NavbarProps): JSX.Element => {
   return (
     <>
       <header className='sticky top-0 z-[60] border-b border-divider bg-background/85 backdrop-blur-md'>
-        <div className={cn('mx-auto flex h-[68px] items-center gap-10 px-4 sm:px-7', maxWidth || 'max-w-[1280px]')}>
+        {/* Docs: same width and left edge as the docs columns below (DocLayout: max-w-[90rem], sidebar items at px-4). */}
+        <div
+          className={cn(
+            'mx-auto flex h-[68px] items-center gap-10 px-4',
+            isDocs ? 'max-w-[90rem]' : 'sm:px-7',
+            maxWidth || (isDocs ? undefined : 'max-w-[1280px]')
+          )}>
           <Link href='/' aria-label='Qorstack Report home' className='shrink-0'>
             <Logo size={34} />
           </Link>

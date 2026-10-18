@@ -140,6 +140,21 @@
 
 /* Disabled primary buttons: neutral, not a dull red that still looks like the main action. */
 @layer components {
+  /* The preview head sizes its labels by ITS width (the split is resizable), not the window's. */
+  .preview-head {
+    container-type: inline-size;
+  }
+  @container (max-width: 639px) {
+    .ph-wide-640 {
+      display: none;
+    }
+  }
+  @container (max-width: 859px) {
+    .ph-wide-860 {
+      display: none;
+    }
+  }
+
   .bg-primary[data-disabled='true'],
   button.bg-primary:disabled {
     background-color: #2a2a2a !important;

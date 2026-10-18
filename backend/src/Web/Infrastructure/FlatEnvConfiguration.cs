@@ -35,6 +35,7 @@ public static class FlatEnvConfiguration
         (["ENCRYPTION_KEY"], "Encryption:Key"),
         (["ENCRYPTION_IV"], "Encryption:IV"),
         (["CORS_ORIGINS"], "Cors:AllowedOriginsString"),
+        (["AUTH_COOKIE_SECURE"], "Auth:CookieSecure"),
 
         (["GOOGLE_CLIENT_ID"], "Google:ClientId"),
         (["GITHUB_CLIENT_ID"], "GitHub:ClientId"),

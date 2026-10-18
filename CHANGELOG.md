@@ -4,6 +4,20 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.2.1] — 2026-10-19
+
+### Fixed
+
+- **Sign-in over plain HTTP** (a Kubernetes NodePort, an intranet IP). Sign-in cookies were always Secure
+  outside localhost, so browsers dropped them on `http://` and the web UI could not stay signed in. The
+  cookies now follow the address in the browser (from the request's `Origin` / `Referer`): Secure on
+  `https://`, plain + `SameSite=Lax` on `http://` — no setting needed, behind any number of proxies.
+  `AUTH_COOKIE_SECURE=true|false` (new, optional) forces either way.
+- The template editor's preview head squeezed the Template / Result tabs under the Auto-preview switch on
+  1920px screens. Its labels now follow the panel's own width (CSS container queries), and a very narrow
+  panel wraps the actions instead of overlapping.
+- The docs navbar is as wide as the docs columns below it.
+
 ## [2.2.0] — 2026-10-19
 
 ### Added

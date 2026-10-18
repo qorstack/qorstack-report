@@ -4,6 +4,7 @@ using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,7 @@ using QorstackReportService.Application.Auth.Commands.Login;
 using QorstackReportService.Application.Auth.Commands.RefreshToken;
 using QorstackReportService.Application.Auth.Commands.Register;
 using QorstackReportService.Application.Auth.Commands.RevokeToken;
+using QorstackReportService.Application.Auth;
 using QorstackReportService.Application.Auth.Models;
 using QorstackReportService.Web.Infrastructure;
 using System.Security.Claims;
@@ -63,16 +65,19 @@ public class Auth : EndpointGroupBase
     private void SetTokenCookie(HttpContext context, string token, string cookieName, DateTime expires, ILogger logger)
     {
         var isLocalhost = context.Request.Host.Host == "localhost" || context.Request.Host.Host == "127.0.0.1";
+        // Secure when the browser page is on https (Origin / Referer), so plain-HTTP installs (NodePort) sign in
+        // without setup; AUTH_COOKIE_SECURE forces it. Rules and reasons: AuthCookiePolicy.
+        var configured = AuthCookiePolicy.Parse(context.RequestServices.GetService<IConfiguration>()?[AuthCookiePolicy.ConfigKey]);
+        var browserHttps = AuthCookiePolicy.BrowserIsHttps(context.Request.Headers.Origin, context.Request.Headers.Referer);
+        var (secure, lax) = AuthCookiePolicy.Resolve(configured, browserHttps, isLocalhost, context.Request.IsHttps);
 
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
             IsEssential = true,
             Expires = expires,
-            // Production (Secure): ต้องมี HTTPS และ SameSite=None
-            // Localhost (Dev): ยอมให้ HTTP ได้ และใช้ SameSite=Lax
-            Secure = !isLocalhost || context.Request.IsHttps,
-            SameSite = (isLocalhost && !context.Request.IsHttps) ? SameSiteMode.Lax : SameSiteMode.None
+            Secure = secure,
+            SameSite = lax ? SameSiteMode.Lax : SameSiteMode.None
         };
 
         logger.LogInformation("Setting Cookie [{CookieName}]: Secure={Secure}, SameSite={SameSite}, Host={Host}, Scheme={Scheme}",

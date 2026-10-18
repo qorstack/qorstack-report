@@ -151,6 +151,7 @@ services:
       - Encryption__IV=${ENCRYPTION_IV}
       # Only for browser apps on OTHER origins that call the API directly (the built-in UI needs nothing).
       - Cors__AllowedOriginsString=${CORS_ORIGINS:-}
+      - Auth__CookieSecure=${AUTH_COOKIE_SECURE:-}
       # Optional social sign-in (leave empty to use username/password only)
       - Google__ClientId=${GOOGLE_CLIENT_ID:-}
       - GitHub__ClientId=${GITHUB_CLIENT_ID:-}
