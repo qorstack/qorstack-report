@@ -138,14 +138,14 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
               </span>
             </nav>
             <div className='flex min-w-0 items-center gap-2.5'>
-              <h1 className='truncate text-[18px] font-extrabold uppercase leading-none tracking-[-0.01em] text-foreground [font-variation-settings:"wdth"_80] lg:text-[22px]'>
+              <h1 className='truncate text-[17px] font-semibold leading-tight text-foreground lg:text-[19px]'>
                 {templateName || 'Untitled'}
               </h1>
-              <span className='hidden h-6 shrink-0 items-center gap-1.5 border border-default-300 px-2 font-mono text-[11px] text-default-500 sm:inline-flex'>
+              <span className='hidden h-6 shrink-0 items-center gap-1.5 bg-content3 px-2 font-mono text-[11px] text-default-600 xl:inline-flex'>
                 <span aria-hidden className={cn('h-1.5 w-1.5 shrink-0 rounded-full', badge.dotClassName)} />
                 {badge.label}
               </span>
-              {templateKey && <KeyBadge value={templateKey} label='Key' className='hidden md:flex' />}
+              {templateKey && <KeyBadge value={templateKey} label='Key' className='hidden xl:flex' />}
             </div>
           </div>,
           leftEl
@@ -153,7 +153,7 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
 
       {actionsEl &&
         createPortal(
-          <div className='flex items-center gap-2'>
+          <div className='flex shrink-0 items-center gap-2'>
             {versionList.length > 0 && (
               <Button
                 variant='bordered'
@@ -166,48 +166,58 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
                   viewingOther ? 'border-foreground' : 'border-default-300'
                 )}
                 startContent={<Icon icon='lucide:history' className='h-4 w-4' aria-hidden />}>
-                <span className='hidden md:inline'>
-                  Version {shownVersion ?? '–'}
-                  {viewingOther ? ' (viewing)' : ''}
+                <span className='whitespace-nowrap'>
+                  <span className='hidden xl:inline'>Version </span>
+                  <span className='xl:hidden'>v</span>
+                  {shownVersion ?? '–'}
+                  {viewingOther ? <span className='hidden xl:inline'> (viewing)</span> : ''}
                 </span>
               </Button>
             )}
 
-            {[
-              { key: 'rename', label: 'Rename', short: 'Rename', icon: 'lucide:pencil' },
-              { key: 'download', label: `Download original ${badge.file}`, short: 'Download', icon: 'lucide:download' },
-              { key: 'replace', label: 'Replace file', short: 'Replace file', icon: 'lucide:upload' }
-            ].map(a => (
-              <Button
-                key={a.key}
-                variant='bordered'
-                size='sm'
-                radius='none'
-                isLoading={a.key === 'download' && isDownloadingSource}
-                aria-label={a.label}
-                title={a.key === 'download' ? `Download the ${badge.file} template you uploaded` : a.label}
-                onPress={() => handleMenuAction(a.key)}
-                className='h-9 min-w-0 border-1 border-default-300 px-3 text-[13px] font-medium text-foreground hover:border-foreground'
-                startContent={!(a.key === 'download' && isDownloadingSource) && <Icon icon={a.icon} className='h-4 w-4' aria-hidden />}>
-                {/* Laptops get the short label; wide screens the full one. */}
-                <span className='hidden lg:inline 2xl:hidden'>{a.short}</span>
-                <span className='hidden 2xl:inline'>{a.label}</span>
-              </Button>
-            ))}
+            {/* Used often → always one click away. */}
+            <Button
+              variant='bordered'
+              size='sm'
+              radius='none'
+              aria-label='Replace file'
+              title={`Upload a new ${badge.file} file (keeps the old one as a version)`}
+              onPress={onUpdateFile}
+              className='h-9 min-w-0 border-1 border-default-300 px-3 text-[13px] font-medium text-foreground hover:border-foreground'
+              startContent={<Icon icon='lucide:upload' className='h-4 w-4 shrink-0' aria-hidden />}>
+              <span className='hidden xl:inline'>Replace file</span>
+            </Button>
 
+            {/* Used now and then → one menu. */}
             <Dropdown placement='bottom-end' radius='none'>
               <DropdownTrigger>
                 <Button
                   variant='bordered'
                   size='sm'
                   radius='none'
+                  isIconOnly
                   aria-label='More template actions'
-                  className='h-9 min-w-0 border-1 border-default-300 px-3 text-[13px] font-medium text-foreground hover:border-foreground'
-                  startContent={<Icon icon='lucide:more-horizontal' className='h-4 w-4' aria-hidden />}>
-                  <span className='hidden lg:inline'>More</span>
+                  title='Rename, download the original file, delete'
+                  isLoading={isDownloadingSource}
+                  className='h-9 w-9 min-w-9 border-1 border-default-300 text-foreground hover:border-foreground'>
+                  <Icon icon='lucide:more-horizontal' className='h-4 w-4' aria-hidden />
                 </Button>
               </DropdownTrigger>
-              <DropdownMenu aria-label='Template actions' onAction={handleMenuAction} className='min-w-[220px]'>
+              <DropdownMenu aria-label='Template actions' onAction={handleMenuAction} className='min-w-[240px]'>
+                <DropdownSection aria-label='Template' showDivider>
+                  <DropdownItem
+                    key='rename'
+                    description='Name and template key'
+                    startContent={<Icon icon='lucide:pencil' className='h-4 w-4' />}>
+                    Rename
+                  </DropdownItem>
+                  <DropdownItem
+                    key='download'
+                    description={`The ${badge.file} file you uploaded`}
+                    startContent={<Icon icon='lucide:download' className='h-4 w-4' />}>
+                    {`Download original ${badge.file}`}
+                  </DropdownItem>
+                </DropdownSection>
                 <DropdownSection aria-label='Danger zone'>
                   <DropdownItem
                     key='delete'

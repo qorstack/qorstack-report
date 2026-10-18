@@ -1073,22 +1073,25 @@ const ExcelSandboxPage = () => {
 
   const previewPanel = (
     <BuilderPanel className='h-full'>
-      <PanelHead className='pr-3'>
+      {/* One row: view tabs | auto-preview | download + generate (labels collapse to icons on narrow panels). */}
+      <PanelHead className='flex-nowrap gap-1 pr-2'>
         <HeadTabs
+          compact
           ariaLabel='Preview view'
           active={previewMode}
           onChange={setPreviewMode}
           items={[
-            { id: 'before', label: 'Template file (.xlsx)' },
-            { id: 'after', label: 'Last result (.xlsx)' }
+            { id: 'before', label: 'Template', hint: 'Your template file (.xlsx)' },
+            { id: 'after', label: 'Result', hint: 'The last generated file (.xlsx)' }
           ]}
         />
-        <div className='px-3'>
+        <div className='shrink-0 px-2'>
           <AutoPreviewSwitch isSelected={liveMode} onToggle={handleLiveModeToggle} />
         </div>
-        <div className='ml-auto flex items-center gap-2 py-1.5'>
+        <div className='ml-auto flex shrink-0 items-center gap-2 py-1.5'>
           {hasResult && (
             <DownloadResultButton
+              compact
               onPress={handleDownloadResult}
               label={generatedIsZip ? 'Download result ZIP' : 'Download result .xlsx'}
             />

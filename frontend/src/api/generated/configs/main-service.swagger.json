@@ -6175,6 +6175,15 @@
           "reason": {
             "type": "string",
             "nullable": true
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportChange"
+            }
+          },
+          "unchanged": {
+            "type": "boolean"
           }
         }
       },
@@ -6195,6 +6204,43 @@
           "reason": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "ImportChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "summary",
+          "added",
+          "removed"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "file",
+              "fields",
+              "name",
+              "testData",
+              "key"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

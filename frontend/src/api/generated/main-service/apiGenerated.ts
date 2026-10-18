@@ -413,6 +413,18 @@ export interface ImportTemplateItem {
   /** @format int32 */
   toVersion: number
   reason?: string | null
+  /** What differs from the template already in this project (empty for new and unchanged templates). */
+  changes: ImportChange[]
+  /** The template exists here with the same file, name and test data. */
+  unchanged: boolean
+}
+
+/** One difference between the imported template and the one in this project. */
+export interface ImportChange {
+  kind: 'file' | 'fields' | 'name' | 'testData' | 'key'
+  summary: string
+  added: string[]
+  removed: string[]
 }
 
 export interface ImportFontItem {

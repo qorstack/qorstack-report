@@ -35,7 +35,9 @@ const SidebarLayout = ({ children }: Props): JSX.Element => {
           animate={{ opacity: 1 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
           className={cn(
-            'flex-1 overflow-y-auto bg-background',
+            // relative: absolutely positioned content (e.g. sr-only labels in tables) stays inside this
+            // scroll area instead of stretching the document and adding a second, page-level scrollbar.
+            'relative flex-1 overflow-y-auto bg-background',
             isBuilder ? 'px-3 py-4 sm:px-4 lg:px-5' : 'px-4 py-6 sm:px-6 lg:px-8 lg:py-8'
           )}>
           <div className={cn('w-full', !isBuilder && 'mx-auto max-w-[1400px]')}>{children}</div>

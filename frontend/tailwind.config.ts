@@ -32,9 +32,10 @@ const neutral = {
   100: '#181818',
   200: '#2A2826',
   300: '#3A3835',
-  400: '#8C8882', // ≥4.5:1 on bg — safe for helper text
-  500: '#A9A59F',
-  600: '#C2BEB8',
+  // Text steps are one notch brighter than the first Press cut: helper text read too dim on black.
+  400: '#9C9892', // ≥6:1 on bg — helper text, counts
+  500: '#B7B3AD', // secondary text, descriptions
+  600: '#CDC9C3',
   700: '#D8D4CE',
   800: '#E8E5E0',
   900: ink,
@@ -67,12 +68,13 @@ const pressTheme = {
     danger: { DEFAULT: colorDanger, foreground: bg },
     background: bg,
     // 500 is HeroUI's input placeholder colour: dimmer than helper text so it never reads as a typed value.
-    foreground: { DEFAULT: ink, 500: '#6B6762' },
+    foreground: { DEFAULT: ink, 500: '#86827C' },
     content1: surface1,
     content2: surface2,
     content3: surface3,
     content4: surface4,
-    divider: '#2A2826',
+    // Quiet hairline: panels separate by surface colour first, lines only where needed.
+    divider: '#1F1E1C',
     focus: red,
     overlay: 'rgba(0, 0, 0, 0.72)'
   }

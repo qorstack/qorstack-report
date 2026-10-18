@@ -244,10 +244,34 @@ public sealed class ProjectTransferService : IProjectTransferService
 
                 var latest = target?.TemplateVersions.Count > 0 ? target.TemplateVersions.Max(v => v.Version) : (int?)null;
                 if (target != null && latest == null) latest = 0;
-                var (action, reason) = ProjectTransferRules.Decide(source.Version, latest, otherProject);
+
+                // What differs from the template already here (shown in the preview before anything is written).
+                var contentChanged = true;
+                if (target != null)
+                {
+                    item.Changes = await CompareWithTargetAsync(source, file, target, ct);
+                    contentChanged = item.Changes.Count > 0;
+                    item.Unchanged = !contentChanged;
+                }
+                else if (!otherProject)
+                {
+                    var sameName = await _context.Templates
+                        .Where(t => t.ProjectId == projectId && t.Name == item.Name)
+                        .Select(t => t.TemplateKey)
+                        .FirstOrDefaultAsync(ct);
+                    if (sameName != null)
+                        item.Changes.Add(new ImportChange
+                        {
+                            Kind = ImportChangeKind.Key,
+                            Summary = $"A template named \"{item.Name}\" already exists here with key {sameName}. Import adds a second template with key {source.Key}; it does not rename the existing one."
+                        });
+                }
+
+                var (action, reason) = ProjectTransferRules.Decide(source.Version, latest, otherProject, contentChanged);
                 item.Action = action;
                 item.Reason = reason;
                 item.FromVersion = target == null ? null : latest;
+                item.ToVersion = action == ImportAction.Skip ? (latest ?? source.Version) : ProjectTransferRules.NewVersionNumber(source.Version, latest);
 
                 var assets = new Dictionary<string, byte[]>(StringComparer.Ordinal);
                 if (action != ImportAction.Skip)
@@ -338,6 +362,7 @@ public sealed class ProjectTransferService : IProjectTransferService
                 else
                 {
                     template = target;
+                    if (!string.IsNullOrWhiteSpace(item.Name) && template.Name != item.Name) template.Name = item.Name;
                     foreach (var v in template.TemplateVersions)
                     {
                         v.Status = "inactive";
@@ -354,7 +379,7 @@ public sealed class ProjectTransferService : IProjectTransferService
                 foreach (var (oldPath, bytes) in assets)
                 {
                     // sandbox-assets/{owner}/{templateId}/... keeps EnsureOwnStoragePaths happy for this template.
-                    var key = $"sandbox-assets/{ownerId}/{template.Id}/import-v{source.Version}/{ProjectTransferRules.AssetFileName(oldPath, assetNames)}";
+                    var key = $"sandbox-assets/{ownerId}/{template.Id}/import-v{item.ToVersion}/{ProjectTransferRules.AssetFileName(oldPath, assetNames)}";
                     using var ms = new MemoryStream(bytes);
                     await _storage.UploadFileAsync(StorageAreas.Reports, key, ms, GuessContentType(key));
                     uploaded.Add((StorageAreas.Reports, key));
@@ -363,7 +388,7 @@ public sealed class ProjectTransferService : IProjectTransferService
                 var payloadJson = source.SandboxPayload is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } p ? p.GetRawText() : null;
                 payloadJson = ProjectTransferRules.RewriteStoragePaths(payloadJson, map);
 
-                var objectName = $"{ownerId}/{template.Id}/v{source.Version}{ext}";
+                var objectName = $"{ownerId}/{template.Id}/v{item.ToVersion}{ext}";
                 using (var ms = new MemoryStream(file))
                     await _storage.UploadFileAsync(StorageAreas.Templates, objectName, ms,
                         isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -374,14 +399,14 @@ public sealed class ProjectTransferService : IProjectTransferService
                 {
                     Id = Guid.NewGuid(),
                     TemplateId = template.Id,
-                    Version = source.Version,
+                    Version = item.ToVersion,
                     FilePath = objectName,
                     SandboxPayload = payloadJson,
                     Status = "active",
                     CreatedBy = userId,
                     CreatedDatetime = now
                 };
-                version.PreviewFilePath = await TryCreatePreviewAsync(file, isExcel, $"{ownerId}/{template.Id}/v{source.Version}_preview.pdf", uploaded, ct);
+                version.PreviewFilePath = await TryCreatePreviewAsync(file, isExcel, $"{ownerId}/{template.Id}/v{item.ToVersion}_preview.pdf", uploaded, ct);
                 _context.TemplateVersions.Add(version);
                 await _context.SaveChangesAsync(ct);
 
@@ -469,6 +494,72 @@ public sealed class ProjectTransferService : IProjectTransferService
     }
 
     /// <summary>Same checks as a normal upload (incl. the macro/OLE security scan for Word files).</summary>
+    /// <summary>
+    /// Differences between an imported template and the one already in this project (its current version):
+    /// file (by checksum), fields added/removed, name, and saved test data.
+    /// </summary>
+    private async Task<List<ImportChange>> CompareWithTargetAsync(ManifestTemplate source, byte[] sourceFile, Template target, CancellationToken ct)
+    {
+        var changes = new List<ImportChange>();
+        var current = target.TemplateVersions.FirstOrDefault(v => v.Status == "active")
+                      ?? target.TemplateVersions.OrderByDescending(v => v.Version).FirstOrDefault();
+
+        byte[]? targetFile = null;
+        if (current != null)
+        {
+            try { targetFile = await ReadAllAsync(StorageAreas.Templates, current.FilePath); }
+            catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Could not read {Path} to compare", current.FilePath); }
+        }
+
+        if (targetFile == null)
+        {
+            changes.Add(new ImportChange { Kind = ImportChangeKind.File, Summary = "The current file here could not be read, so it is treated as changed." });
+        }
+        else if (!string.Equals(ProjectTransferRules.Sha256Hex(targetFile), source.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            changes.Add(new ImportChange { Kind = ImportChangeKind.File, Summary = $"Template file differs from v{current!.Version} here." });
+            var (added, removed) = ProjectTransferRules.DiffFields(
+                await FieldNamesAsync(sourceFile, source.FileName),
+                await FieldNamesAsync(targetFile, current.FilePath));
+            if (added.Count > 0 || removed.Count > 0)
+                changes.Add(new ImportChange
+                {
+                    Kind = ImportChangeKind.Fields,
+                    Summary = $"{added.Count} field(s) added, {removed.Count} removed.",
+                    Added = added,
+                    Removed = removed
+                });
+        }
+
+        var name = string.IsNullOrWhiteSpace(source.Name) ? source.Key : source.Name;
+        if (!string.Equals(name, target.Name, StringComparison.Ordinal))
+            changes.Add(new ImportChange { Kind = ImportChangeKind.Name, Summary = $"Name: \"{target.Name}\" → \"{name}\"" });
+
+        var sourcePayload = source.SandboxPayload is { ValueKind: not JsonValueKind.Null and not JsonValueKind.Undefined } p ? p.GetRawText() : null;
+        if (!ProjectTransferRules.SameTestData(sourcePayload, current?.SandboxPayload))
+            changes.Add(new ImportChange { Kind = ImportChangeKind.TestData, Summary = "Saved test data (builder values) differs." });
+
+        return changes;
+    }
+
+    /// <summary>Placeholder names of a Word/Excel template; empty when the file cannot be parsed.</summary>
+    private async Task<List<string>> FieldNamesAsync(byte[] file, string fileName)
+    {
+        try
+        {
+            using var ms = new MemoryStream(file);
+            var markers = fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+                ? await _excel.ExtractMarkersAsync(ms)
+                : await _docx.ExtractMarkersAsync(ms);
+            return markers.Select(m => m.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Transfer] Could not read the fields of {File}", fileName);
+            return new List<string>();
+        }
+    }
+
     private async Task<string?> ValidateTemplateFileAsync(byte[] file, string fileName)
     {
         using var ms = new MemoryStream(file);

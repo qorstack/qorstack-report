@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <Version>2.1.1-rc.1</Version>
+    <Version>2.2.0</Version>
     <Authors>Qorstack</Authors>
     <Description>Qorstack Report SDK for Node.js and .NET</Description>
     <PackageId>Qorstack.Report.Sdk</PackageId>

@@ -89,7 +89,11 @@ public static partial class ProjectTransferRules
     /// <param name="sourceVersion">Version in the export.</param>
     /// <param name="targetLatestVersion">Latest version of the same key in the target project, or null when absent.</param>
     /// <param name="keyUsedByAnotherProject">The key already belongs to another project of the same owner.</param>
-    public static (string Action, string? Reason) Decide(int sourceVersion, int? targetLatestVersion, bool keyUsedByAnotherProject)
+    /// <param name="contentChanged">
+    /// File, name or test data differ from the template here. Version numbers are counted per deployment, so the
+    /// same number does not mean the same content — and different numbers can hold the same file.
+    /// </param>
+    public static (string Action, string? Reason) Decide(int sourceVersion, int? targetLatestVersion, bool keyUsedByAnotherProject, bool contentChanged = true)
     {
         if (targetLatestVersion is null)
         {
@@ -98,9 +102,48 @@ public static partial class ProjectTransferRules
                 : (ImportAction.Create, "new template");
         }
 
+        if (!contentChanged) return (ImportAction.Skip, "no changes");
         if (sourceVersion > targetLatestVersion) return (ImportAction.Update, $"newer version (v{targetLatestVersion} → v{sourceVersion})");
-        if (sourceVersion == targetLatestVersion) return (ImportAction.Skip, "already up to date");
+        if (sourceVersion == targetLatestVersion) return (ImportAction.Update, $"changed (both are v{targetLatestVersion})");
         return (ImportAction.Skip, $"target is newer (v{targetLatestVersion})");
+    }
+
+    /// <summary>Version number an import creates: the source number, or the next free one when this project is already there.</summary>
+    public static int NewVersionNumber(int sourceVersion, int? targetLatestVersion) =>
+        targetLatestVersion is null ? sourceVersion : Math.Max(sourceVersion, targetLatestVersion.Value + 1);
+
+    /// <summary>Field names in <paramref name="source"/> but not in <paramref name="target"/>, and the other way round.</summary>
+    public static (List<string> Added, List<string> Removed) DiffFields(IEnumerable<string> source, IEnumerable<string> target)
+    {
+        var s = source.Distinct(StringComparer.Ordinal).ToList();
+        var t = target.Distinct(StringComparer.Ordinal).ToList();
+        return (s.Except(t, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+                t.Except(s, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList());
+    }
+
+    /// <summary>
+    /// True when two saved test-data payloads hold the same values. Storage paths differ between deployments
+    /// (each import re-uploads the images), so they are compared by file name only.
+    /// </summary>
+    public static bool SameTestData(string? sourceJson, string? targetJson)
+    {
+        static string? Normalize(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            JsonNode? root;
+            try { root = JsonNode.Parse(json); } catch (JsonException) { return json.Trim(); }
+            if (root is null or JsonObject { Count: 0 }) return null;
+            root = Walk(root, s => s.StartsWith("minio:", StringComparison.OrdinalIgnoreCase) ? "file:" + CompareName(s) : s);
+            return root?.ToJsonString();
+        }
+        return Normalize(sourceJson) == Normalize(targetJson);
+    }
+
+    /// <summary>The sanitised file name an asset gets on import (see <see cref="AssetFileName"/>), without de-duplication.</summary>
+    private static string CompareName(string minioPath)
+    {
+        var name = Regex.Replace(minioPath.Split('/').Last(), @"[^A-Za-z0-9._\-]", "_").TrimStart('.', '_', '-');
+        return name.Length > 100 ? name[^100..] : name;
     }
 
     /// <summary>All storage paths (minio:...) used anywhere in a sandbox payload.</summary>

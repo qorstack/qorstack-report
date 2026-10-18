@@ -79,8 +79,33 @@ public sealed class ImportTemplateItem
     /// <summary>"create", "update" or "skip".</summary>
     public string Action { get; set; } = ImportAction.Skip;
     public int? FromVersion { get; set; }
+    /// <summary>Version number the import creates (or would create) in this project.</summary>
     public int ToVersion { get; set; }
     public string? Reason { get; set; }
+    /// <summary>What differs from the template already in this project (empty for new and unchanged templates).</summary>
+    public List<ImportChange> Changes { get; set; } = new();
+    /// <summary>The template exists here with the same file, name and test data.</summary>
+    public bool Unchanged { get; set; }
+}
+
+/// <summary>One difference between the imported template and the one in this project.</summary>
+public sealed class ImportChange
+{
+    /// <summary>"file", "fields", "name", "testData" or "key".</summary>
+    public string Kind { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
+    public List<string> Added { get; set; } = new();
+    public List<string> Removed { get; set; } = new();
+}
+
+public static class ImportChangeKind
+{
+    public const string File = "file";
+    public const string Fields = "fields";
+    public const string Name = "name";
+    public const string TestData = "testData";
+    /// <summary>No template with this key here, but one with the same name exists (key renamed?).</summary>
+    public const string Key = "key";
 }
 
 public sealed class ImportFontItem

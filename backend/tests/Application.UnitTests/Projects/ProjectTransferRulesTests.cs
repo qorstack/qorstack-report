@@ -12,13 +12,57 @@ public class ProjectTransferRulesTests
     [TestCase(1, null, false, "create", "new template")]
     [TestCase(3, null, true, "skip", "key belongs to another project")]
     [TestCase(4, 2, false, "update", "newer version (v2 → v4)")]
-    [TestCase(2, 2, false, "skip", "already up to date")]
+    [TestCase(2, 2, false, "update", "changed (both are v2)")]
     [TestCase(1, 3, false, "skip", "target is newer (v3)")]
     public void Decide_FollowsTheImportRules(int source, int? target, bool otherProject, string action, string reason)
     {
         var (a, r) = ProjectTransferRules.Decide(source, target, otherProject);
         a.Should().Be(action);
         r.Should().Be(reason);
+    }
+
+    [TestCase(5, 2)]
+    [TestCase(2, 2)]
+    [TestCase(1, 3)]
+    public void Decide_SameContent_IsSkippedAsNoChanges_WhateverTheVersionNumbers(int source, int target)
+    {
+        ProjectTransferRules.Decide(source, target, false, contentChanged: false)
+            .Should().Be((ImportAction.Skip, "no changes"));
+    }
+
+    [TestCase(4, null, 4)]
+    [TestCase(4, 2, 4)]
+    [TestCase(2, 2, 3)]
+    [TestCase(1, 3, 4)]
+    public void NewVersionNumber_NeverReusesAVersionThatExistsHere(int source, int? target, int expected)
+    {
+        ProjectTransferRules.NewVersionNumber(source, target).Should().Be(expected);
+    }
+
+    [Test]
+    public void DiffFields_ListsAddedAndRemovedNames()
+    {
+        var (added, removed) = ProjectTransferRules.DiffFields(["name", "date", "total", "total"], ["name", "amount"]);
+        added.Should().Equal("date", "total");
+        removed.Should().Equal("amount");
+    }
+
+    [Test]
+    public void SameTestData_ComparesImagesByFileName_NotByStoragePath()
+    {
+        const string here = """{"replace":{"name":"A"},"image":{"logo":{"src":"minio:reports/sandbox-assets/u1/t1/import-v2/logo.png"}}}""";
+        const string there = """{"replace":{"name":"A"},"image":{"logo":{"src":"minio:reports/sandbox-assets/u9/t9/abc/logo.png"}}}""";
+        ProjectTransferRules.SameTestData(there, here).Should().BeTrue();
+        ProjectTransferRules.SameTestData(there.Replace("\"A\"", "\"B\""), here).Should().BeFalse();
+        ProjectTransferRules.SameTestData(there.Replace("logo.png", "other.png"), here).Should().BeFalse();
+    }
+
+    [Test]
+    public void SameTestData_TreatsMissingAndEmptyPayloadsAlike()
+    {
+        ProjectTransferRules.SameTestData(null, "{}").Should().BeTrue();
+        ProjectTransferRules.SameTestData("", null).Should().BeTrue();
+        ProjectTransferRules.SameTestData("""{"replace":{"a":"1"}}""", null).Should().BeFalse();
     }
 
     [Test]

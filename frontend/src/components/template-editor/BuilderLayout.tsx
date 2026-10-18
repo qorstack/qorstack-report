@@ -99,14 +99,17 @@ export const HeadTabs = <T extends string>({
   items,
   active,
   onChange,
-  ariaLabel
+  ariaLabel,
+  compact
 }: {
-  items: readonly { id: T; label: string }[]
+  items: readonly { id: T; label: string; hint?: string }[]
   active: T
   onChange: (id: T) => void
   ariaLabel: string
+  /** Tighter padding for heads that also carry actions (the preview head). */
+  compact?: boolean
 }) => (
-  <div role='tablist' aria-label={ariaLabel} className='flex self-stretch'>
+  <div role='tablist' aria-label={ariaLabel} className={cn('flex items-center gap-1', compact ? 'px-2' : 'px-3')}>
     {items.map(item => {
       const selected = item.id === active
       return (
@@ -116,9 +119,11 @@ export const HeadTabs = <T extends string>({
           role='tab'
           aria-selected={selected}
           onClick={() => onChange(item.id)}
+          title={item.hint}
           className={cn(
-            'min-h-[46px] border-b-2 px-4 text-[14px] font-medium transition-colors sm:px-5',
-            selected ? 'border-foreground text-foreground' : 'border-transparent text-default-500 hover:text-foreground'
+            'h-8 whitespace-nowrap text-[14px] font-medium transition-colors',
+            compact ? 'px-3' : 'px-3.5',
+            selected ? 'bg-content4 text-foreground' : 'text-default-500 hover:bg-content2 hover:text-foreground'
           )}>
           {item.label}
         </button>
@@ -274,12 +279,14 @@ export const AutoPreviewSwitch: React.FC<{
     isDisabled={isDisabled}
     onValueChange={() => onToggle()}
     aria-label='Auto-preview: re-render the preview as you edit'
+    title='Auto-preview: re-render the preview as you edit'
     classNames={{
       wrapper: 'group-data-[selected=true]:bg-foreground',
       thumb: 'group-data-[selected=true]:bg-background',
       label: 'text-[13px] text-default-500'
     }}>
-    Auto-preview
+    <span className='hidden whitespace-nowrap 2xl:inline'>Auto-preview</span>
+    <span className='whitespace-nowrap 2xl:hidden'>Auto</span>
   </Switch>
 )
 
@@ -294,7 +301,7 @@ export const PreviewNotice: React.FC<{
     <div
       role={tone === 'error' ? 'alert' : 'status'}
       className={cn(
-        'mb-3 flex items-center gap-2 border px-3 py-2 text-[13px]',
+        'mb-2 flex items-center gap-2 border px-3 py-1.5 text-[13px] leading-snug',
         tone === 'error' ? 'border-danger/50 text-danger' : 'border-divider text-default-500'
       )}>
       {tone === 'busy' ? (
@@ -324,7 +331,7 @@ export const PreviewEmpty: React.FC<{
 
 /** Dark striped surround for the document preview. */
 export const PreviewCanvas: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className='no-scrollbar flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-background p-4'>
+  <div className='no-scrollbar flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-background p-3'>
     <div className='mx-auto w-full max-w-4xl'>{children}</div>
   </div>
 )
@@ -428,20 +435,38 @@ export const DownloadResultButton: React.FC<{
   onPress: () => void
   label?: string
   iconOnly?: boolean
+  /** Icon only until 2xl, then the label (for heads that share a row with other actions). */
+  compact?: boolean
   className?: string
-}> = ({ onPress, label = 'Download', iconOnly, className }) => (
-  <Button
-    variant='bordered'
-    radius='none'
-    isIconOnly={iconOnly}
-    aria-label={iconOnly ? label : undefined}
-    title={label}
-    onPress={onPress}
-    className={cn(secondaryBtn, iconOnly && 'w-10 min-w-10 px-0', className)}
-    startContent={!iconOnly && <Icon icon='lucide:download' className='h-4 w-4' />}>
-    {iconOnly ? <Icon icon='lucide:download' className='h-4 w-4' /> : label}
-  </Button>
-)
+}> = ({ onPress, label = 'Download', iconOnly, compact, className }) => {
+  if (compact) {
+    return (
+      <Button
+        variant='bordered'
+        radius='none'
+        aria-label={label}
+        title={label}
+        onPress={onPress}
+        className={cn(secondaryBtn, 'min-w-10 px-3', className)}
+        startContent={<Icon icon='lucide:download' className='h-4 w-4 shrink-0' />}>
+        <span className='hidden 2xl:inline'>{label}</span>
+      </Button>
+    )
+  }
+  return (
+    <Button
+      variant='bordered'
+      radius='none'
+      isIconOnly={iconOnly}
+      aria-label={iconOnly ? label : undefined}
+      title={label}
+      onPress={onPress}
+      className={cn(secondaryBtn, iconOnly && 'w-10 min-w-10 px-0', className)}
+      startContent={!iconOnly && <Icon icon='lucide:download' className='h-4 w-4' />}>
+      {iconOnly ? <Icon icon='lucide:download' className='h-4 w-4' /> : label}
+    </Button>
+  )
+}
 
 export const PreviewOpenButton: React.FC<{ onPress: () => void; className?: string }> = ({ onPress, className }) => (
   <Button

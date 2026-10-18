@@ -562,10 +562,10 @@ const DocumentationPage = () => {
             <SubSection id='integration-transfer' title='Project export & import'>
               <p className='mb-4 text-[15px] leading-relaxed text-default-500'>
                 <b className='font-semibold text-foreground'>Pro.</b> Move a whole project to another deployment, e.g.
-                staging → production: <b className='font-semibold text-foreground'>Project settings → Export &amp; import</b>.
+                staging → production: <b className='font-semibold text-foreground'>Export &amp; import</b> (project sidebar).
                 Export gives one .zip with the current version of every template, its test data and images, and your
                 uploaded fonts (no API keys, members or history). Import shows a preview first, then creates new templates
-                with the same key and adds newer versions; anything already up to date is skipped. API:{' '}
+                with the same key, adds a new version when the file, name or test data changed, and leaves identical ones alone — you review every difference first. API:{' '}
                 <code>GET /projects/{'{id}'}/export</code> and <code>POST /projects/{'{id}'}/import?dryRun=true</code>{' '}
                 (multipart <code>file</code>).
               </p>

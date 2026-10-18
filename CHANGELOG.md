@@ -4,6 +4,36 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] — 2026-10-19
+
+### Added
+
+- **Import shows what differs before you confirm** (Pro). The review lists every template as New, Changed,
+  No changes or Skipped, with what changed: template file, fields added / removed, name, saved test data,
+  and a note when only the name matches a template with another key. Identical templates are folded away.
+  The API's dry run (`POST /api/projects/{id}/import?dryRun=true`) returns the same detail in
+  `templates[].changes` and `templates[].unchanged`.
+- **Export & import has its own page** in the project sidebar (`/project/{id}/transfer`), apart from
+  Project settings.
+
+### Changed
+
+- **Import compares content, not version numbers.** Version numbers are counted per deployment, so:
+  identical templates are skipped as "no changes" whatever their numbers; a changed template with the same
+  number is imported as the next free version (it used to be skipped as "already up to date"). A newer
+  version in the target is still never overwritten. The template name is updated on import.
+- **Easier-to-read dashboard.** Brighter secondary text and placeholders, quieter dividers, fields without
+  a border until hover / focus, sentence-case page titles, filled tabs and badges. Corners stay square.
+- **Template editor.** Version and Replace file stay one click away; Rename, Download original and Delete
+  moved into the ⋯ menu. The preview head is one row (Template / Result, Auto-preview, Download, Generate).
+
+### Fixed
+
+- Opening a template from the Templates list without reloading asked the API for the project id and showed
+  "not found" until refresh.
+- The editor header no longer overlaps the template name on laptop-width screens.
+- The Fonts page had two scrollbars.
+
 ## [2.1.1-rc.1] — 2026-10-18
 
 Pre-release that exercises the automated release pipeline (Docker Hub, NuGet, npm trusted publishing).

@@ -16,7 +16,6 @@ import Icon from '@/components/icon'
 import { useRouter } from 'next/navigation'
 import { useRouteParams } from '@/hooks/use-route-params'
 import { useProject } from '@/providers/ProjectContext'
-import { ProjectTransferPanel } from '@/components/projects/ProjectTransferPanel'
 
 export default function ProjectSettings() {
   const router = useRouter()
@@ -80,7 +79,7 @@ export default function ProjectSettings() {
           { label: 'Project settings' }
         ]}
         title='Project settings'
-        description='Rename this project, move it to another deployment, or delete it.'
+        description='Rename or delete this project. To move it to another deployment, use Export & import.'
       />
 
       <section className='border border-divider bg-content1'>
@@ -95,7 +94,7 @@ export default function ProjectSettings() {
             variant='bordered'
             classNames={{
               label: 'text-[13px] font-medium !text-default-500',
-              inputWrapper: 'h-10 border-default-300 bg-content2',
+              inputWrapper: 'h-10 border-transparent bg-content2 data-[hover=true]:border-default-300 group-data-[focus=true]:border-foreground',
               input: 'text-[14px]'
             }}
           />
@@ -111,8 +110,6 @@ export default function ProjectSettings() {
           </Button>
         </div>
       </section>
-
-      <ProjectTransferPanel projectId={currentProject.id} projectName={currentProject.name || 'project'} />
 
       <section className='border border-divider bg-content1'>
         <PanelHeader title='Danger zone' tone='danger' description='Actions here cannot be undone.' />

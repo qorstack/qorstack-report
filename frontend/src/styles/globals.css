@@ -86,7 +86,7 @@
   /* Dark only — <html class="dark"> is always set. */
   :root {
     --ui-scale: 16px;
-    --color-divider: 35 34 33;
+    --color-divider: 31 30 28;
     --surface-lowest: #050505;
     --surface: #070707;
     --surface-low: #0e0e0e;

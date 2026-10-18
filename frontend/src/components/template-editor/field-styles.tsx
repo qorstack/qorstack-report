@@ -4,11 +4,11 @@ import Icon from '@/components/icon'
 
 /**
  * Press field styles shared by the Word and Excel template builders.
- * Square, bordered inputs on `content2`, `default-300` border, foreground border on focus (calm app mode: no red).
+ * Square fields on `content2` with no border at rest; `default-300` on hover, foreground on focus (calm app mode: no red).
  */
 
 const wrapperBase =
-  'border border-default-300 bg-content2 shadow-none transition-colors data-[hover=true]:border-default-400 data-[hover=true]:bg-content2 group-data-[focus=true]:border-foreground group-data-[focus=true]:bg-content2'
+  'border border-transparent bg-content2 shadow-none transition-colors data-[hover=true]:border-default-300 data-[hover=true]:bg-content2 group-data-[focus=true]:border-foreground group-data-[focus=true]:bg-content2'
 
 const labelBase = '!text-default-500 text-[13px] font-medium'
 
@@ -36,7 +36,7 @@ export const keyFieldClasses = {
 }
 
 const triggerBase =
-  'border border-default-300 bg-content2 shadow-none transition-colors data-[hover=true]:border-default-400 data-[hover=true]:bg-content2 data-[open=true]:border-foreground data-[focus=true]:border-foreground'
+  'border border-transparent bg-content2 shadow-none transition-colors data-[hover=true]:border-default-300 data-[hover=true]:bg-content2 data-[open=true]:border-foreground data-[focus=true]:border-foreground'
 
 export const selectClasses = {
   trigger: cn(triggerBase, 'h-10 min-h-10'),

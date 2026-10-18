@@ -94,10 +94,8 @@ const NavPill = <T extends string>({
     onClick={onClick}
     aria-current={active ? 'true' : undefined}
     className={cn(
-      'flex h-9 shrink-0 items-center gap-2 whitespace-nowrap border px-3 text-[13px] font-medium transition-colors duration-150',
-      active
-        ? 'border-foreground bg-content2 text-foreground'
-        : 'border-default-300 text-default-500 hover:border-foreground hover:text-foreground'
+      'flex h-9 shrink-0 items-center gap-2 whitespace-nowrap px-3 text-[13px] font-medium transition-colors duration-150',
+      active ? 'bg-content4 text-foreground' : 'text-default-500 hover:bg-content2 hover:text-foreground'
     )}>
     <Icon icon={item.icon} className={cn('h-3.5 w-3.5', active && 'text-foreground')} />
     <span>{item.label}</span>

@@ -17,7 +17,7 @@ export const KeyBadge = ({ value, label = 'Key', className }: KeyBadgeProps) => 
   return (
     <div
       className={cn(
-        'flex h-7 max-w-[220px] items-center gap-1.5 border border-divider bg-content2 pl-2 text-[12px] sm:max-w-none',
+        'flex h-7 max-w-[220px] items-center gap-1.5 bg-content3 pl-2 text-[12px] sm:max-w-none',
         className
       )}>
       <span className='shrink-0 text-default-500'>{label}</span>
@@ -30,7 +30,7 @@ export const KeyBadge = ({ value, label = 'Key', className }: KeyBadgeProps) => 
         }}
         title={copyLabel}
         aria-label={copyLabel}
-        className='flex h-full w-7 shrink-0 items-center justify-center border-l border-divider text-default-500 transition-colors hover:text-foreground'>
+        className='flex h-full w-7 shrink-0 items-center justify-center text-default-500 transition-colors hover:bg-content4 hover:text-foreground'>
         <Icon icon={copied ? 'lucide:check' : 'lucide:copy'} className='h-3.5 w-3.5' />
       </button>
     </div>

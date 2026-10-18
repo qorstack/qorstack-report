@@ -30,8 +30,13 @@ export const useRouteParams = <T extends Record<string, string | string[] | unde
 
   return useMemo(() => {
     if (params?.id !== STATIC_ID_PLACEHOLDER) return params
+    // usePathname() first: during a client-side navigation it already holds the new route while
+    // window.location still shows the previous page (e.g. /project/{projectId} → /pdf/templates/{key}
+    // read the project id as the template key → 404). window.location is only the fallback for when
+    // the router still reports the exported placeholder path.
+    const fromRouter = idFromPath(pathname ?? '')
     const fromBrowser = typeof window !== 'undefined' ? idFromPath(window.location.pathname) : undefined
-    const id = fromBrowser ?? idFromPath(pathname ?? '')
+    const id = fromRouter && fromRouter !== STATIC_ID_PLACEHOLDER ? fromRouter : fromBrowser
     return { ...params, id: id ?? params.id } as T
   }, [params, pathname])
 }

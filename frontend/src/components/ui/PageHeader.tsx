@@ -18,7 +18,7 @@ interface PageHeaderProps {
 
 /**
  * Dashboard page header (Press, app mode — calm):
- * sentence-case breadcrumb → uppercase condensed title (~28px) → one-line description → actions on the right.
+ * sentence-case breadcrumb → sentence-case title (~26px) → one-line description → actions on the right.
  */
 export const PageHeader = ({ breadcrumb, title, description, actions, className }: PageHeaderProps): JSX.Element => (
   <header className={cn('flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between', className)}>
@@ -52,10 +52,10 @@ export const PageHeader = ({ breadcrumb, title, description, actions, className 
           </ol>
         </nav>
       )}
-      <h1 className='break-words text-[26px] font-extrabold uppercase leading-tight tracking-[-0.01em] text-foreground [font-variation-settings:"wdth"_72] sm:text-[28px]'>
+      <h1 className='break-words text-[24px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[26px]'>
         {title}
       </h1>
-      {description && <p className='mt-1.5 max-w-2xl text-[14px] leading-relaxed text-default-500'>{description}</p>}
+      {description && <p className='mt-1.5 max-w-2xl text-[14px] leading-relaxed text-default-600'>{description}</p>}
     </div>
     {actions && <div className='flex shrink-0 flex-wrap items-center gap-2 lg:justify-end'>{actions}</div>}
   </header>
@@ -75,7 +75,7 @@ interface PanelHeaderProps {
 
 /** Header row for a `bg-content1 border-divider` panel: sentence-case title, description, actions. */
 export const PanelHeader = ({ title, description, actions, className, tone = 'default' }: PanelHeaderProps): JSX.Element => (
-  <div className={cn('flex flex-wrap items-center justify-between gap-3 border-b border-divider px-5 py-4', className)}>
+  <div className={cn('flex flex-wrap items-center justify-between gap-3 px-5 pb-2 pt-4', className)}>
     <div className='min-w-0'>
       <h2 className={cn('text-[15px] font-semibold', tone === 'danger' ? 'text-danger' : 'text-foreground')}>{title}</h2>
       {description && <p className='mt-1 text-[14px] text-default-500'>{description}</p>}

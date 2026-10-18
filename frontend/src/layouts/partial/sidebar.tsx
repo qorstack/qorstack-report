@@ -51,6 +51,13 @@ const buildProjectItems = (projectId: string): NavItem[] => [
     isActive: p => p.includes('/api-keys')
   },
   {
+    key: 'transfer',
+    label: 'Export & import',
+    icon: 'lucide:arrow-left-right',
+    href: `/project/${projectId}/transfer`,
+    isActive: p => /^\/project\/[^/]+\/transfer/.test(p)
+  },
+  {
     key: 'project-settings',
     label: 'Project settings',
     icon: 'lucide:settings-2',

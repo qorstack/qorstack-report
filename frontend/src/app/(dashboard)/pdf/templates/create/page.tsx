@@ -20,7 +20,7 @@ const getFileType = (name: string) => {
 
 const FIELD_CLASS_NAMES = {
   label: 'text-[13px] font-medium !text-default-500',
-  inputWrapper: 'h-10 border-default-300 bg-content2',
+  inputWrapper: 'h-10 border-transparent bg-content2 data-[hover=true]:border-default-300 group-data-[focus=true]:border-foreground',
   input: 'text-[14px]',
   description: 'text-[12px] text-default-500',
   errorMessage: 'text-[12px]'

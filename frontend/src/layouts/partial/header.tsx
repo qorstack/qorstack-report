@@ -67,7 +67,7 @@ const Header = (): JSX.Element => {
         </button>
 
         {/* Left portal target — builder pages render their title/back button here (all breakpoints) */}
-        <div id='global-header-left' className='flex min-w-0 flex-1 items-center empty:hidden' />
+        <div id='global-header-left' className='flex min-w-0 flex-1 items-center overflow-hidden empty:hidden' />
 
         <div className='ml-auto flex shrink-0 items-center gap-1'>
           {/* Page-specific actions (Save, Delete, Download…) are portalled here by builder pages */}

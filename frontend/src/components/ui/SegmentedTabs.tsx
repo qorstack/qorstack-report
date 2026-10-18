@@ -30,8 +30,8 @@ export const SegmentedTabs = <T extends string>({
 }: SegmentedTabsProps<T>) => {
   const padClass = size === 'sm' ? 'h-8 px-3' : 'h-9 px-4'
   return (
-    <div role='tablist' aria-label={ariaLabel} className={cn('inline-flex border border-default-300', className)}>
-      {items.map((item, i) => {
+    <div role='tablist' aria-label={ariaLabel} className={cn('inline-flex gap-1 bg-content2 p-1', className)}>
+      {items.map(item => {
         const isActive = active === item.id
         return (
           <button
@@ -43,8 +43,7 @@ export const SegmentedTabs = <T extends string>({
             className={cn(
               'flex items-center gap-1.5 text-[13px] font-medium transition-colors duration-150',
               padClass,
-              i > 0 && 'border-l border-default-300',
-              isActive ? 'bg-content3 text-foreground' : 'text-default-500 hover:text-foreground'
+              isActive ? 'bg-content4 text-foreground' : 'text-default-500 hover:text-foreground'
             )}>
             {item.icon && <Icon icon={item.icon} className='h-3.5 w-3.5' />}
             {item.label}

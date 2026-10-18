@@ -442,7 +442,7 @@ export default function GlobalFonts() {
             onValueChange={handleSearchChange}
             variant='bordered'
             className='w-full sm:max-w-xs'
-            classNames={{ inputWrapper: 'h-10 min-h-10 border-default-300 bg-content2', input: 'text-[14px]' }}
+            classNames={{ inputWrapper: 'h-10 min-h-10 border-transparent bg-content2 data-[hover=true]:border-default-300 group-data-[focus=true]:border-foreground', input: 'text-[14px]' }}
             startContent={<Icon icon='lucide:search' className='h-4 w-4 text-default-500' />}
             isClearable
             onClear={() => {
@@ -474,7 +474,7 @@ export default function GlobalFonts() {
             </p>
           </div>
         ) : (
-          <div className='overflow-x-auto'>
+          <div className='relative overflow-x-auto'>
             <p className='flex items-start gap-2 border-b border-divider px-5 py-2.5 text-[12px] text-default-500'>
               <Icon icon='lucide:info' className='mt-0.5 h-3.5 w-3.5 shrink-0' aria-hidden />
               Preview uses the font only if your device has it; otherwise a fallback is shown. Generated PDFs always use the

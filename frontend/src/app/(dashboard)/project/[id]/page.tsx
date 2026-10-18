@@ -386,7 +386,7 @@ const ProjectDashboard = () => {
               className='w-full sm:w-52'
               onChange={e => e.target.value && setSelectedMonth(e.target.value)}
               startContent={<Icon icon='lucide:calendar' className='h-4 w-4 text-default-500' />}
-              classNames={{ trigger: 'h-10 min-h-10 border-default-300 bg-content2', value: 'text-[14px]' }}>
+              classNames={{ trigger: 'h-10 min-h-10 border-transparent bg-content2 data-[hover=true]:border-default-300 data-[open=true]:border-foreground data-[focus=true]:border-foreground', value: 'text-[14px]' }}>
               {months.map(month => (
                 <SelectItem key={month.value} textValue={month.label}>
                   {month.label}

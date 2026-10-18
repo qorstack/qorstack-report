@@ -250,7 +250,7 @@ const Templates = () => {
             onClear={() => setSearch('')}
             variant='bordered'
             className='w-full sm:w-72'
-            classNames={{ inputWrapper: 'h-10 min-h-10 border-default-300 bg-content2', input: 'text-[14px]' }}
+            classNames={{ inputWrapper: 'h-10 min-h-10 border-transparent bg-content2 data-[hover=true]:border-default-300 group-data-[focus=true]:border-foreground', input: 'text-[14px]' }}
             startContent={<Icon icon='lucide:search' className='h-4 w-4 text-default-500' />}
           />
           <div role='group' aria-label='Layout' className='flex shrink-0 border border-default-300'>
