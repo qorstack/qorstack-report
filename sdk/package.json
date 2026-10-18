@@ -1,6 +1,6 @@
 {
   "name": "qorstack-report-sdk",
-  "version": "2.1.0",
+  "version": "2.1.1-rc.1",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

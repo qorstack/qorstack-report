@@ -4,6 +4,11 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.1.1-rc.1] — 2026-10-18
+
+Pre-release that exercises the automated release pipeline (Docker Hub, NuGet, npm trusted publishing).
+No product changes from 2.1.0 — stay on `2.1.0` / `latest`.
+
 ## [2.1.0] — 2026-10-17
 
 ### Changed
