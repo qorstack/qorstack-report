@@ -86,6 +86,10 @@ public sealed class ImportTemplateItem
     public List<ImportChange> Changes { get; set; } = new();
     /// <summary>The template exists here with the same file, name and test data.</summary>
     public bool Unchanged { get; set; }
+    /// <summary>After applying: "imported" or "failed" (null in a dry run and for skipped items).</summary>
+    public string? Result { get; set; }
+    /// <summary>Why this item failed to import.</summary>
+    public string? Error { get; set; }
 }
 
 /// <summary>One difference between the imported template and the one in this project.</summary>
@@ -114,7 +118,23 @@ public sealed class ImportFontItem
     /// <summary>"create" or "skip".</summary>
     public string Action { get; set; } = ImportAction.Skip;
     public string? Reason { get; set; }
+    /// <summary>After applying: "imported" or "failed".</summary>
+    public string? Result { get; set; }
+    public string? Error { get; set; }
 }
+
+public static class ImportItemResult
+{
+    public const string Imported = "imported";
+    public const string Failed = "failed";
+}
+
+/// <summary>
+/// One line of the streamed import (POST …/import?dryRun=false&amp;stream=true, application/x-ndjson):
+/// "start" (total), then "font" / "template" per item as it finishes, then "done" with the full result.
+/// </summary>
+public sealed record ImportProgressEvent(string Type, int Done, int Total, string? Name = null, string? Key = null,
+    string? Result = null, string? Error = null);
 
 public static class ImportAction
 {

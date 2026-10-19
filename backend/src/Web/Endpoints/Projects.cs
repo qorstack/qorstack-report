@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System;
 using System.Threading.Tasks;
 using MediatR;
@@ -78,7 +79,7 @@ public class Projects : EndpointGroupBase
             .ProducesProblem(StatusCodes.Status403Forbidden)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .WithSummary("Import a project ZIP (Pro)")
-            .WithDescription("dryRun=true returns the plan without changing anything. New templates are created with the same key, newer versions are added, equal or older versions are skipped.");
+            .WithDescription("dryRun=true returns the plan (with what differs per template) without changing anything. Applying commits each font and template on its own; stream=true returns application/x-ndjson progress lines (start, font, template, done) instead of one JSON body.");
     }
 
     public async Task<IResult> ExportProject(IProjectTransferService transfer, Guid id, CancellationToken ct)
@@ -93,6 +94,8 @@ public class Projects : EndpointGroupBase
         Guid id,
         [FromForm(Name = "file")] IFormFile? file,
         [FromQuery] bool dryRun,
+        [FromQuery] bool stream,
+        HttpContext httpContext,
         CancellationToken ct)
     {
         if (file == null || file.Length == 0)
@@ -107,8 +110,40 @@ public class Projects : EndpointGroupBase
         await file.CopyToAsync(temp, ct);
         temp.Position = 0;
 
-        var result = await transfer.ImportAsync(id, temp, dryRun, ct);
-        return Results.Ok(result);
+        if (dryRun || !stream)
+            return Results.Ok(await transfer.ImportAsync(id, temp, dryRun, ct));
+
+        // stream=true: one JSON object per line as each font / template finishes, then "done" with the result.
+        // Errors before the first line (invalid ZIP, not Pro, no access) still return a normal problem response.
+        var response = httpContext.Response;
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var started = false;
+
+        async Task WriteLineAsync(object value)
+        {
+            if (!started)
+            {
+                started = true;
+                response.StatusCode = StatusCodes.Status200OK;
+                response.ContentType = "application/x-ndjson; charset=utf-8";
+                response.Headers.CacheControl = "no-cache";
+                response.Headers["X-Accel-Buffering"] = "no"; // nginx: do not buffer, so progress shows live
+            }
+            await response.WriteAsync(JsonSerializer.Serialize(value, json) + "\n", ct);
+            await response.Body.FlushAsync(ct);
+        }
+
+        try
+        {
+            var result = await transfer.ImportAsync(id, temp, dryRun: false, ct, e => WriteLineAsync(e));
+            await WriteLineAsync(new { type = "done", result });
+        }
+        catch (Exception ex) when (started && ex is not OperationCanceledException)
+        {
+            // Items already finished stay imported; tell the client why the rest did not run.
+            await WriteLineAsync(new { type = "error", message = ex.Message });
+        }
+        return Results.Empty;
     }
 
 

@@ -417,6 +417,9 @@ export interface ImportTemplateItem {
   changes: ImportChange[]
   /** The template exists here with the same file, name and test data. */
   unchanged: boolean
+  /** After applying: "imported" or "failed". */
+  result?: string | null
+  error?: string | null
 }
 
 /** One difference between the imported template and the one in this project. */
@@ -431,6 +434,9 @@ export interface ImportFontItem {
   name: string
   action: 'create' | 'update' | 'skip'
   reason?: string | null
+  /** After applying: "imported" or "failed". */
+  result?: string | null
+  error?: string | null
 }
 
 export interface FontSummaryDto {

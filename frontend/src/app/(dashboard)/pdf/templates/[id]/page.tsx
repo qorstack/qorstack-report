@@ -1,6 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react'
+import { regenerateTemplatePreview } from '@/api/template-preview'
 import { api } from '@/api/generated/main-service'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRouteParams } from '@/hooks/use-route-params'
@@ -264,6 +265,22 @@ const TemplateSandboxPage = () => {
   const [previewMode, setPreviewMode] = useState<'before' | 'after'>('before')
   const [isExpanded, setIsExpanded] = useState(false)
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null)
+  const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false)
+
+  /** Re-render the template preview with the fonts installed now (after uploading / importing fonts). */
+  const handleRegeneratePreview = async (): Promise<void> => {
+    if (!templateKeyParam) return
+    setIsRegeneratingPreview(true)
+    try {
+      const result = await regenerateTemplatePreview(templateKeyParam)
+      setPreviewFilePath(result.previewFilePathPresigned || null)
+      addToast({ title: 'Preview regenerated', color: 'success' })
+    } catch {
+      addToast({ title: 'Could not regenerate the preview', description: 'Try again in a minute.', color: 'danger' })
+    } finally {
+      setIsRegeneratingPreview(false)
+    }
+  }
   const [liveMode, setLiveMode] = useState(false)
   const { requireFeature, gateModal } = useUpgradeGate()
   const {
@@ -1104,6 +1121,8 @@ const TemplateSandboxPage = () => {
         onDownloadSource={handleDownloadSource}
         onVersionChange={handleVersionChange}
         onUpdateFile={() => setIsUpdateFileOpen(true)}
+        onRegeneratePreview={() => void handleRegeneratePreview()}
+        isRegeneratingPreview={isRegeneratingPreview}
         previewVersion={previewVersion}
         onPreviewVersion={v => {
           setPreviewVersion(v)

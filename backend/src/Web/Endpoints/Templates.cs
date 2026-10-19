@@ -8,6 +8,7 @@ using QorstackReportService.Application.Common.Models;
 using QorstackReportService.Application.DTOs;
 using QorstackReportService.Application.Templates.Commands.DeleteTemplate;
 using QorstackReportService.Application.Templates.Commands.SwitchTemplateVersion;
+using QorstackReportService.Application.Templates.Commands.RegeneratePreview;
 using QorstackReportService.Application.Templates.Commands.UpdateTemplate;
 using QorstackReportService.Application.Templates.Commands.UploadTemplate;
 using QorstackReportService.Application.Templates.Commands.ImportGalleryTemplate;
@@ -62,6 +63,14 @@ public class Templates : EndpointGroupBase
             .WithDescription("Switch the active version of a template to a specified version number.")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        group.MapPost("/{templateKey}/preview", RegeneratePreview)
+            .WithName("RegenerateTemplatePreview")
+            .WithSummary("Re-render a template's preview")
+            .WithDescription("Re-renders the preview PDF of the current version with the fonts the renderer has now (after uploading or importing fonts).")
+            .Produces<RegenerateTemplatePreviewResult>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
 
@@ -283,6 +292,15 @@ public class Templates : EndpointGroupBase
     /// <summary>
     /// Switch active version of a template
     /// </summary>
+    private static async Task<IResult> RegeneratePreview(ISender sender, HttpContext httpContext, string templateKey)
+    {
+        var userId = httpContext.User.GetUserId();
+        if (userId == null) return Results.Unauthorized();
+
+        var result = await sender.Send(new RegenerateTemplatePreviewCommand { TemplateKey = templateKey, UserId = userId.Value });
+        return Results.Ok(result);
+    }
+
     private static async Task<IResult> SwitchVersion(
         ISender sender,
         HttpContext httpContext,

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Spinner, Tooltip } from '@heroui/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useRouteParams } from '@/hooks/use-route-params'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
@@ -19,6 +19,7 @@ import { useProject } from '@/providers/ProjectContext'
 import { formatDuration } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import FileTypeBadge from '@/components/common/FileTypeBadge'
+import { RegeneratePreviewsModal } from '@/components/templates/RegeneratePreviewsModal'
 
 dayjs.extend(relativeTime)
 
@@ -47,6 +48,14 @@ const Templates = () => {
   const { projects } = useProject()
 
   const [templates, setTemplates] = useState<TemplateResponse[]>([])
+  const [regenOpen, setRegenOpen] = useState(false)
+  const searchParams = useSearchParams()
+  // ?regenerate=1 (after an import that added fonts) opens the Regenerate previews dialog once.
+  useEffect(() => {
+    if (searchParams.get('regenerate') !== '1') return
+    setRegenOpen(true)
+    router.replace(`/project/${id}/templates`)
+  }, [searchParams, router, id])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<FilterType>('all')
   const [search, setSearch] = useState('')
@@ -194,13 +203,23 @@ const Templates = () => {
   }
 
   const newTemplateButton = (
-    <Button
-      color='primary'
-      className='h-10 font-medium'
-      startContent={<Icon icon='lucide:plus' className='h-4 w-4' />}
-      onPress={handleNewTemplate}>
-      New template
-    </Button>
+    <div className='flex flex-wrap items-center gap-2'>
+      <Button
+        variant='bordered'
+        className='h-10 border-default-300 font-medium'
+        startContent={<Icon icon='lucide:refresh-cw' className='h-4 w-4' />}
+        title='Re-render every preview with the fonts installed now (after uploading or importing fonts)'
+        onPress={() => setRegenOpen(true)}>
+        Regenerate previews
+      </Button>
+      <Button
+        color='primary'
+        className='h-10 font-medium'
+        startContent={<Icon icon='lucide:plus' className='h-4 w-4' />}
+        onPress={handleNewTemplate}>
+        New template
+      </Button>
+    </div>
   )
 
   const isSearching = query.length > 0
@@ -213,6 +232,14 @@ const Templates = () => {
         description='Word and Excel files you fill with data to produce PDF, DOCX or XLSX documents.'
         actions={newTemplateButton}
       />
+      {typeof id === 'string' && (
+        <RegeneratePreviewsModal
+          projectId={id}
+          isOpen={regenOpen}
+          onOpenChange={setRegenOpen}
+          onFinished={() => void fetchTemplates(1, false)}
+        />
+      )}
 
       {/* Toolbar: filter segments + search */}
       <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>

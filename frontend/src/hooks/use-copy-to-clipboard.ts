@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
+import { copyText } from '@/utils/copy-text'
 
 type Options = {
   /** How long the `copied` flag stays true after a successful copy. Default 2000ms. */
@@ -23,6 +24,7 @@ type Result = {
  *   navigator.clipboard.writeText(text); setCopied(true); setTimeout(..., 2000)
  *
  * Cancels stale timers on consecutive copies so the flag tracks the most recent action.
+ * Works on plain-HTTP installs too (see copyText).
  */
 export const useCopyToClipboard = ({ resetMs = 2000, onError }: Options = {}): Result => {
   const [copied, setCopied] = useState(false)
@@ -30,16 +32,15 @@ export const useCopyToClipboard = ({ resetMs = 2000, onError }: Options = {}): R
 
   const copy = useCallback(
     async (text: string): Promise<boolean> => {
-      try {
-        await navigator.clipboard.writeText(text)
-        setCopied(true)
-        if (timerRef.current) clearTimeout(timerRef.current)
-        timerRef.current = setTimeout(() => setCopied(false), resetMs)
-        return true
-      } catch (err) {
-        onError?.(err)
+      const ok = await copyText(text)
+      if (!ok) {
+        onError?.(new Error('Copy to clipboard failed'))
         return false
       }
+      setCopied(true)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setCopied(false), resetMs)
+      return true
     },
     [resetMs, onError]
   )

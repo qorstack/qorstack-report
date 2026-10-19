@@ -17,8 +17,12 @@ public interface IProjectTransferService
     /// <summary>Writes the project export ZIP (latest active version of every template + assets + fonts).</summary>
     Task ExportAsync(Guid projectId, Stream output, CancellationToken ct);
 
-    /// <summary>Plans (dryRun) or applies an import from a seekable ZIP stream.</summary>
-    Task<ProjectImportResult> ImportAsync(Guid projectId, Stream zip, bool dryRun, CancellationToken ct);
+    /// <summary>
+    /// Plans (dryRun) or applies an import from a seekable ZIP stream. When applying, each font and template is
+    /// committed on its own and <paramref name="onProgress"/> hears about it as soon as it is done.
+    /// </summary>
+    Task<ProjectImportResult> ImportAsync(Guid projectId, Stream zip, bool dryRun, CancellationToken ct,
+        Func<ImportProgressEvent, Task>? onProgress = null);
 }
 
 /// <summary>
@@ -198,7 +202,8 @@ public sealed class ProjectTransferService : IProjectTransferService
 
     // ── Import ──────────────────────────────────────────────────────────────
 
-    public async Task<ProjectImportResult> ImportAsync(Guid projectId, Stream zipStream, bool dryRun, CancellationToken ct)
+    public async Task<ProjectImportResult> ImportAsync(Guid projectId, Stream zipStream, bool dryRun, CancellationToken ct,
+        Func<ImportProgressEvent, Task>? onProgress = null)
     {
         var project = await GetOwnedProjectAsync(projectId, ct);
         var ownerId = project.UserId;
@@ -293,7 +298,7 @@ public sealed class ProjectTransferService : IProjectTransferService
             }
 
             // ── Plan fonts ──
-            var fontPlans = new List<(ManifestFont Source, byte[] File)>();
+            var fontPlans = new List<(ManifestFont Source, ImportFontItem Item, byte[] File)>();
             foreach (var font in manifest.Fonts)
             {
                 var item = new ImportFontItem { Name = string.IsNullOrWhiteSpace(font.Name) ? font.FileName : font.Name };
@@ -311,35 +316,101 @@ public sealed class ProjectTransferService : IProjectTransferService
 
                 item.Action = ImportAction.Create;
                 item.Reason = "new font";
-                fontPlans.Add((font, bytes));
+                fontPlans.Add((font, item, bytes));
             }
 
             if (dryRun) return result;
 
-            await ApplyAsync(project, plans.Where(p => p.Item.Action != ImportAction.Skip).ToList(), fontPlans, result, ct);
+            await ApplyAsync(project, plans.Where(p => p.Item.Action != ImportAction.Skip).ToList(), fontPlans, result, onProgress, ct);
             result.Applied = true;
             return result;
         }
     }
 
+    /// <summary>
+    /// Applies the plan one item at a time, each in its own transaction, so one bad template does not undo the
+    /// others and progress can be reported. Fonts go first: previews rendered right after can use them once the
+    /// renderer has them (font-syncer), otherwise "Regenerate previews" fixes them later.
+    /// </summary>
     private async Task ApplyAsync(
         Project project,
         List<(ManifestTemplate Source, ImportTemplateItem Item, byte[] File, Dictionary<string, byte[]> Assets, Template? Target)> plans,
-        List<(ManifestFont Source, byte[] File)> fontPlans,
+        List<(ManifestFont Source, ImportFontItem Item, byte[] File)> fontPlans,
         ProjectImportResult result,
+        Func<ImportProgressEvent, Task>? onProgress,
         CancellationToken ct)
     {
         var ownerId = project.UserId;
         var userId = _user.Id ?? ownerId.ToString();
         var now = DateTime.UtcNow;
-        var uploaded = new List<(string Area, string Key)>();
-        var deleteAfterCommit = new List<(string Area, string Key)>();
-        var fontCacheWrites = new List<(string FileName, byte[] Bytes)>();
+        var total = fontPlans.Count + plans.Count;
+        var done = 0;
 
-        await using var tx = await _context.Database.BeginTransactionAsync(ct);
-        try
+        async Task Report(string type, string name, string? key, string? itemResult, string? error)
         {
-            foreach (var (source, item, file, assets, target) in plans)
+            done++;
+            if (onProgress != null) await onProgress(new ImportProgressEvent(type, done, total, name, key, itemResult, error));
+        }
+
+        if (onProgress != null) await onProgress(new ImportProgressEvent("start", 0, total));
+
+        foreach (var (source, item, bytes) in fontPlans)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.ChangeTracker.Clear();
+            var key = $"{Guid.NewGuid()}/{source.FileName}";
+            var stored = false;
+            try
+            {
+                var fontId = Guid.Parse(key[..36]);
+                _context.Fonts.Add(new Font
+                {
+                    Id = fontId,
+                    Name = string.IsNullOrWhiteSpace(source.Name) ? Path.GetFileNameWithoutExtension(source.FileName) : source.Name,
+                    FamilyName = string.IsNullOrWhiteSpace(source.Family) ? Path.GetFileNameWithoutExtension(source.FileName) : source.Family,
+                    SubFamilyName = string.IsNullOrWhiteSpace(source.SubFamily) ? "Regular" : source.SubFamily,
+                    Weight = source.Weight,
+                    IsItalic = source.Italic,
+                    FileFormat = Path.GetExtension(source.FileName).TrimStart('.').ToLowerInvariant(),
+                    FileSizeBytes = bytes.Length,
+                    FileHash = ProjectTransferRules.Sha256Hex(bytes),
+                    StorageBucket = StorageAreas.Fonts,
+                    StorageKey = key,
+                    SyncSource = "upload",
+                    IsSystemFont = false,
+                    IsActive = true,
+                    CreatedBy = userId,
+                    CreatedDatetime = now
+                });
+                using (var ms = new MemoryStream(bytes))
+                    await _storage.UploadFileAsync(StorageAreas.Fonts, key, ms, "application/octet-stream");
+                stored = true;
+                await _context.SaveChangesAsync(ct);
+                item.Result = ImportItemResult.Imported;
+
+                try { await _fontCache.WriteAsync(source.FileName, bytes, ct); }
+                catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Font cache write for {File} failed (font-syncer will pick it up)", source.FileName); }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "[Transfer] Font {Font} could not be imported", item.Name);
+                if (stored) await TryDeleteAsync(StorageAreas.Fonts, key);
+                item.Result = ImportItemResult.Failed;
+                item.Error = Describe(ex);
+                result.Warnings.Add($"Font {item.Name}: {item.Error}");
+            }
+            await Report("font", item.Name, null, item.Result, item.Error);
+        }
+
+        foreach (var (source, item, file, assets, target) in plans)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.ChangeTracker.Clear();
+            var uploaded = new List<(string Area, string Key)>();
+            var deleteAfterCommit = new List<(string Area, string Key)>();
+
+            await using var tx = await _context.Database.BeginTransactionAsync(ct);
+            try
             {
                 var isExcel = source.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase);
                 var ext = isExcel ? ".xlsx" : ".docx";
@@ -361,7 +432,8 @@ public sealed class ProjectTransferService : IProjectTransferService
                 }
                 else
                 {
-                    template = target;
+                    // Re-read inside this transaction (the tracker is cleared between items).
+                    template = await _context.Templates.Include(t => t.TemplateVersions).FirstAsync(t => t.Id == target.Id, ct);
                     if (!string.IsNullOrWhiteSpace(item.Name) && template.Name != item.Name) template.Name = item.Name;
                     foreach (var v in template.TemplateVersions)
                     {
@@ -421,64 +493,40 @@ public sealed class ProjectTransferService : IProjectTransferService
                     all.RemoveAt(0);
                 }
                 await _context.SaveChangesAsync(ct);
-            }
+                await tx.CommitAsync(ct);
+                item.Result = ImportItemResult.Imported;
 
-            foreach (var (source, bytes) in fontPlans)
+                foreach (var (area, key) in deleteAfterCommit) await TryDeleteAsync(area, key);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                var fontId = Guid.NewGuid();
-                var key = $"{fontId}/{source.FileName}";
-                _context.Fonts.Add(new Font
-                {
-                    Id = fontId,
-                    Name = string.IsNullOrWhiteSpace(source.Name) ? Path.GetFileNameWithoutExtension(source.FileName) : source.Name,
-                    FamilyName = string.IsNullOrWhiteSpace(source.Family) ? Path.GetFileNameWithoutExtension(source.FileName) : source.Family,
-                    SubFamilyName = string.IsNullOrWhiteSpace(source.SubFamily) ? "Regular" : source.SubFamily,
-                    Weight = source.Weight,
-                    IsItalic = source.Italic,
-                    FileFormat = Path.GetExtension(source.FileName).TrimStart('.').ToLowerInvariant(),
-                    FileSizeBytes = bytes.Length,
-                    FileHash = ProjectTransferRules.Sha256Hex(bytes),
-                    StorageBucket = StorageAreas.Fonts,
-                    StorageKey = key,
-                    SyncSource = "upload",
-                    IsSystemFont = false,
-                    IsActive = true,
-                    CreatedBy = userId,
-                    CreatedDatetime = now
-                });
-                using var ms = new MemoryStream(bytes);
-                await _storage.UploadFileAsync(StorageAreas.Fonts, key, ms, "application/octet-stream");
-                uploaded.Add((StorageAreas.Fonts, key));
-                fontCacheWrites.Add((source.FileName, bytes));
+                await tx.RollbackAsync(CancellationToken.None);
+                foreach (var (area, key) in uploaded) await TryDeleteAsync(area, key);
+                _logger.LogWarning(ex, "[Transfer] Template {Key} could not be imported", item.Key);
+                item.Result = ImportItemResult.Failed;
+                item.Error = Describe(ex);
+                result.Warnings.Add($"{item.Key}: {item.Error}");
             }
-
-            await _context.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            foreach (var (area, key) in uploaded)
-            {
-                try { await _storage.DeleteFileAsync(area, key); }
-                catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Cleanup of {Key} failed", key); }
-            }
-            throw;
+            await Report("template", item.Name, item.Key, item.Result, item.Error);
         }
 
-        foreach (var (area, key) in deleteAfterCommit)
-        {
-            try { await _storage.DeleteFileAsync(area, key); }
-            catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Could not delete old version file {Key}", key); }
-        }
-        foreach (var (fileName, bytes) in fontCacheWrites)
-        {
-            try { await _fontCache.WriteAsync(fileName, bytes, ct); }
-            catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Font cache write for {File} failed (font-syncer will pick it up)", fileName); }
-        }
+        _logger.LogInformation("[Transfer] Imported into project {ProjectId}: {Templates}/{TemplateTotal} template(s), {Fonts}/{FontTotal} font(s)",
+            project.Id, plans.Count(x => x.Item.Result == ImportItemResult.Imported), plans.Count,
+            fontPlans.Count(x => x.Item.Result == ImportItemResult.Imported), fontPlans.Count);
+    }
 
-        _logger.LogInformation("[Transfer] Imported into project {ProjectId}: {Templates} template change(s), {Fonts} font(s)",
-            project.Id, plans.Count, fontPlans.Count);
+    /// <summary>A short, user-facing reason for a failed item (no stack traces).</summary>
+    private static string Describe(Exception ex)
+    {
+        var inner = ex is DbUpdateException { InnerException: { } dbInner } ? dbInner : ex;
+        var message = inner.Message.ReplaceLineEndings(" ").Trim();
+        return message.Length > 300 ? message[..300] + "…" : message;
+    }
+
+    private async Task TryDeleteAsync(string area, string key)
+    {
+        try { await _storage.DeleteFileAsync(area, key); }
+        catch (Exception ex) { _logger.LogWarning(ex, "[Transfer] Cleanup of {Key} failed", key); }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

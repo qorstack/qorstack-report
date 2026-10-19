@@ -49,6 +49,9 @@ type Props = {
   onDownloadSource: () => void
   onVersionChange: (v: number) => void
   onUpdateFile: () => void
+  /** Re-render the preview with the fonts installed now; hidden when not given. */
+  onRegeneratePreview?: () => void
+  isRegeneratingPreview?: boolean
   /** Where the "Templates" breadcrumb goes. Defaults to `/project`. */
   templatesHref?: string
   /** Version currently shown in the preview / used by Generate (null = the current version). */
@@ -90,6 +93,8 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
   onDownloadSource,
   onVersionChange,
   onUpdateFile,
+  onRegeneratePreview,
+  isRegeneratingPreview = false,
   templatesHref = '/project',
   previewVersion = null,
   onPreviewVersion
@@ -118,6 +123,7 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
     if (k === 'rename') edit.onOpenChange(true)
     if (k === 'download') onDownloadSource()
     if (k === 'replace') onUpdateFile()
+    if (k === 'regenerate') onRegeneratePreview?.()
     if (k === 'delete') onDelete()
   }
 
@@ -198,7 +204,7 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
                   isIconOnly
                   aria-label='More template actions'
                   title='Rename, download the original file, delete'
-                  isLoading={isDownloadingSource}
+                  isLoading={isDownloadingSource || isRegeneratingPreview}
                   className='h-9 w-9 min-w-9 border-1 border-default-300 text-foreground hover:border-foreground'>
                   <Icon icon='lucide:more-horizontal' className='h-4 w-4' aria-hidden />
                 </Button>
@@ -216,6 +222,13 @@ export const TemplateHeaderPortals: React.FC<Props> = ({
                     description={`The ${badge.file} file you uploaded`}
                     startContent={<Icon icon='lucide:download' className='h-4 w-4' />}>
                     {`Download original ${badge.file}`}
+                  </DropdownItem>
+                  <DropdownItem
+                    key='regenerate'
+                    className={onRegeneratePreview ? undefined : 'hidden'}
+                    description='Re-render with the fonts installed now'
+                    startContent={<Icon icon='lucide:refresh-cw' className='h-4 w-4' />}>
+                    Regenerate preview
                   </DropdownItem>
                 </DropdownSection>
                 <DropdownSection aria-label='Danger zone'>

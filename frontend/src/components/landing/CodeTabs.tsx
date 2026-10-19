@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { copyText } from '@/utils/copy-text'
 import { cn } from '@/utils/cn'
 import { markupToPlain, renderMarkup } from './highlight'
 import { prefersReducedMotion, useInView } from './hooks'
@@ -133,12 +134,7 @@ export const CodeTabs = (): JSX.Element => {
   }
 
   const copy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(plain)
-      setCopyLabel('Copied')
-    } catch {
-      setCopyLabel('Failed')
-    }
+    setCopyLabel((await copyText(plain)) ? 'Copied' : 'Failed')
   }
 
   return (

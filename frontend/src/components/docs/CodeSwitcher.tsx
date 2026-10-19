@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { copyText } from '@/utils/copy-text'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { obsidianDark } from './code-themes'
 import Icon from '@/components/icon'
@@ -160,13 +161,9 @@ const InlineCopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch (err) {
-      console.error('Failed to copy text: ', err)
-    }
+    if (!(await copyText(text))) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (

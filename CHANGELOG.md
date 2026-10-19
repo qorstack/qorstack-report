@@ -4,6 +4,28 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] — 2026-10-20
+
+### Added
+
+- **Live import progress** (Pro). Importing a project now shows every font and template as it is imported, with a
+  progress bar and the reason for anything that failed, then a summary with **Go to Templates**.
+  API: `POST /api/projects/{id}/import?dryRun=false&stream=true` streams `application/x-ndjson` progress lines.
+- **Regenerate previews.** Re-render template previews with the fonts installed now — after uploading or importing
+  fonts, previews made before the renderer had them show a substitute. Templates page: **Regenerate previews** (every
+  template of the project, with progress); template editor: **⋯ → Regenerate preview**;
+  API: `POST /api/templates/{key}/preview`. After an import that added fonts, the Templates page offers it.
+
+### Changed
+
+- Import commits each font and template on its own, fonts first. A template that fails no longer undoes the
+  others; it is listed with its reason, and importing the same file again picks up only what is missing.
+
+### Fixed
+
+- Copy buttons (API key on Create project, API keys page, template keys, code blocks) did nothing on installs
+  opened over plain HTTP (a NodePort, an intranet IP); they fall back to a method that works without HTTPS.
+
 ## [2.2.2] — 2026-10-19
 
 ### Added

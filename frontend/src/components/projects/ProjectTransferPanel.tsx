@@ -1,7 +1,9 @@
 'use client'
 
 import React, { useRef, useState } from 'react'
-import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, addToast, cn } from '@heroui/react'
+import { useRouter } from 'next/navigation'
+import { Button, Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Progress, Spinner, addToast, cn } from '@heroui/react'
+import { API_BASE_URL } from '@/api/base-url'
 import Icon from '@/components/icon'
 import { PanelHeader } from '@/components/ui/PageHeader'
 import { api } from '@/api/generated/main-service'
@@ -137,6 +139,79 @@ const fileNameFrom = (disposition: string | undefined, fallback: string): string
   return plain ? plain[1] : fallback
 }
 
+type LiveStatus = 'waiting' | 'running' | 'imported' | 'failed'
+
+interface LiveRow {
+  id: string
+  kind: 'font' | 'template'
+  name: string
+  key?: string
+  status: LiveStatus
+  error?: string | null
+}
+
+/** One line of POST …/import?stream=true (application/x-ndjson). */
+type StreamEvent =
+  | { type: 'start'; total: number }
+  | { type: 'font' | 'template'; done: number; total: number; name: string; key?: string | null; result?: string | null; error?: string | null }
+  | { type: 'done'; result: ProjectImportResult }
+  | { type: 'error'; message: string }
+
+/** Posts the ZIP and calls onEvent for every progress line as it arrives. */
+const streamImport = async (projectId: string, zip: File, onEvent: (e: StreamEvent) => void): Promise<void> => {
+  const post = (): Promise<Response> => {
+    const form = new FormData()
+    form.append('file', zip)
+    return fetch(`${API_BASE_URL}/projects/${projectId}/import?dryRun=false&stream=true`, {
+      method: 'POST',
+      body: form,
+      credentials: 'include'
+    })
+  }
+
+  let response = await post()
+  if (response.status === 401) {
+    // Expired access token: refresh once (the axios client does this for normal calls), then retry.
+    await api.instance.post('/auth/refresh-token')
+    response = await post()
+  }
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '')
+    let message = text || `Import failed (${response.status}).`
+    try {
+      const data = JSON.parse(text) as { detail?: string; title?: string }
+      message = data.detail || data.title || message
+    } catch {
+      // plain-text error body
+    }
+    throw new Error(message)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (value) buffer += decoder.decode(value, { stream: true })
+    let nl = buffer.indexOf('\n')
+    while (nl >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (line) onEvent(JSON.parse(line) as StreamEvent)
+      nl = buffer.indexOf('\n')
+    }
+    if (done) break
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer.trim()) as StreamEvent)
+}
+
+const LiveIcon = ({ status }: { status: LiveStatus }): React.JSX.Element => {
+  if (status === 'running') return <Spinner size='sm' color='default' aria-label='Importing' />
+  if (status === 'imported') return <Icon icon='lucide:check' className='h-4 w-4 text-success' aria-label='Imported' />
+  if (status === 'failed') return <Icon icon='lucide:x' className='h-4 w-4 text-danger' aria-label='Failed' />
+  return <span aria-label='Waiting' className='mx-1.5 h-1.5 w-1.5 bg-default-400' />
+}
+
 /** Export & import (Pro): move a whole project between deployments as one ZIP. */
 export const ProjectTransferPanel = ({
   projectId,
@@ -156,6 +231,11 @@ export const ProjectTransferPanel = ({
   const [file, setFile] = useState<File | null>(null)
   const [plan, setPlan] = useState<ProjectImportResult | null>(null)
   const [showUnchanged, setShowUnchanged] = useState(false)
+  const router = useRouter()
+  /** review → importing (live progress) → finished (summary). */
+  const [phase, setPhase] = useState<'review' | 'importing' | 'finished'>('review')
+  const [rows, setRows] = useState<LiveRow[]>([])
+  const [streamError, setStreamError] = useState<string | null>(null)
 
   const handleExport = async (): Promise<void> => {
     if (!requireFeature('projectTransfer')) return
@@ -216,27 +296,63 @@ export const ProjectTransferPanel = ({
     .sort((a, b) => STATUS_ORDER[statusOf(a)] - STATUS_ORDER[statusOf(b)])
   const unchanged = templates.filter(t => statusOf(t) === 'unchanged')
 
+  const resetImport = (): void => {
+    setPlan(null)
+    setFile(null)
+    setShowUnchanged(false)
+    setPhase('review')
+    setRows([])
+    setStreamError(null)
+  }
+
   const handleApply = async (): Promise<void> => {
-    if (!file) return
+    if (!file || !plan) return
+    // Same order as the server: fonts first, then templates.
+    const initial: LiveRow[] = [
+      ...plan.fonts.filter(f => f.action !== 'skip').map(f => ({ id: `f:${f.name}`, kind: 'font' as const, name: f.name, status: 'waiting' as LiveStatus })),
+      ...plan.templates
+        .filter(t => t.action !== 'skip')
+        .map(t => ({ id: `t:${t.key}`, kind: 'template' as const, name: t.name, key: t.key, status: 'waiting' as LiveStatus }))
+    ]
+    if (initial.length > 0) initial[0] = { ...initial[0], status: 'running' }
+    setRows(initial)
+    setStreamError(null)
+    setPhase('importing')
     setApplying(true)
+
     try {
-      const result = await send(file, false)
-      const created = result.templates.filter(t => t.action === 'create').length
-      const updated = result.templates.filter(t => t.action === 'update').length
-      addToast({
-        title: 'Import finished',
-        description: `${created} created, ${updated} updated, ${result.fonts.filter(f => f.action === 'create').length} font(s) added.`,
-        color: 'success'
+      await streamImport(projectId, file, e => {
+        if (e.type === 'font' || e.type === 'template') {
+          const id = e.type === 'font' ? `f:${e.name}` : `t:${e.key}`
+          setRows(prev => {
+            const next = prev.map(row =>
+              row.id === id
+                ? { ...row, status: (e.result === 'failed' ? 'failed' : 'imported') as LiveStatus, error: e.error }
+                : row
+            )
+            const waiting = next.findIndex(row => row.status === 'waiting')
+            if (waiting >= 0) next[waiting] = { ...next[waiting], status: 'running' }
+            return next
+          })
+        } else if (e.type === 'error') {
+          setStreamError(e.message)
+        }
       })
-      setPlan(null)
-      setFile(null)
-      window.location.reload()
     } catch (error: any) {
-      addToast({ title: 'Import failed — nothing was changed', description: errorMessage(error), color: 'danger' })
+      setStreamError(error?.message || errorMessage(error))
     } finally {
+      // Anything still waiting did not run (stream ended early).
+      setRows(prev => prev.map(row => (row.status === 'waiting' || row.status === 'running' ? { ...row, status: 'failed', error: row.error ?? 'Not imported' } : row)))
       setApplying(false)
+      setPhase('finished')
     }
   }
+
+  const imported = rows.filter(r => r.status === 'imported').length
+  const failedRows = rows.filter(r => r.status === 'failed')
+  const finishedCount = imported + failedRows.length
+  const fontsImported = rows.some(r => r.kind === 'font' && r.status === 'imported')
+  const templatesHref = `/project/${projectId}/templates`
 
   return (
     <section className='border border-divider bg-content1'>
@@ -290,12 +406,10 @@ export const ProjectTransferPanel = ({
 
       <Modal
         isOpen={!!plan}
+        isDismissable={!applying}
+        hideCloseButton={applying}
         onOpenChange={open => {
-          if (!open && !applying) {
-            setPlan(null)
-            setFile(null)
-            setShowUnchanged(false)
-          }
+          if (!open && !applying) resetImport()
         }}
         size='3xl'
         scrollBehavior='inside'
@@ -304,13 +418,89 @@ export const ProjectTransferPanel = ({
           {onClose => (
             <>
               <ModalHeader className='flex flex-col gap-1'>
-                <span className='text-[16px] font-semibold'>Review import</span>
+                <span className='text-[16px] font-semibold'>
+                  {phase === 'review' ? 'Review import' : phase === 'importing' ? 'Importing…' : 'Import finished'}
+                </span>
                 <span className='text-[13px] font-normal text-default-500'>
                   From {plan?.sourceProject || 'an export'}
                   {plan?.exportedAt ? ` · exported ${new Date(plan.exportedAt).toLocaleString()}` : ''} · {file?.name}
                 </span>
               </ModalHeader>
               <ModalBody className='gap-5'>
+                {phase !== 'review' ? (
+                  <div className='flex flex-col gap-4'>
+                    {phase === 'finished' && (
+                      <div
+                        role='status'
+                        className={cn(
+                          'flex items-start gap-3 border px-4 py-3',
+                          failedRows.length > 0 || streamError ? 'border-warning/50' : 'border-success/40'
+                        )}>
+                        <Icon
+                          icon={failedRows.length > 0 || streamError ? 'lucide:triangle-alert' : 'lucide:circle-check'}
+                          className={cn('mt-0.5 h-5 w-5 shrink-0', failedRows.length > 0 || streamError ? 'text-warning' : 'text-success')}
+                        />
+                        <div className='flex flex-col gap-1 text-[14px]'>
+                          <span className='font-medium text-foreground'>
+                            {failedRows.length === 0 && !streamError
+                              ? `Done — ${imported} item${imported === 1 ? '' : 's'} imported.`
+                              : `${imported} imported, ${failedRows.length} not imported.`}
+                          </span>
+                          {streamError && <span className='text-[13px] text-danger'>{streamError}</span>}
+                          {failedRows.length > 0 && (
+                            <span className='text-[13px] text-default-500'>
+                              Items that were imported stay imported. Fix the reason below and import the same file again — finished items
+                              show as No changes.
+                            </span>
+                          )}
+                          {fontsImported && (
+                            <span className='text-[13px] text-default-500'>
+                              Fonts were added. Previews made before the renderer had them can look off: wait about a minute, then use
+                              Regenerate previews on the Templates page.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div className='flex flex-col gap-2'>
+                      <div className='flex items-center justify-between text-[13px] text-default-500'>
+                        <span>
+                          {phase === 'importing' ? 'Importing' : 'Finished'} · {finishedCount} / {rows.length}
+                        </span>
+                        <span>
+                          <span className='text-success'>{imported} imported</span>
+                          {failedRows.length > 0 && <span className='text-danger'> · {failedRows.length} failed</span>}
+                        </span>
+                      </div>
+                      <Progress
+                        aria-label='Import progress'
+                        size='sm'
+                        radius='none'
+                        value={rows.length ? (finishedCount / rows.length) * 100 : 100}
+                        classNames={{ indicator: failedRows.length > 0 ? 'bg-warning' : 'bg-foreground' }}
+                      />
+                    </div>
+                    <ul className='flex flex-col divide-y divide-divider border border-divider'>
+                      {rows.map(row => (
+                        <li key={row.id} className='flex items-start gap-3 px-3 py-2'>
+                          <span className='mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center'>
+                            <LiveIcon status={row.status} />
+                          </span>
+                          <span className='min-w-0 flex-1'>
+                            <span className={cn('block truncate text-[14px]', row.status === 'waiting' ? 'text-default-500' : 'text-foreground')}>
+                              {row.name}
+                            </span>
+                            <span className='block truncate font-mono text-[12px] text-default-500'>
+                              {row.kind === 'font' ? 'Font' : row.key}
+                            </span>
+                            {row.error && <span className='block text-[12px] text-danger'>{row.error}</span>}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <>
                 {/* Summary first, so the size of the import is clear before reading the details. */}
                 <div className='grid grid-cols-2 gap-px border border-divider bg-divider sm:grid-cols-4'>
                   {(['new', 'changed', 'unchanged', 'skipped'] as const).map(k => (
@@ -392,14 +582,42 @@ export const ProjectTransferPanel = ({
                     ))}
                   </div>
                 )}
+                  </>
+                )}
               </ModalBody>
               <ModalFooter>
-                <Button variant='light' className='h-10 font-medium' onPress={onClose} isDisabled={applying}>
-                  Cancel
-                </Button>
-                <Button color='primary' className='h-10 font-medium' isDisabled={changes === 0} isLoading={applying} onPress={handleApply}>
-                  {changes === 0 ? 'Nothing to import' : `Import ${changes} change${changes === 1 ? '' : 's'}`}
-                </Button>
+                {phase === 'review' && (
+                  <>
+                    <Button variant='light' className='h-10 font-medium' onPress={onClose}>
+                      Cancel
+                    </Button>
+                    <Button color='primary' className='h-10 font-medium' isDisabled={changes === 0} onPress={() => void handleApply()}>
+                      {changes === 0 ? 'Nothing to import' : `Import ${changes} change${changes === 1 ? '' : 's'}`}
+                    </Button>
+                  </>
+                )}
+                {phase === 'importing' && (
+                  <span className='flex items-center gap-2 text-[13px] text-default-500'>
+                    <Spinner size='sm' color='default' /> Keep this window open until the import finishes.
+                  </span>
+                )}
+                {phase === 'finished' && (
+                  <>
+                    <Button variant='light' className='h-10 font-medium' onPress={onClose}>
+                      Close
+                    </Button>
+                    <Button
+                      color='primary'
+                      className='h-10 font-medium'
+                      endContent={<Icon icon='lucide:arrow-right' className='h-4 w-4' />}
+                      onPress={() => {
+                        resetImport()
+                        router.push(fontsImported ? `${templatesHref}?regenerate=1` : templatesHref)
+                      }}>
+                      Go to Templates
+                    </Button>
+                  </>
+                )}
               </ModalFooter>
             </>
           )}

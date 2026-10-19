@@ -1,6 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react'
+import { regenerateTemplatePreview } from '@/api/template-preview'
 import { api } from '@/api/generated/main-service'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useRouteParams } from '@/hooks/use-route-params'
@@ -245,6 +246,22 @@ const ExcelSandboxPage = () => {
   const [isDownloadingSource, setIsDownloadingSource] = useState(false)
 
   const [previewFilePath, setPreviewFilePath] = useState<string | null>(null)
+  const [isRegeneratingPreview, setIsRegeneratingPreview] = useState(false)
+
+  /** Re-render the template preview with the fonts installed now (after uploading / importing fonts). */
+  const handleRegeneratePreview = async (): Promise<void> => {
+    if (!templateKeyParam) return
+    setIsRegeneratingPreview(true)
+    try {
+      const result = await regenerateTemplatePreview(templateKeyParam)
+      setPreviewFilePath(result.previewFilePathPresigned || null)
+      addToast({ title: 'Preview regenerated', color: 'success' })
+    } catch {
+      addToast({ title: 'Could not regenerate the preview', description: 'Try again in a minute.', color: 'danger' })
+    } finally {
+      setIsRegeneratingPreview(false)
+    }
+  }
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null)
   const [generatedPdfPreviewUrl, setGeneratedPdfPreviewUrl] = useState<string | null>(null)
   const [generatedSheetPageMap, setGeneratedSheetPageMap] = useState<Record<string, number> | null>(null)
@@ -1158,6 +1175,8 @@ const ExcelSandboxPage = () => {
           if (v != null) setLiveMode(false)
         }}
         onUpdateFile={() => setIsUpdateFileOpen(true)}
+        onRegeneratePreview={() => void handleRegeneratePreview()}
+        isRegeneratingPreview={isRegeneratingPreview}
       />
 
       <BuilderSplit

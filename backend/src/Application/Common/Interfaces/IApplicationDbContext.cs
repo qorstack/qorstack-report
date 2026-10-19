@@ -25,6 +25,9 @@ public partial interface IApplicationDbContext : IDisposable
     /// so consumers can do BeginTransactionAsync(), Commit(), Rollback(), etc.
     /// </summary>
     DatabaseFacade Database { get; }
+
+    /// <summary>Lets long-running work (project import) clear tracked entities between independent items.</summary>
+    ChangeTracker ChangeTracker { get; }
 }
 
 /// <summary>
