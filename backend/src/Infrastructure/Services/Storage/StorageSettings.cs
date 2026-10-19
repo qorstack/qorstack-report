@@ -13,8 +13,10 @@ public class StorageSettings
     public string Endpoint { get; set; } = "localhost:9000";
 
     /// <summary>
-    /// Optional, legacy. Downloads now go through the API (<c>/files/{token}</c>), so storage does not need a
-    /// public address. Only used to recognise presigned URLs stored by v1 builder payloads.
+    /// Optional browser-facing address of the storage server (STORAGE_PUBLIC_ENDPOINT, e.g.
+    /// https://storage.example.com). Set → download links are S3 presigned URLs for it, as in v1, and
+    /// PUBLIC_URL is not needed for downloads. Unset (default) → links go through the API (/api/files/{token})
+    /// and storage needs no public address. Also used to recognise presigned URLs stored by v1 payloads.
     /// </summary>
     public string? PublicEndpoint { get; set; }
 

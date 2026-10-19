@@ -4,6 +4,28 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.2.2] — 2026-10-19
+
+### Added
+
+- **`STORAGE_PUBLIC_ENDPOINT`** (optional). Set it to the address your storage already serves to browsers
+  (e.g. `https://storage.example.com`) and download links become S3 presigned URLs for that address, as in
+  v1: browsers download from storage directly and `PUBLIC_URL` is not needed for downloads. Unset (default),
+  links stay `{PUBLIC_URL}/api/files/{token}` and storage needs no public address. `MINIO_PUBLIC_ENDPOINT` /
+  `Minio__PublicEndpoint` from v1 are read as fallbacks.
+
+### Changed
+
+- Image URLs that point at this deployment's own storage (`STORAGE_ENDPOINT` / `STORAGE_PUBLIC_ENDPOINT`)
+  are fetched even on a private network, so `IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS` is only needed for images on
+  other intranet servers.
+- Enterprise source builds run Pro without `LICENSE=pro` (set `LICENSE=oss` to turn it off). A license file
+  (`PRO_LICENSE_FILE`) is still validated as before; the published images are unchanged and still need one.
+
+### Fixed
+
+- The docs page had an empty band under the navbar.
+
 ## [2.2.1] — 2026-10-19
 
 ### Fixed

@@ -24,6 +24,7 @@ public static class FlatEnvConfiguration
         (["STORAGE_USE_SSL", "MINIO_USE_SSL"], "Storage:UseSsl"),
         (["STORAGE_REGION"], "Storage:Region"),
         (["STORAGE_BUCKET", "MINIO_BUCKET"], "Storage:Bucket"),
+        (["STORAGE_PUBLIC_ENDPOINT", "MINIO_PUBLIC_ENDPOINT"], "Storage:PublicEndpoint"),
 
         (["PUBLIC_URL"], "App:PublicUrl"),
         (["GOTENBERG_URL"], "Gotenberg:BaseUrl"),

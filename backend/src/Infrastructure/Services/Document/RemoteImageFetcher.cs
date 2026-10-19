@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using QorstackReportService.Infrastructure.Services.Http;
+using QorstackReportService.Infrastructure.Services.Storage;
 
 namespace QorstackReportService.Infrastructure.Services.Document;
 
@@ -13,7 +14,8 @@ namespace QorstackReportService.Infrastructure.Services.Document;
 /// <item>Connections go through <see cref="SafeHttp"/>: private / internal addresses are refused, also after redirects.</item>
 /// <item>Size and time limits so one request cannot exhaust memory or hold a worker.</item>
 /// </list>
-/// Self-hosters who keep images on an intranet server can set <c>ImageFetch:AllowPrivateNetworks=true</c>.
+/// Images on this deployment's own storage server (STORAGE_ENDPOINT / STORAGE_PUBLIC_ENDPOINT) are always allowed.
+/// Self-hosters who keep images on another intranet server can set <c>ImageFetch:AllowPrivateNetworks=true</c>.
 /// </summary>
 public static class RemoteImageFetcher
 {
@@ -25,6 +27,9 @@ public static class RemoteImageFetcher
     public static IServiceCollection AddRemoteImageFetcher(this IServiceCollection services, IConfiguration configuration)
     {
         var allowPrivate = configuration.GetValue("ImageFetch:AllowPrivateNetworks", false);
+        var storage = new StorageSettings();
+        StorageSettings.Bind(storage, configuration);
+        var trustedHosts = StorageHosts.Trusted(storage);
 
         services.AddHttpClient(HttpClientName, client =>
             {
@@ -32,7 +37,7 @@ public static class RemoteImageFetcher
                 client.MaxResponseContentBufferSize = MaxBytes;
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("QorstackReport/2 (+https://github.com/qorstack/qorstack-report)");
             })
-            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(allowPrivate, MaxRedirects));
+            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(allowPrivate, MaxRedirects, trustedHosts));
 
         return services;
     }

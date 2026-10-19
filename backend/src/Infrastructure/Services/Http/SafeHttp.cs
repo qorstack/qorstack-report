@@ -8,16 +8,21 @@ namespace QorstackReportService.Infrastructure.Services.Http;
 /// network (SSRF). Every connection — including redirects — is checked at connect time against the resolved IP,
 /// so DNS tricks cannot slip through: loopback, private (RFC 1918 / ULA), link-local (incl. cloud metadata
 /// 169.254.169.254), CGNAT, multicast and unspecified addresses are refused unless <c>allowPrivate</c> is set.
+/// <c>trustedHosts</c> ("host:port") are always allowed: this deployment's own storage server.
 /// </summary>
 public static class SafeHttp
 {
-    public static SocketsHttpHandler CreateHandler(bool allowPrivate, int maxRedirects) => new()
+    public static SocketsHttpHandler CreateHandler(bool allowPrivate, int maxRedirects, IReadOnlySet<string>? trustedHosts = null) => new()
     {
         AllowAutoRedirect = maxRedirects > 0,
         MaxAutomaticRedirections = Math.Max(1, maxRedirects),
         UseProxy = false,
-        ConnectCallback = (ctx, ct) => ConnectAsync(ctx, allowPrivate, ct)
+        ConnectCallback = (ctx, ct) => ConnectAsync(ctx, allowPrivate || IsTrusted(ctx.DnsEndPoint.Host, ctx.DnsEndPoint.Port, trustedHosts), ct)
     };
+
+    /// <summary>True when host:port is one of the trusted addresses (case-insensitive host).</summary>
+    public static bool IsTrusted(string host, int port, IReadOnlySet<string>? trustedHosts) =>
+        trustedHosts is { Count: > 0 } && trustedHosts.Contains($"{host.ToLowerInvariant()}:{port}");
 
     public static bool IsHttpUrl(string? url, out Uri uri)
     {

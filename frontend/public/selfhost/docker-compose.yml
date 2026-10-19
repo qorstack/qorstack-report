@@ -129,6 +129,7 @@ services:
       - Storage__UseSsl=${STORAGE_USE_SSL:-${MINIO_USE_SSL:-false}}
       - Storage__Region=${STORAGE_REGION:-us-east-1}
       - Storage__Bucket=${STORAGE_BUCKET:-${MINIO_BUCKET:-qorstack-report}}
+      - Storage__PublicEndpoint=${STORAGE_PUBLIC_ENDPOINT:-${MINIO_PUBLIC_ENDPOINT:-}}
       # URL people open (web UI + API). Download links are {PUBLIC_URL}/api/files/...
       - App__PublicUrl=${PUBLIC_URL:-http://localhost:8080}
       - ImageFetch__AllowPrivateNetworks=${IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS:-false}

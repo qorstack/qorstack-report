@@ -24,6 +24,8 @@ public class MinioStorageService : IMinioStorageService
     private readonly StorageSettings _settings;
     private readonly ILogger<MinioStorageService> _logger;
     private readonly ConcurrentDictionary<string, bool> _knownBuckets = new();
+    /// <summary>Signs download links for <see cref="StorageSettings.PublicEndpoint"/>; null = links go through the API.</summary>
+    private readonly IMinioClient? _publicClient;
 
     public MinioStorageService(
         IOptions<StorageSettings> settings,
@@ -48,6 +50,21 @@ public class MinioStorageService : IMinioStorageService
             .Build();
 
         _logger.LogInformation("Storage client initialized with endpoint: {Endpoint}, SSL: {UseSsl}", endpoint, _settings.UseSsl);
+
+        // STORAGE_PUBLIC_ENDPOINT set → download links are presigned for that address (browsers fetch from storage
+        // directly, as in v1). The signature covers the host, so this client is configured with the public address;
+        // it is only used to sign (no network call: the region is fixed).
+        var publicUri = StorageHosts.PublicEndpointUri(_settings);
+        if (publicUri != null)
+        {
+            _publicClient = new MinioClient()
+                .WithEndpoint(publicUri.Authority)
+                .WithCredentials(_settings.AccessKey, _settings.SecretKey)
+                .WithSSL(publicUri.Scheme == Uri.UriSchemeHttps)
+                .WithRegion(_settings.Region)
+                .Build();
+            _logger.LogInformation("Download links are presigned for the public storage endpoint {PublicEndpoint}", publicUri.GetLeftPart(UriPartial.Authority));
+        }
     }
 
     /// <summary>Maps a logical area + key to the physical bucket + object key.</summary>
@@ -119,15 +136,42 @@ public class MinioStorageService : IMinioStorageService
 
     /// <inheritdoc />
     /// <remarks>
-    /// Returns an API link (<c>{PublicUrl}/files/{token}</c>) instead of an S3 presigned URL, so the storage
-    /// server never needs a public address. The token is HMAC-signed and expires after <paramref name="expirySeconds"/>.
+    /// Default: an API link (<c>{PublicUrl}/api/files/{token}</c>), so the storage server never needs a public
+    /// address; the token is HMAC-signed and expires after <paramref name="expirySeconds"/>.
+    /// With <see cref="StorageSettings.PublicEndpoint"/> set: an S3 presigned URL for that address instead
+    /// (browsers download from storage directly; PUBLIC_URL is then not needed for downloads).
     /// </remarks>
-    public Task<string> GetPresignedUrlAsync(string bucketName, string objectName, int expirySeconds = 3600, string? downloadFileName = null)
+    public async Task<string> GetPresignedUrlAsync(string bucketName, string objectName, int expirySeconds = 3600, string? downloadFileName = null)
     {
-        Locate(bucketName, objectName); // validates the area
+        var (bucket, key) = Locate(bucketName, objectName); // validates the area
         var fileName = string.IsNullOrWhiteSpace(downloadFileName) ? null : SanitizeDownloadFileName(downloadFileName);
-        var token = _fileUrls.CreateToken(bucketName, objectName, fileName, DateTimeOffset.UtcNow.AddSeconds(expirySeconds));
-        return Task.FromResult(_fileUrls.BuildUrl(token));
+
+        if (_publicClient == null)
+        {
+            var token = _fileUrls.CreateToken(bucketName, objectName, fileName, DateTimeOffset.UtcNow.AddSeconds(expirySeconds));
+            return _fileUrls.BuildUrl(token);
+        }
+
+        var args = new PresignedGetObjectArgs()
+            .WithBucket(bucket)
+            .WithObject(key)
+            .WithExpiry(Math.Clamp(expirySeconds, 1, 7 * 24 * 3600)); // S3 allows at most 7 days
+        if (fileName != null)
+        {
+            // Saved file name, independent of the object key (same as the API link's Content-Disposition).
+            args = args.WithHeaders(new Dictionary<string, string>
+            {
+                ["response-content-disposition"] = ContentDispositionAttachment(fileName)
+            });
+        }
+        return await _publicClient.PresignedGetObjectAsync(args);
+    }
+
+    /// <summary>attachment; filename="ascii fallback"; filename*=UTF-8''percent-encoded (Thai names survive).</summary>
+    public static string ContentDispositionAttachment(string fileName)
+    {
+        var ascii = new string(fileName.Select(c => c is >= ' ' and <= '~' && c != '"' && c != '\\' ? c : '_').ToArray());
+        return $"attachment; filename=\"{ascii}\"; filename*=UTF-8''{Uri.EscapeDataString(fileName)}";
     }
 
     /// <inheritdoc />

@@ -109,6 +109,80 @@ public class StorageTests
         service.TryConvertToMinioPath(url).Should().Be("minio:templates/p1/t.docx");
     }
 
+    // ── Presigned links on the public storage endpoint (STORAGE_PUBLIC_ENDPOINT) ─────────────────────
+
+    private static MinioStorageService PresigningService() => new(
+        Options.Create(new StorageSettings
+        {
+            Endpoint = "192.168.203.96:9000",
+            PublicEndpoint = "https://storage.example.com",
+            AccessKey = "a",
+            SecretKey = "secret-secret",
+            Bucket = "eec-report-bucket"
+        }),
+        Signer(),
+        NullLogger<MinioStorageService>.Instance);
+
+    [Test]
+    public async Task PublicEndpoint_GivesPresignedLinksForThatHost_AndTheyMapBack()
+    {
+        var service = PresigningService();
+
+        var url = await service.GetPresignedUrlAsync("templates", "p1/t.docx", 600);
+
+        url.Should().StartWith("https://storage.example.com/eec-report-bucket/template/p1/t.docx?");
+        url.Should().Contain("X-Amz-Signature=").And.Contain("X-Amz-Expires=600");
+        service.TryConvertToMinioPath(url).Should().Be("minio:templates/p1/t.docx");
+    }
+
+    [Test]
+    public async Task PublicEndpoint_KeepsTheDownloadName_IncludingThai()
+    {
+        var url = await PresigningService().GetPresignedUrlAsync("reports", "out/x.pdf", 600, "ใบรับรอง 01.pdf");
+
+        Uri.UnescapeDataString(url).Should().Contain("filename*=UTF-8''" + Uri.EscapeDataString("ใบรับรอง 01.pdf"));
+    }
+
+    [Test]
+    public void ContentDisposition_HasAsciiFallbackAndUtf8Name()
+    {
+        MinioStorageService.ContentDispositionAttachment("ใบ \"a\".pdf")
+            .Should().Be("attachment; filename=\"__ _a_.pdf\"; filename*=UTF-8''" + Uri.EscapeDataString("ใบ \"a\".pdf"));
+    }
+
+    // ── Own storage hosts (image fetch may reach them on a private network) ───────────────────────────
+
+    [Test]
+    public void TrustedHosts_AreTheInternalAndPublicStorageAddresses()
+    {
+        var hosts = StorageHosts.Trusted(new StorageSettings
+        {
+            Endpoint = "192.168.203.96:9000",
+            PublicEndpoint = "https://Storage.Example.com",
+            UseSsl = false
+        });
+
+        hosts.Should().BeEquivalentTo("192.168.203.96:9000", "storage.example.com:443");
+    }
+
+    [TestCase("storage.example.com", 443, true)]
+    [TestCase("STORAGE.example.com", 443, true)]
+    [TestCase("storage.example.com", 9000, false)]
+    [TestCase("192.168.203.96", 9000, true)]
+    [TestCase("192.168.203.97", 9000, false)]
+    [TestCase("169.254.169.254", 80, false)]
+    public void SafeHttp_TrustsOnlyTheStorageHosts(string host, int port, bool trusted)
+    {
+        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "storage.example.com:443", "192.168.203.96:9000" };
+        QorstackReportService.Infrastructure.Services.Http.SafeHttp.IsTrusted(host, port, hosts).Should().Be(trusted);
+    }
+
+    [Test]
+    public void SafeHttp_NothingTrusted_WhenNoHosts()
+    {
+        QorstackReportService.Infrastructure.Services.Http.SafeHttp.IsTrusted("192.168.203.96", 9000, null).Should().BeFalse();
+    }
+
     [Test]
     public async Task StorageService_UnknownArea_Throws()
     {

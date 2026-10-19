@@ -35,9 +35,6 @@ const DocLayout = ({ sidebarGroups, tocItems, activeSection, onNavigate, childre
 
   return (
     <div className='flex min-h-screen flex-col bg-background font-sans text-foreground'>
-      {/* Spacer for fixed navbar from parent layout */}
-      <div className='h-14' />
-
       {/* Main 3-column Layout */}
       <div className='mx-auto flex w-full max-w-[90rem] flex-1'>
         {/* Left Sidebar */}
