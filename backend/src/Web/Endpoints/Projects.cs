@@ -94,7 +94,7 @@ public class Projects : EndpointGroupBase
         Guid id,
         [FromForm(Name = "file")] IFormFile? file,
         [FromQuery] bool dryRun,
-        [FromQuery] bool stream,
+        [FromQuery] bool? stream,
         HttpContext httpContext,
         CancellationToken ct)
     {
@@ -110,7 +110,7 @@ public class Projects : EndpointGroupBase
         await file.CopyToAsync(temp, ct);
         temp.Position = 0;
 
-        if (dryRun || !stream)
+        if (dryRun || stream != true)
             return Results.Ok(await transfer.ImportAsync(id, temp, dryRun, ct));
 
         // stream=true: one JSON object per line as each font / template finishes, then "done" with the result.

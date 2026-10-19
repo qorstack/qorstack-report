@@ -4,6 +4,14 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] — 2026-10-20
+
+### Fixed
+
+- Project import preview (`POST /api/projects/{id}/import?dryRun=true`) returned `400` in 2.3.0: the new optional
+  `stream` query flag was declared as required. A test now checks every endpoint for value-type query parameters
+  that are required by accident.
+
 ## [2.3.0] — 2026-10-20
 
 ### Added
