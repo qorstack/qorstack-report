@@ -450,7 +450,7 @@ public sealed class ProjectTransferService : IProjectTransferService
                 var assetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var (oldPath, bytes) in assets)
                 {
-                    // sandbox-assets/{owner}/{templateId}/... keeps EnsureOwnStoragePaths happy for this template.
+                    // sandbox-assets/{owner}/{templateId}/...: the template's own builder assets.
                     var key = $"sandbox-assets/{ownerId}/{template.Id}/import-v{item.ToVersion}/{ProjectTransferRules.AssetFileName(oldPath, assetNames)}";
                     using var ms = new MemoryStream(bytes);
                     await _storage.UploadFileAsync(StorageAreas.Reports, key, ms, GuessContentType(key));

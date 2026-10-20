@@ -6,19 +6,6 @@ namespace QorstackReportService.Infrastructure.Services.Storage;
 /// </summary>
 public static class StorageHosts
 {
-    /// <summary>
-    /// "host:port" of both storage addresses (lower case; default port 80/443 from the scheme or UseSsl).
-    /// Image URLs pointing at these hosts are this deployment's own files (for example presigned links an app
-    /// issued for the same MinIO), so the image fetcher may reach them even on a private network.
-    /// </summary>
-    public static HashSet<string> Trusted(StorageSettings settings)
-    {
-        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (TryParse(settings.Endpoint, settings.UseSsl, out var internalHost)) hosts.Add(internalHost);
-        if (TryParse(settings.PublicEndpoint, settings.UseSsl, out var publicHost)) hosts.Add(publicHost);
-        return hosts;
-    }
-
     /// <summary>The public endpoint as an absolute http(s) URI, or null when not set / not a URL.</summary>
     public static Uri? PublicEndpointUri(StorageSettings settings)
     {

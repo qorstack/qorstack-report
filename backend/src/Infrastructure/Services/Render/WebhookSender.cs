@@ -12,8 +12,8 @@ namespace QorstackReportService.Infrastructure.Services.Render;
 public sealed record RenderWebhookPayload(Guid JobId, string Status, string? DownloadUrl, int? ExpiresIn, string? Error);
 
 /// <summary>
-/// Delivers render webhooks through <see cref="SafeHttp"/> (no private/internal targets unless
-/// <c>Webhook:AllowPrivateNetworks</c>), signed with <c>Webhook:SigningSecret</c> when set.
+/// Delivers render webhooks through <see cref="SafeHttp"/> (any http(s) target, internal ones included),
+/// signed with <c>Webhook:SigningSecret</c> when set.
 /// One call = one delivery attempt; retries are scheduled by the async render worker and stored in
 /// <c>report_jobs</c> (see <c>WebhookRetryPolicy</c>), so they survive restarts.
 /// </summary>
@@ -35,13 +35,12 @@ public sealed class WebhookSender
 
     public static IServiceCollection AddRenderWebhooks(IServiceCollection services, IConfiguration configuration)
     {
-        var allowPrivate = configuration.GetValue("Webhook:AllowPrivateNetworks", false);
         services.AddHttpClient(HttpClientName, c =>
             {
                 c.Timeout = TimeSpan.FromSeconds(10);
                 c.DefaultRequestHeaders.UserAgent.ParseAdd("QorstackReport-Webhook/2");
             })
-            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(allowPrivate, maxRedirects: 0));
+            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(maxRedirects: 0));
         services.AddSingleton<WebhookSender>();
         return services;
     }

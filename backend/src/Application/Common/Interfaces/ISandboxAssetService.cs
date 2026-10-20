@@ -23,10 +23,4 @@ public interface ISandboxAssetService
     /// <param name="prefix">Object key prefix (e.g. sandbox-assets/{userId}/{templateId})</param>
     Task ReplaceBase64WithMinioUrlsAsync(DocumentProcessingData data, string prefix);
 
-    /// <summary>
-    /// Rejects storage paths (minio:...) in image sources / QR logos unless they are builder assets of
-    /// this template (<c>reports/sandbox-assets/{anyUser}/{templateId}/...</c>), so a request cannot embed
-    /// files of other templates, projects or tenants. Throws a ValidationException listing every offending field.
-    /// </summary>
-    void EnsureOwnStoragePaths(DocumentProcessingData data, Guid templateId);
 }

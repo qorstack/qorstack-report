@@ -4,6 +4,21 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.3.2] — 2026-10-20
+
+### Changed
+
+- **Images and webhooks may point anywhere.** The backend no longer refuses private / internal addresses for image
+  URLs, QR logos and webhooks, and no longer rejects `minio:` paths outside the template's own builder assets.
+  `IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS` and `WEBHOOK_ALLOW_PRIVATE_NETWORKS` were removed (no longer read).
+  Only http/https URLs, size and time limits still apply.
+
+### Fixed
+
+- Rendering failed with `400` when an image URL was a presigned link to **another app's bucket on the same S3 server**
+  (for example a signature image an API caller keeps in its own MinIO bucket): the link was turned into a storage
+  path of ours and then rejected. Such links now stay ordinary URLs and are downloaded.
+
 ## [2.3.1] — 2026-10-20
 
 ### Fixed

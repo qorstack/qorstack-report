@@ -1,21 +1,13 @@
-using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using QorstackReportService.Infrastructure.Services.Http;
-using QorstackReportService.Infrastructure.Services.Storage;
 
 namespace QorstackReportService.Infrastructure.Services.Document;
 
 /// <summary>
-/// Downloads images referenced by URL in render requests (<c>image[].src</c>, QR logos) without
-/// letting callers reach the server's own network (SSRF).
-/// <list type="bullet">
-/// <item>http/https only.</item>
-/// <item>Connections go through <see cref="SafeHttp"/>: private / internal addresses are refused, also after redirects.</item>
-/// <item>Size and time limits so one request cannot exhaust memory or hold a worker.</item>
-/// </list>
-/// Images on this deployment's own storage server (STORAGE_ENDPOINT / STORAGE_PUBLIC_ENDPOINT) are always allowed.
-/// Self-hosters who keep images on another intranet server can set <c>ImageFetch:AllowPrivateNetworks=true</c>.
+/// Downloads images referenced by URL in render requests (<c>image[].src</c>, QR logos). Any http(s) address is
+/// allowed, including intranet hosts and the storage server; size and time limits keep one request from
+/// exhausting memory or holding a worker.
 /// </summary>
 public static class RemoteImageFetcher
 {
@@ -26,10 +18,6 @@ public static class RemoteImageFetcher
 
     public static IServiceCollection AddRemoteImageFetcher(this IServiceCollection services, IConfiguration configuration)
     {
-        var allowPrivate = configuration.GetValue("ImageFetch:AllowPrivateNetworks", false);
-        var storage = new StorageSettings();
-        StorageSettings.Bind(storage, configuration);
-        var trustedHosts = StorageHosts.Trusted(storage);
 
         services.AddHttpClient(HttpClientName, client =>
             {
@@ -37,7 +25,7 @@ public static class RemoteImageFetcher
                 client.MaxResponseContentBufferSize = MaxBytes;
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("QorstackReport/2 (+https://github.com/qorstack/qorstack-report)");
             })
-            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(allowPrivate, MaxRedirects, trustedHosts));
+            .ConfigurePrimaryHttpMessageHandler(() => SafeHttp.CreateHandler(MaxRedirects));
 
         return services;
     }
@@ -66,7 +54,4 @@ public static class RemoteImageFetcher
         }
         return buffer.ToArray();
     }
-
-    /// <summary>True for addresses a public image URL must never reach.</summary>
-    public static bool IsBlocked(IPAddress address) => SafeHttp.IsBlocked(address);
 }

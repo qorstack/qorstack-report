@@ -135,6 +135,23 @@ public class StorageTests
         service.TryConvertToMinioPath(url).Should().Be("minio:templates/p1/t.docx");
     }
 
+    [TestCase("https://storage.example.com/ecustom-bucket/sign/a.png?X-Amz-Signature=x")]
+    [TestCase("http://192.168.203.96:9000/ecustom-bucket/sign/a.png?X-Amz-Signature=x")]
+    [TestCase("http://192.168.203.96:9000/eec-report-bucket/other-folder/a.png?X-Amz-Signature=x")]
+    public void PresignedUrlOfAnotherAppsBucket_OnTheSameServer_StaysAnHttpUrl(string url)
+    {
+        // Callers that share the MinIO server send presigned links to their own objects (DGA signature images).
+        // Turned into minio:<their bucket>/… they could not be resolved and the render failed with 400.
+        PresigningService().TryConvertToMinioPath(url).Should().BeNull();
+    }
+
+    [TestCase("http://192.168.203.96:9000/reports/sandbox-assets/u/t/a.png?X-Amz-Signature=x", "minio:reports/sandbox-assets/u/t/a.png")]
+    [TestCase("https://storage.example.com/eec-report-bucket/generated-report/x.pdf?X-Amz-Signature=x", "minio:reports/x.pdf")]
+    public void PresignedUrlOfOurStorage_MapsToTheStoragePath(string url, string expected)
+    {
+        PresigningService().TryConvertToMinioPath(url).Should().Be(expected);
+    }
+
     [Test]
     public async Task PublicEndpoint_KeepsTheDownloadName_IncludingThai()
     {
@@ -148,39 +165,6 @@ public class StorageTests
     {
         MinioStorageService.ContentDispositionAttachment("ใบ \"a\".pdf")
             .Should().Be("attachment; filename=\"__ _a_.pdf\"; filename*=UTF-8''" + Uri.EscapeDataString("ใบ \"a\".pdf"));
-    }
-
-    // ── Own storage hosts (image fetch may reach them on a private network) ───────────────────────────
-
-    [Test]
-    public void TrustedHosts_AreTheInternalAndPublicStorageAddresses()
-    {
-        var hosts = StorageHosts.Trusted(new StorageSettings
-        {
-            Endpoint = "192.168.203.96:9000",
-            PublicEndpoint = "https://Storage.Example.com",
-            UseSsl = false
-        });
-
-        hosts.Should().BeEquivalentTo("192.168.203.96:9000", "storage.example.com:443");
-    }
-
-    [TestCase("storage.example.com", 443, true)]
-    [TestCase("STORAGE.example.com", 443, true)]
-    [TestCase("storage.example.com", 9000, false)]
-    [TestCase("192.168.203.96", 9000, true)]
-    [TestCase("192.168.203.97", 9000, false)]
-    [TestCase("169.254.169.254", 80, false)]
-    public void SafeHttp_TrustsOnlyTheStorageHosts(string host, int port, bool trusted)
-    {
-        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "storage.example.com:443", "192.168.203.96:9000" };
-        QorstackReportService.Infrastructure.Services.Http.SafeHttp.IsTrusted(host, port, hosts).Should().Be(trusted);
-    }
-
-    [Test]
-    public void SafeHttp_NothingTrusted_WhenNoHosts()
-    {
-        QorstackReportService.Infrastructure.Services.Http.SafeHttp.IsTrusted("192.168.203.96", 9000, null).Should().BeFalse();
     }
 
     [Test]

@@ -132,7 +132,6 @@ services:
       - Storage__PublicEndpoint=${STORAGE_PUBLIC_ENDPOINT:-${MINIO_PUBLIC_ENDPOINT:-}}
       # URL people open (web UI + API). Download links are {PUBLIC_URL}/api/files/...
       - App__PublicUrl=${PUBLIC_URL:-http://localhost:8080}
-      - ImageFetch__AllowPrivateNetworks=${IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
       - Render__AsyncWorkers=${RENDER_ASYNC_WORKERS:-2}
       - Render__JobLeaseSeconds=${RENDER_JOB_LEASE_SECONDS:-300}
       - Render__PollSeconds=${RENDER_POLL_SECONDS:-5}
@@ -142,7 +141,6 @@ services:
       - Render__MaxItemsPerField=${RENDER_MAX_ITEMS_PER_FIELD:-1000}
       - Transfer__MaxZipMb=${PROJECT_IMPORT_MAX_MB:-200}
       - Webhook__SigningSecret=${WEBHOOK_SIGNING_SECRET:-}
-      - Webhook__AllowPrivateNetworks=${WEBHOOK_ALLOW_PRIVATE_NETWORKS:-false}
       - Gotenberg__BaseUrl=http://qorstack-gotenberg:3000
       - Fonts__RendererCachePath=/renderer-fonts   # read-only view of the font-syncer volume → GET /fonts/status
       - Jwt__Key=${JWT_KEY}

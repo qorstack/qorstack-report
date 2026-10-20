@@ -530,9 +530,17 @@ public class MinioStorageService : IMinioStorageService
                     if (rest.StartsWith(folder, StringComparison.Ordinal))
                         return $"minio:{area}/{rest[folder.Length..]}";
                 }
+                return null;
             }
 
-            return $"minio:{path}";
+            // v1 default buckets were named like the areas (templates/…, reports/…, fonts/…): still ours.
+            var firstSegment = path.Split('/', 2)[0];
+            if (StorageAreas.Folders.ContainsKey(firstSegment)) return $"minio:{path}";
+
+            // Any other bucket on the same S3 server belongs to another app (e.g. a presigned signature image
+            // an API caller stored in its own bucket). Not a storage path of ours: keep it as an http URL so it is
+            // downloaded like any other image instead of being rejected as a foreign minio: path.
+            return null;
         }
         catch
         {

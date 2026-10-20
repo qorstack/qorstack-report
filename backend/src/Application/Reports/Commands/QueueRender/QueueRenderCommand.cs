@@ -82,7 +82,6 @@ public class QueueRenderCommandHandler : IRequestHandler<QueueRenderCommand, Exp
         // Same checks as the synchronous path, so the job cannot fail later for a reason we can report now.
         var data = render.Data ?? new DocumentProcessingData();
         _assets.ConvertPresignedUrlsToMinioPaths(data);
-        _assets.EnsureOwnStoragePaths(data, template.Id);
         await _assets.ReplaceBase64WithMinioUrlsAsync(data, AssetPrefix(render.UserId, template.Id, jobId));
 
         var now = DateTime.UtcNow;

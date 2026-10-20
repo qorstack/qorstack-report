@@ -102,7 +102,6 @@ public class ExportPdfCommandHandler : IRequestHandler<ExportPdfCommand, RenderR
             // storage instead of over HTTP (the URL fetcher refuses internal hosts). Then allow only this
             // template's own builder assets — never files of other templates, projects or tenants.
             _assetService.ConvertPresignedUrlsToMinioPaths(request.Data ??= new DocumentProcessingData());
-            _assetService.EnsureOwnStoragePaths(request.Data, template.Id);
 
             ReportJob? reportJob = null;
             if (request.JobId != null)

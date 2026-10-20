@@ -42,7 +42,6 @@ public static class FlatEnvConfiguration
         (["GITHUB_CLIENT_ID"], "GitHub:ClientId"),
         (["GITHUB_CLIENT_SECRET"], "GitHub:ClientSecret"),
 
-        (["IMAGE_FETCH_ALLOW_PRIVATE_NETWORKS"], "ImageFetch:AllowPrivateNetworks"),
         (["RENDER_ASYNC_WORKERS"], "Render:AsyncWorkers"),
         (["RENDER_JOB_LEASE_SECONDS"], "Render:JobLeaseSeconds"),
         (["RENDER_POLL_SECONDS"], "Render:PollSeconds"),
@@ -52,7 +51,6 @@ public static class FlatEnvConfiguration
         (["RENDER_MAX_ITEMS_PER_FIELD"], "Render:MaxItemsPerField"),
         (["PROJECT_IMPORT_MAX_MB"], "Transfer:MaxZipMb"),
         (["WEBHOOK_SIGNING_SECRET"], "Webhook:SigningSecret"),
-        (["WEBHOOK_ALLOW_PRIVATE_NETWORKS"], "Webhook:AllowPrivateNetworks"),
 
         (["PRO_LICENSE_FILE"], "Pro:LicenseFile"),
     ];
