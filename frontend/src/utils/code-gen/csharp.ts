@@ -202,6 +202,8 @@ const formatRequest = (data: any, requestType: string, tableType: string): strin
   if (data.fileName !== undefined) props.push(`FileName = ${csString(data.fileName)}`)
   if (data.fileType) props.push(`FileType = PdfFromTemplateRequestFileType.${pascal(String(data.fileType))}`)
   if (typeof data.zipOutput === 'boolean') props.push(`ZipOutput = ${data.zipOutput}`)
+  if (data.async === true) props.push('Async = true')
+  if (data.webhookUrl) props.push(`WebhookUrl = new Uri(${csString(data.webhookUrl)})`)
   if (Array.isArray(data.replace) && data.replace.length)
     props.push(`Replace = ${formatKeyValueList(data.replace)}`)
   if (Array.isArray(data.table) && data.table.length) {
@@ -258,10 +260,39 @@ export const generateCsharpExample = (data: any, options: CodeGenOptions = {}): 
     .filter(Boolean)
     .join('\n')
 
+  const isExcel = options.documentType === 'excel'
+  const ext = isExcel ? 'xlsx' : 'pdf'
+  const renderMethod = isExcel ? 'RenderExcelAsync' : 'RenderWordAsync'
+  const tail =
+    options.mode === 'async'
+      ? `// Queues the job and answers at once (202 Accepted, Pro feature).
+var outcome = await api.${renderMethod}(request);
+if (!outcome.IsQueued) throw new InvalidOperationException("Expected a queued job — is Async = true set?");
+
+var jobId = outcome.Job!.JobId;
+// Store jobId with your own record (order, document, …).
+// Qorstack POSTs the result to WebhookUrl when the job finishes — see "Receive the webhook".
+Console.WriteLine($"Queued render job {jobId}");
+
+// No webhook endpoint? Wait for the job instead (polls every 2 s, gives up after 10 min):
+// var job = await api.WaitForJobAsync(jobId);
+// Console.WriteLine(job.DownloadUrl);`
+      : `// Waits until the file is ready (200 OK).
+var response = await api.${methodName}(request);
+
+// The link works for response.ExpiresIn seconds and needs no API key: send it to the browser,
+// or download the file on the server:
+using var http = new HttpClient();
+var bytes = await http.GetByteArrayAsync(response.DownloadUrl);
+await File.WriteAllBytesAsync($"{request.FileName ?? "output"}.{(response.IsZipped ? "zip" : "${ext}")}", bytes);`
+
   return `// dotnet add package Qorstack.Report.Sdk
 using Qorstack.Report.Sdk;
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 
 // Reads from IConfiguration (appsettings.json, environment variables, user secrets, etc.)
 var apiUrl = _configuration["QORSTACK_API_URL"] ?? "${defaultUrl}";
@@ -270,6 +301,5 @@ var api = new QorstackApi(apiUrl, apiKey);
 
 ${tableDataDeclarations ? `${tableDataDeclarations}\n\n` : ''}var request = ${requestObj};
 
-var response = await api.${methodName}(request);
-var downloadUrl = response.DownloadUrl;`
+${tail}`
 }

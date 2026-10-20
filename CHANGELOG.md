@@ -4,6 +4,18 @@ All notable changes to Qorstack Report are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and the project aims to follow [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] — 2026-10-20
+
+### Added
+
+- **Sync and async code examples on the template page.** The Code tab of the Word/PDF and Excel template pages now
+  has two modes: *Sync — wait for the file* (the call answers with a download link; the examples also download
+  the file) and *Async + webhook* (step 1 queues the job with your webhook URL, step 2 is a ready-made webhook
+  receiver for Node.js/Express and ASP.NET Core with signature check, plus a signed test call for any language).
+  Examples are built from the template's current test values in cURL, Node.js and .NET.
+- **Docs: "Sync vs async & webhooks".** When to use which, the full async flow, the webhook body, retry rules and
+  receiver examples.
+
 ## [2.3.2] — 2026-10-20
 
 ### Changed

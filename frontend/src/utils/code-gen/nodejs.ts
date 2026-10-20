@@ -31,8 +31,35 @@ export const generateNodejsExample = (data: any, options: CodeGenOptions = {}): 
     .join('\n')
   const request = formatNodeRequest(sdkData)
 
+  const isExcel = options.documentType === 'excel'
+  const ext = isExcel ? 'xlsx' : 'pdf'
+  const renderMethod = isExcel ? 'renderExcel' : 'renderWord'
+  const tail =
+    options.mode === 'async'
+      ? `// Queues the job and answers at once (202 Accepted, Pro feature).
+const outcome = await api.${renderMethod}(request);
+if (outcome.kind !== 'queued') throw new Error('Expected a queued job — is "async": true set?');
+
+const jobId = outcome.job.jobId!;
+// Store jobId with your own record (order, document, …).
+// Qorstack POSTs the result to webhookUrl when the job finishes — see "Receive the webhook".
+console.log(\`Queued render job \${jobId}\`);
+
+// No webhook endpoint? Wait for the job instead (polls every 2 s, gives up after 10 min):
+// const job = await api.waitForJob(jobId);
+// console.log(job.downloadUrl);`
+      : `// Waits until the file is ready (200 OK).
+const response = await api.render.${methodName}(request);
+const { downloadUrl, expiresIn, isZipped } = response.data;
+
+// The link works for expiresIn seconds and needs no API key: send it to the browser,
+// or download the file on the server:
+console.log(\`Link valid for \${expiresIn} s\`);
+const file = await fetch(downloadUrl!);
+await writeFile(\`\${request.fileName ?? 'output'}.\${isZipped ? 'zip' : '${ext}'}\`, Buffer.from(await file.arrayBuffer()));`
+
   return `// npm install qorstack-report-sdk
-import { QorstackApi, ${requestType} } from 'qorstack-report-sdk';
+${options.mode === 'async' ? '' : "import { writeFile } from 'node:fs/promises';\n"}import { QorstackApi, ${requestType} } from 'qorstack-report-sdk';
 
 const api = new QorstackApi({
   baseUrl: ${apiUrl},
@@ -45,8 +72,7 @@ const api = new QorstackApi({
 
 ${tableDataDeclarations ? `${tableDataDeclarations}\n\n` : ''}const request: ${requestType} = ${request};
 
-const response = await api.render.${methodName}(request);
-const { downloadUrl } = response.data;`
+${tail}`
 }
 
 const formatValue = (value: unknown, level = 0): string => {

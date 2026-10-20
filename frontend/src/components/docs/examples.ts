@@ -120,6 +120,18 @@ export const getRequestExamples = (endpoint: Endpoint): CodeExamples => {
   return getSdkCodeExamples(processRequest(state, endpoint), { documentType: 'pdf' })
 }
 
+/** Minimal async request: queue the render, the result goes to the webhook. */
+export const getAsyncRequestExamples = (endpoint: Endpoint): CodeExamples => {
+  const state = createExampleState({
+    fileName: 'invoice-2026-001',
+    replace: [
+      { id: generateId(), key: '{{customer_name}}', value: 'Acme Co., Ltd.' },
+      { id: generateId(), key: '{{invoice_number}}', value: 'INV-2026-001' }
+    ]
+  })
+  return getSdkCodeExamples(processRequest(state, endpoint), { documentType: 'pdf', mode: 'async' })
+}
+
 export const getVariableExamples = (endpoint: Endpoint): CodeExamples => {
   const state = createExampleState({
     fileName: 'invoice-2026-001',

@@ -1,4 +1,4 @@
-import { CodeExamples, CodeGenOptions } from './types'
+import { CodeExamples, CodeGenOptions, DEFAULT_WEBHOOK_URL } from './types'
 import { generateCsharpExample } from './csharp'
 import { generateNodejsExample } from './nodejs'
 import { generateApiExample } from './api'
@@ -15,15 +15,19 @@ export const getSdkCodeExamples = (data: any, options: CodeGenOptions = {}): Cod
   )
   const documentType = options.documentType || (hasExcelOptions ? 'excel' : 'pdf')
   const apiUrl = options.apiUrl || absoluteApiUrl()
-  const request = documentType === 'excel' ? toExcelRenderRequest(data) : toWordRenderRequest(data)
+  const mode = options.mode || 'sync'
+  const base = documentType === 'excel' ? toExcelRenderRequest(data) : toWordRenderRequest(data)
+  const request =
+    mode === 'async' ? { ...base, async: true, webhookUrl: options.webhookUrl?.trim() || DEFAULT_WEBHOOK_URL } : base
+  const opts = { documentType, apiUrl, mode }
 
   return {
     json: JSON.stringify(request, null, 2),
-    api: generateApiExample(request, { documentType, apiUrl }),
-    curl: generateApiExample(request, { documentType, apiUrl }),
-    nodejs: generateNodejsExample(request, { documentType, apiUrl }),
-    csharp: generateCsharpExample(request, { documentType, apiUrl }),
-    dotnet: generateCsharpExample(request, { documentType, apiUrl })
+    api: generateApiExample(request, opts),
+    curl: generateApiExample(request, opts),
+    nodejs: generateNodejsExample(request, opts),
+    csharp: generateCsharpExample(request, opts),
+    dotnet: generateCsharpExample(request, opts)
   }
 }
 
@@ -31,3 +35,4 @@ export * from './types'
 export { generateCsharpExample } from './csharp'
 export { generateNodejsExample } from './nodejs'
 export { generateApiExample } from './api'
+export { getWebhookReceiverExamples } from './webhook'

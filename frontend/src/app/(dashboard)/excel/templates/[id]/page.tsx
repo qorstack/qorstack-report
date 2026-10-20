@@ -21,9 +21,9 @@ import {
 } from '@/components/excel/ExcelSandboxInputs'
 import { ExcelTablesSection } from '@/components/excel/ExcelSandboxInputs'
 import type { ImageItem, QrCodeItem, BarcodeItem } from '@/components/pdf/SandboxInputs'
-import { CodeSwitcher } from '@/components/docs/CodeSwitcher'
+import { RenderCodePanel } from '@/components/template-editor/RenderCodePanel'
 import { getSdkCodeExamples } from '@/utils/code-gen'
-import type { CodeExamples } from '@/utils/code-gen'
+import type { CodeExamples, RenderMode } from '@/utils/code-gen'
 import ExcelPreviewDrawer from '@/components/excel/ExcelPreviewDrawer'
 import { handleApiError } from '@/hooks/useApiError'
 import { downloadFileFromUrl } from '@/utils/download-file'
@@ -416,10 +416,10 @@ const ExcelSandboxPage = () => {
     }
   }, [isEditOpen, templateName, templateKey])
 
-  const getExampleCode = (): CodeExamples => {
+  const getExampleCode = (options: { mode: RenderMode; webhookUrl: string }): CodeExamples => {
     const payload = convertFromUiState(uiState)
     ;(payload as Record<string, unknown>).templateKey = templateKey
-    return getSdkCodeExamples(payload, { documentType: 'excel' })
+    return getSdkCodeExamples(payload, { documentType: 'excel', ...options })
   }
 
   const showRenderErrors = (err: unknown): boolean => {
@@ -1082,7 +1082,7 @@ const ExcelSandboxPage = () => {
             </Link>
             .
           </p>
-          <CodeSwitcher examples={getExampleCode()} title='Code' defaultLanguage='api' isDisableMarginY={true} />
+          <RenderCodePanel buildExamples={getExampleCode} />
         </div>
       )}
     </BuilderPanel>

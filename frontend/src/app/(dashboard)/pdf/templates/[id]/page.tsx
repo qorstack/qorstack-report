@@ -37,7 +37,7 @@ import {
   generateId,
   formatKey
 } from '@/components/pdf/SandboxInputs'
-import { CodeSwitcher } from '@/components/docs/CodeSwitcher'
+import { RenderCodePanel } from '@/components/template-editor/RenderCodePanel'
 import { CategoryNav } from '@/components/ui'
 import {
   AutoPreviewSwitch,
@@ -72,7 +72,7 @@ import {
   type MappedError
 } from '@/components/template-editor/api-errors'
 import { getSdkCodeExamples } from '@/utils/code-gen'
-import type { CodeExamples } from '@/utils/code-gen'
+import type { CodeExamples, RenderMode } from '@/utils/code-gen'
 import PdfPreviewDrawer from '@/components/pdf/PdfPreviewDrawer'
 import { handleApiError } from '@/hooks/useApiError'
 import { downloadFileFromUrl } from '@/utils/download-file'
@@ -620,14 +620,14 @@ const TemplateSandboxPage = () => {
     }
   }, [isEditOpen, templateName, templateKey])
 
-  const getExampleCode = (): CodeExamples => {
+  const getExampleCode = (options: { mode: RenderMode; webhookUrl: string }): CodeExamples => {
     const requestData = convertFromUiState(uiState)
     requestData.templateKey = templateKey
 
     // Fallback if no specific data exists (e.g. clean template mode)
     if (!requestData.fileName) requestData.fileName = 'generated_document'
 
-    return getSdkCodeExamples(requestData, { documentType: 'pdf' })
+    return getSdkCodeExamples(requestData, { documentType: 'pdf', ...options })
   }
 
   const generateKey = async () => {
@@ -1021,7 +1021,7 @@ const TemplateSandboxPage = () => {
             </Link>
             .
           </p>
-          <CodeSwitcher examples={getExampleCode()} title='Code' defaultLanguage='api' isDisableMarginY={true} />
+          <RenderCodePanel buildExamples={getExampleCode} />
         </div>
       )}
     </BuilderPanel>

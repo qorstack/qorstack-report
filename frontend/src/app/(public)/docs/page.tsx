@@ -3,7 +3,8 @@
 import React, { Fragment, useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import Icon from '@/components/icon'
-import { getInstallCommand, getInitClient, getRequestExamples } from '@/components/docs/examples'
+import { getAsyncRequestExamples, getInstallCommand, getInitClient, getRequestExamples } from '@/components/docs/examples'
+import { getWebhookReceiverExamples } from '@/utils/code-gen'
 import { CodeBlock } from '@/components/docs/CodeBlock'
 import { CodeSwitcher, useSharedLanguage, LanguageSelector } from '@/components/docs/CodeSwitcher'
 import { FeatureCard, PropertyTable, SubSection } from '@/components/docs/DocComponents'
@@ -66,7 +67,7 @@ const TOC_ITEMS: TocItem[] = [
   { id: 'integration', label: 'Integration & SDKs' },
   { id: 'integration-setup', section: 'integration', label: 'REST API & SDKs', indent: true },
   { id: 'integration-request', section: 'integration', label: 'Request Example', indent: true },
-  { id: 'integration-async', section: 'integration', label: 'Async & webhooks', indent: true },
+  { id: 'integration-async', section: 'integration', label: 'Sync vs async & webhooks', indent: true },
   { id: 'integration-transfer', section: 'integration', label: 'Project export & import', indent: true },
   { id: 'variables', label: 'Variables' },
   { id: 'tables', label: 'Tables' },
@@ -543,20 +544,61 @@ const DocumentationPage = () => {
               />
             </SubSection>
 
-            <SubSection id='integration-async' title='Async jobs & webhooks'>
+            <SubSection id='integration-async' title='Sync vs async & webhooks'>
               <p className='mb-4 text-[15px] leading-relaxed text-default-500'>
-                <b className='font-semibold text-foreground'>Async (Pro).</b> Add <code>&quot;async&quot;: true</code> to
-                get <code>202</code> with a <code>jobId</code> right away. Poll <code>GET /render/jobs/{'{jobId}'}</code> until
-                the status is <code>success</code> (it then includes a fresh <code>downloadUrl</code>) or pass a{' '}
-                <code>webhookUrl</code>. Jobs are stored in PostgreSQL, so they survive restarts and several backend
-                instances can share the queue; temporary errors (database, network, Gotenberg) are retried up to 3 times.
+                There are two ways to call the render API. <b className='font-semibold text-foreground'>Sync</b> (the
+                request example above): the call waits and answers <code>200</code> with a <code>downloadUrl</code> — best
+                for one document that renders in a few seconds.{' '}
+                <b className='font-semibold text-foreground'>Async (Pro)</b>: add <code>&quot;async&quot;: true</code> and
+                the call answers <code>202</code> with a <code>jobId</code> at once; the document is built in the
+                background and the result is sent to your <code>webhookUrl</code>. Use it for large documents, batches, or
+                callers that must not wait. Jobs are stored in PostgreSQL, so they survive restarts and several backend
+                instances share the queue; temporary errors (database, network, Gotenberg) are retried up to 3 times.
               </p>
+              <h3 className='mb-2 text-[15px] font-semibold text-foreground'>1. Send the render job</h3>
+              <CodeSwitcher
+                activeLang={activeLang}
+                onLangChange={setActiveLang}
+                title='Async request'
+                examples={getAsyncRequestExamples(activeEndpoint)}
+                isDisableMarginY={true}
+              />
               <CodeBlock language='json' title='202 Accepted' code={ASYNC_RESPONSE_EXAMPLE} />
               <p className='my-4 text-[15px] leading-relaxed text-default-500'>
-                <b className='font-semibold text-foreground'>Webhooks</b> are signed with{' '}
-                <code>X-Qorstack-Signature: sha256=&lt;HMAC of the body&gt;</code> when the server sets{' '}
-                <code>WEBHOOK_SIGNING_SECRET</code>, retried 3 times, and never sent to private or internal addresses.
+                No webhook endpoint? Poll <code>GET /render/jobs/{'{jobId}'}</code> (status{' '}
+                <code>pending → processing → success | failed</code>); a <code>success</code> answer holds a fresh{' '}
+                <code>downloadUrl</code>. The SDKs do this for you with <code>waitForJob</code> /{' '}
+                <code>WaitForJobAsync</code>.
               </p>
+              <h3 className='mb-2 mt-6 text-[15px] font-semibold text-foreground'>2. Receive the webhook in your app</h3>
+              <PropertyTable
+                data={[
+                  { name: 'jobId', type: 'string (uuid)', required: true, desc: 'The id you got in the 202 answer.' },
+                  { name: 'status', type: 'string', required: true, desc: '"success" or "failed".' },
+                  {
+                    name: 'downloadUrl',
+                    type: 'string',
+                    required: false,
+                    desc: 'On success. Works for expiresIn seconds without an API key.'
+                  },
+                  { name: 'expiresIn', type: 'integer', required: false, desc: 'Seconds the downloadUrl stays valid.' },
+                  { name: 'error', type: 'string', required: false, desc: 'On failure: why the render failed.' }
+                ]}
+              />
+              <p className='my-4 text-[15px] leading-relaxed text-default-500'>
+                Qorstack sends one <code>POST</code> with <code>X-Qorstack-Event: render.completed</code>. Any http(s)
+                address works, internal hosts and private IPs included. Answer <code>2xx</code> within 10 seconds; other
+                answers are retried after 10 s and 60 s (3 attempts in total), so the same <code>jobId</code> can arrive
+                twice. When the server sets <code>WEBHOOK_SIGNING_SECRET</code>, each call carries{' '}
+                <code>X-Qorstack-Signature: sha256=&lt;hex HMAC-SHA256 of the raw body&gt;</code> — check it as below.
+              </p>
+              <CodeSwitcher
+                activeLang={activeLang}
+                onLangChange={setActiveLang}
+                title='Webhook receiver'
+                examples={getWebhookReceiverExamples()}
+                isDisableMarginY={true}
+              />
             </SubSection>
 
             <SubSection id='integration-transfer' title='Project export & import'>
